@@ -445,6 +445,8 @@ fn dismount_to(
     }
     if let Some(mut e) = ents.store.get_mut(passenger) {
         e.set_pos(target);
+        // `snapTo` / the player's teleport: `setOldPosAndRot`.
+        e.set_old_pos();
         let old = e.as_ref().rot();
         if old.y_rot != rot.y_rot || old.x_rot != rot.x_rot {
             e.set_rot(rot);
@@ -831,10 +833,12 @@ pub fn position_riders_of(ents: &mut Entities, vehicle: EntityId) {
         if let Some(mut e) = ents.store.get_mut(p) {
             e.set_pos(target);
         }
-        if let Some(rot) = horse_body_rot
-            && let Some(m) = ents.mob_mut(p)
-        {
-            m.y_body_rot = rot;
+        if let Some(rot) = horse_body_rot {
+            if let Some(m) = ents.mob_mut(p) {
+                m.y_body_rot = rot;
+            } else if let Some(pl) = ents.player_mut(p) {
+                pl.survival.y_body_rot = rot;
+            }
         }
     }
 }
