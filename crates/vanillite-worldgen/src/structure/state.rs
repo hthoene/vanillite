@@ -96,8 +96,8 @@ impl<'g> StructureState<'g> {
         for i in 0..count {
             let dist = f64::from(4 * distance + distance * circle * 6)
                 + (random.next_double() - 0.5) * (f64::from(distance) * 2.5);
-            let initial_x = java_round(angle.cos() * dist);
-            let initial_z = java_round(angle.sin() * dist);
+            let initial_x = java_round(crate::mth::math_cos(angle) * dist);
+            let initial_z = java_round(crate::mth::math_sin(angle) * dist);
             let mut search_random = random.fork();
             positions.push(
                 self.find_ring_biome(rings, initial_x, initial_z, &mut search_random)

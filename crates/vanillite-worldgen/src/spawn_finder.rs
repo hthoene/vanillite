@@ -47,8 +47,8 @@ impl Finder<'_> {
         let mut radius = increment;
         let (origin_x, origin_z) = (best.x, best.z);
         while radius <= max_radius {
-            let x = origin_x + (f64::from(angle).sin() * f64::from(radius)) as i32;
-            let z = origin_z + (f64::from(angle).cos() * f64::from(radius)) as i32;
+            let x = origin_x + (crate::mth::math_sin(f64::from(angle)) * f64::from(radius)) as i32;
+            let z = origin_z + (crate::mth::math_cos(f64::from(angle)) * f64::from(radius)) as i32;
             let candidate = self.fitness_at(x, z);
             if candidate.fitness < best.fitness {
                 best = candidate;

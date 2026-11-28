@@ -752,8 +752,8 @@ impl TrunkPlacer {
                     let radius =
                         1.0 * f64::from(tree_shape) * (f64::from(w.random().next_float()) + 0.328);
                     let angle = f64::from(w.random().next_float() * 2.0_f32) * std::f64::consts::PI;
-                    let x = radius * angle.sin() + 0.5;
-                    let z = radius * angle.cos() + 0.5;
+                    let x = radius * crate::mth::math_sin(angle) + 0.5;
+                    let z = radius * crate::mth::math_cos(angle) + 0.5;
                     let check_start = origin.offset(floor(x), relative_y - 1, floor(z));
                     let check_end = check_start.offset(0, 5, 0);
                     if self.make_limb(w, check_start, check_end, false) {
