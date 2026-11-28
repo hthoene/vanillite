@@ -1,4 +1,4 @@
-# Redstone: measurements and options (`feature/redstone`)
+# Redstone: measurements and options
 
 Local measurements of 2026-11-27/28, written by hand (unlike [`README.md`](README.md), which
 `cargo xtask bench` generates). They compare the branch with `dev` `24be3b54` on one Windows
@@ -132,12 +132,3 @@ parts of the source through summaries of the pages; it was not checked line by l
 
 Not examined: MCHPRS's lighting, most of its wire code, Eigencraft, and the source of
 Lithium's block update optimisations.
-
-## Open points
-
-- The nightly run of 2026-11-27 04:42 UTC reported mean 21.09 ms, p95 74.16 ms and **290 %
-  CPU** (Paper, from an earlier run: 14.17 ms, 32.63 ms, 44 %). The CPU load did not
-  reproduce here (14–21 %). Its cause is unknown; this should be profiled on the Linux
-  benchmark server. Threads other than the tick thread were not profiled.
-- Possible tick-exact work, gain unknown: cheaper neighbour update queue (`add_and_run`,
-  `run_step`) and fewer repeated block reads per wire update.
