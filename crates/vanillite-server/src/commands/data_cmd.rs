@@ -56,7 +56,7 @@ impl Accessor {
         let (kind, name) = match &target {
             DataTarget::Entity { id, .. } => {
                 let display = select::local(&env.level.entities, env.world, *id)
-                    .map(|t| t.display())
+                    .map(|t| t.display(env.global))
                     .unwrap_or_else(Component::empty);
                 ("entity", vec![Arg::from(display)])
             }
@@ -74,12 +74,16 @@ impl Accessor {
         data::write(&self.target, env, data)
     }
 
-    /// `getModifiedSuccess`.
-    fn modified(&self) -> Component {
-        Component::translatable_args(
-            format!("commands.data.{}.modified", self.kind),
-            self.name.clone(),
-        )
+    /// `getModifiedSuccess`: an entity is named as it is after the change (its new custom
+    /// name).
+    fn modified(&self, env: &Env<'_>) -> Component {
+        let name = match &self.target {
+            DataTarget::Entity { id, .. } => select::local(&env.level.entities, env.world, *id)
+                .map(|t| vec![Arg::from(t.display(env.global))])
+                .unwrap_or_else(|| self.name.clone()),
+            _ => self.name.clone(),
+        };
+        Component::translatable_args(format!("commands.data.{}.modified", self.kind), name)
     }
 
     /// `getPrintSuccess(tag)`.
@@ -139,7 +143,7 @@ pub(crate) fn run_data(
                 return Err(error("commands.data.merge.failed", vec![]));
             }
             accessor.write(env, result)?;
-            source.send_success(env.global, accessor.modified(), true);
+            source.send_success(env.global, accessor.modified(env), true);
             Ok(1)
         }
         DataOp::Get => {
@@ -179,7 +183,7 @@ pub(crate) fn run_data(
             if let Tag::Compound(c) = root {
                 accessor.write(env, c)?;
             }
-            source.send_success(env.global, accessor.modified(), true);
+            source.send_success(env.global, accessor.modified(env), true);
             Ok(len_int(count))
         }
         DataOp::Modify(op, from) => {
@@ -205,7 +209,7 @@ pub(crate) fn run_data(
             if let Tag::Compound(c) = root {
                 accessor.write(env, c)?;
             }
-            source.send_success(env.global, accessor.modified(), true);
+            source.send_success(env.global, accessor.modified(env), true);
             Ok(len_int(result))
         }
     }
@@ -435,7 +439,7 @@ pub(crate) fn run_tag(
                         true
                     }
                 };
-                tracker.track(&target.display(), i32::from(changed));
+                tracker.track(&target.display(env.global), i32::from(changed));
             }
             let key = if add { "add" } else { "remove" };
             tracker.feedback(
@@ -474,7 +478,7 @@ pub(crate) fn run_tag(
                         all.push(tag.clone());
                     }
                 }
-                tracker.track(&target.display(), len_int(tags.len()));
+                tracker.track(&target.display(env.global), len_int(tags.len()));
             }
             if all.is_empty() {
                 tracker.feedback(source, env, false, false, None, |one, n, _| match one {

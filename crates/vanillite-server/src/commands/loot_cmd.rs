@@ -216,7 +216,7 @@ fn hand_item(
     if own.kind.info().attributes.is_empty() {
         return Err(CommandError::new(
             "commands.drop.no_held_items",
-            vec![ErrArg::Component(Box::new(own.display()))],
+            vec![ErrArg::Component(Box::new(own.display(env.global)))],
         ));
     }
     let player = own.entity.and_then(|id| env.level.entities.player(id));
@@ -373,14 +373,14 @@ fn drops(
             let Some(id) = target.entity.filter(|_| data.loot.contains(&table)) else {
                 return Err(CommandError::new(
                     "commands.drop.no_loot_table.entity",
-                    vec![ErrArg::Component(Box::new(target.display()))],
+                    vec![ErrArg::Component(Box::new(target.display(env.global)))],
                 ));
             };
             let ents = &env.level.entities;
             let Some(this_facts) = vanillite_game::mob::attack::facts(ents, id) else {
                 return Err(CommandError::new(
                     "commands.drop.no_loot_table.entity",
-                    vec![ErrArg::Component(Box::new(target.display()))],
+                    vec![ErrArg::Component(Box::new(target.display(env.global)))],
                 ));
             };
             let killer = this.and_then(|k| vanillite_game::mob::attack::facts(ents, k));

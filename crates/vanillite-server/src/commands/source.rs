@@ -117,8 +117,8 @@ pub(crate) struct CommandSource {
     pub(crate) silent: bool,
     /// Gets the result of the command (`execute store`, function results).
     pub(crate) callback: Callback,
-    /// Console sources of parity scenarios: the plain text of the messages, collected instead
-    /// of logged.
+    /// Console sources of parity scenarios: the messages as `msg <network JSON>` and (by
+    /// [`Callback::Record`]) the results, collected instead of logged.
     pub(crate) feedback: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
@@ -327,6 +327,15 @@ impl vanillite_command::Source for CommandSource {
     }
 
     fn resource_exists(&self, registry: &str, id: &str) -> bool {
+        // The reloadable registries of the data packs.
+        match registry {
+            "minecraft:loot_table" => return self.global.game().loot.contains(id),
+            "minecraft:predicate" => return self.global.game().loot.has_predicate(id),
+            "minecraft:item_modifier" => return self.global.game().loot.has_modifier(id),
+            // Data packs define none in Vanilla, and named slot sources are not loaded.
+            "minecraft:slot_source" => return false,
+            _ => {}
+        }
         match self.global.registries.get(registry) {
             Some(entries) => entries.iter().any(|e| e == id),
             None => vanillite_data::registry::Registry::by_name(registry)
@@ -528,7 +537,7 @@ impl CommandSource {
                 Some(feedback) => feedback
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(global.english(&message)),
+                    .push(format!("msg {}", message.to_json_string())),
                 None => log::info!("System chat: {}", global.console_text(&message)),
             },
             // `RconConsoleSource.sendSystemMessage`: appended without a separator.

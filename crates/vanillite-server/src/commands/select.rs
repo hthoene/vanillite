@@ -36,6 +36,8 @@ pub(crate) struct Target {
     pub(crate) game_mode: vanillite_config::GameMode,
     /// Entity type.
     pub(crate) kind: EntityTypeId,
+    /// `getCustomName` (entities that are no players, in the command's world).
+    pub(crate) custom: Option<Box<Component>>,
 }
 
 impl Target {
@@ -53,27 +55,41 @@ impl Target {
         }
     }
 
-    /// `getDisplayName`.
-    pub(crate) fn display(&self) -> Component {
+    /// `getDisplayName`: the name in its team's format, showing the entity on hover, its
+    /// UUID as insertion (players: their name, with a click that suggests `/tell`).
+    pub(crate) fn display(&self, global: &Global) -> Component {
         if self.is_player() {
-            vanillite_game::player::join::display_name(&self.name, self.uuid)
-        } else {
+            return crate::scoreboard::display_name(global, &self.name, self.uuid);
+        }
+        let name = self.custom.as_deref().cloned().unwrap_or_else(|| {
             Component::translatable(
                 format!("entity.{}", self.kind.name().replace(':', ".")),
                 vec![],
             )
+        });
+        let uuid = vanillite_protocol::types::Uuid(self.uuid).to_string();
+        let board = global.systems.scoreboard();
+        match board.team_of(&uuid) {
+            Some(team) => team.format_name(name.clone()),
+            None => name.clone(),
         }
+        .hover(vanillite_protocol::text::HoverEvent::ShowEntity {
+            id: self.kind.name().to_owned(),
+            uuid: self.uuid,
+            name: Some(name),
+        })
+        .insertion(uuid)
     }
 
     /// The entity as a command source entity.
-    pub(crate) fn source_entity(&self) -> SourceEntity {
+    pub(crate) fn source_entity(&self, global: &Global) -> SourceEntity {
         SourceEntity {
             uuid: self.uuid,
             world: self.world,
             id: self.entity,
             kind: self.kind,
             name: self.name.clone(),
-            display: self.display(),
+            display: self.display(global),
             eye_height: f64::from(self.kind.info().eye_height),
         }
     }
@@ -110,6 +126,11 @@ pub(crate) fn local(entities: &Entities, world: WorldId, id: EntityId) -> Option
         place: Some((e.pos(), e.rot().y_rot, e.rot().x_rot)),
         game_mode,
         kind,
+        custom: if entities.player(id).is_some() {
+            None
+        } else {
+            vanillite_game::mob::combat::custom_name_of(entities, id).map(Box::new)
+        },
     })
 }
 
@@ -140,6 +161,7 @@ pub(crate) fn online_players(entities: &Entities, global: &Global, world: WorldI
                 place: here.map(|l| (l.2, l.3, l.4)),
                 game_mode: p.info.game_mode,
                 kind: ids::PLAYER,
+                custom: None,
             }
         })
         .collect();
@@ -554,10 +576,10 @@ pub(crate) fn many(
 ) -> Result<Vec<Target>, CommandError> {
     let found = optional(env, source, selector)?;
     if found.is_empty() {
-        let key = if selector.includes_entities {
-            "argument.entity.notfound.entity"
-        } else {
+        let key = if selector.players_arg {
             "argument.entity.notfound.player"
+        } else {
+            "argument.entity.notfound.entity"
         };
         return Err(CommandError::new(key, vec![]));
     }
@@ -587,10 +609,11 @@ pub(crate) fn single(
 ) -> Result<Target, CommandError> {
     let mut found = many(env, source, selector)?;
     if found.len() > 1 {
-        let key = if selector.includes_entities {
-            "argument.entity.toomany"
+        // `findSinglePlayer`: not exactly one; `findSingleEntity`: more than one.
+        let key = if selector.players_arg {
+            "argument.entity.notfound.player"
         } else {
-            "argument.player.toomany"
+            "argument.entity.toomany"
         };
         return Err(CommandError::new(key, vec![]));
     }

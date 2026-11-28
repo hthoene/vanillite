@@ -218,7 +218,7 @@ fn effect_give(
                     && !vanillite_game::effect::refuses_all_effects(target.kind)
             }
         };
-        tracker.track(&target.display(), i32::from(changed));
+        tracker.track(&target.display(env.global), i32::from(changed));
     }
     tracker.messages(
         source,
@@ -289,7 +289,7 @@ fn effect_clear(
                 true
             }
         };
-        tracker.track(&target.display(), i32::from(changed));
+        tracker.track(&target.display(env.global), i32::from(changed));
     }
     match effect {
         Some((_, name)) => tracker.messages(
@@ -347,7 +347,7 @@ fn summon(args: &Args, source: &CommandSource, env: &mut Env<'_>) -> Result<i32,
     )?;
     source.send_success(
         env.global,
-        Component::translatable("commands.summon.success", vec![entity.display()]),
+        Component::translatable("commands.summon.success", vec![entity.display(env.global)]),
         true,
     );
     Ok(1)
@@ -360,7 +360,7 @@ pub(crate) fn dimension_of(global: &Global, world: crate::world::WorldId) -> &st
 
 /// The display name of the entity with this id (`getDisplayName`).
 fn display_of(env: &Env<'_>, id: EntityId) -> Option<Component> {
-    select::local(&env.level.entities, env.world, id).map(|t| t.display())
+    select::local(&env.level.entities, env.world, id).map(|t| t.display(env.global))
 }
 
 /// `RideCommand.mount`.
@@ -402,7 +402,7 @@ fn ride_mount(
             env.global,
             Component::translatable(
                 "commands.ride.mount.success",
-                vec![target.display(), vehicle.display()],
+                vec![target.display(env.global), vehicle.display(env.global)],
             ),
             true,
         );
@@ -412,7 +412,7 @@ fn ride_mount(
         let current = display_of(env, current).unwrap_or_else(|| Component::text(""));
         return Err(CommandError::new(
             "commands.ride.already_riding",
-            vec![component(target.display()), component(current)],
+            vec![component(target.display(env.global)), component(current)],
         ));
     }
     if let Some(key) = mount_refusal(&env.level.entities, t, v) {
@@ -428,14 +428,17 @@ fn ride_mount(
     if !mount(env.level, env.global, dimension, t, v) {
         return Err(CommandError::new(
             "commands.ride.mount.failure.generic",
-            vec![component(target.display()), component(vehicle.display())],
+            vec![
+                component(target.display(env.global)),
+                component(vehicle.display(env.global)),
+            ],
         ));
     }
     source.send_success(
         env.global,
         Component::translatable(
             "commands.ride.mount.success",
-            vec![target.display(), vehicle.display()],
+            vec![target.display(env.global), vehicle.display(env.global)],
         ),
         true,
     );
@@ -594,13 +597,13 @@ fn ride_dismount(
     let Some(t) = target.entity else {
         return Err(CommandError::new(
             "commands.ride.not_riding",
-            vec![component(target.display())],
+            vec![component(target.display(env.global))],
         ));
     };
     let Some(vehicle) = env.level.entities.vehicle_of(t) else {
         return Err(CommandError::new(
             "commands.ride.not_riding",
-            vec![component(target.display())],
+            vec![component(target.display(env.global))],
         ));
     };
     let vehicle_name = display_of(env, vehicle).unwrap_or_else(|| Component::text(""));
@@ -610,7 +613,7 @@ fn ride_dismount(
         env.global,
         Component::translatable(
             "commands.ride.dismount.success",
-            vec![target.display(), vehicle_name],
+            vec![target.display(env.global), vehicle_name],
         ),
         true,
     );
@@ -779,7 +782,7 @@ fn rotate(args: &Args, source: &CommandSource, env: &mut Env<'_>) -> Result<i32,
     });
     source.send_success(
         env.global,
-        Component::translatable("commands.rotate.success", vec![target.display()]),
+        Component::translatable("commands.rotate.success", vec![target.display(env.global)]),
         true,
     );
     Ok(1)
@@ -863,7 +866,7 @@ fn damage(args: &Args, source: &CommandSource, env: &mut Env<'_>) -> Result<i32,
         env.global,
         Component::translatable_args(
             "commands.damage.success",
-            vec![Arg::Float(amount), Arg::from(target.display())],
+            vec![Arg::Float(amount), Arg::from(target.display(env.global))],
         ),
         true,
     );
@@ -917,7 +920,12 @@ fn swing(
         source,
         env.global,
         || CommandError::new("commands.swing.failed.notliving", vec![]),
-        |entity| Component::translatable("commands.swing.success.single", vec![entity.display()]),
+        |entity| {
+            Component::translatable(
+                "commands.swing.success.single",
+                vec![entity.display(env.global)],
+            )
+        },
         |count| {
             Component::translatable_args("commands.swing.success.multiple", vec![Arg::Int(count)])
         },

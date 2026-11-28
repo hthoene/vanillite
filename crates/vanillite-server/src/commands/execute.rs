@@ -116,7 +116,7 @@ fn selector<'a>(
 /// `CommandSourceStack.withEntity`.
 fn with_entity(source: &CommandSource, target: &Target) -> CommandSource {
     let mut out = source.clone();
-    out.entity = Some(target.source_entity());
+    out.entity = Some(target.source_entity(&source.global));
     out
 }
 

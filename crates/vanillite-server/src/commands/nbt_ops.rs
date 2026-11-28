@@ -484,22 +484,25 @@ pub(crate) fn insert_element(parent: &mut Tag, index: usize, value: &Tag) -> Opt
     })
 }
 
+/// `CollectionTag.setTag`: arrays take any number (converted like Vanilla's `NumericTag`
+/// values), lists any tag.
+#[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
 fn set_element(parent: &mut Tag, index: usize, value: &Tag) -> bool {
-    match (parent, value) {
-        (Tag::List(l), v) => l.0.get_mut(index).is_some_and(|e| {
-            *e = v.clone();
+    match (parent, java_numbers(value)) {
+        (Tag::List(l), _) => l.0.get_mut(index).is_some_and(|e| {
+            *e = value.clone();
             true
         }),
-        (Tag::ByteArray(a), Tag::Byte(v)) => a.get_mut(index).is_some_and(|e| {
-            *e = *v;
+        (Tag::ByteArray(a), Some((v, _))) => a.get_mut(index).is_some_and(|e| {
+            *e = v as i8;
             true
         }),
-        (Tag::IntArray(a), Tag::Int(v)) => a.get_mut(index).is_some_and(|e| {
-            *e = *v;
+        (Tag::IntArray(a), Some((v, _))) => a.get_mut(index).is_some_and(|e| {
+            *e = v;
             true
         }),
-        (Tag::LongArray(a), Tag::Long(v)) => a.get_mut(index).is_some_and(|e| {
-            *e = *v;
+        (Tag::LongArray(a), Some((_, v))) => a.get_mut(index).is_some_and(|e| {
+            *e = v;
             true
         }),
         _ => false,

@@ -66,9 +66,8 @@ import net.minecraft.world.ticks.ScheduledTick;
  * Positions in chunks that are not accessible are recorded as {@link #UNLOADED}.
  *
  * <p>The action {@code command} runs a command line as the server at the origin of the
- * overworld. With {@code "feedback": true} the source collects its messages (what the server
- * logs as {@code System chat: <text>}) as their plain text, and each frame holds those of its
- * tick.
+ * overworld. With {@code "feedback": true} each frame holds the command lines of its tick, the
+ * messages their source got (as their network JSON) and their results.
  *
  * <p>The actions {@code force} and {@code unforce} add or remove forced tickets of chunks and then
  * run the chunk system and the entity manager without a game tick until every chunk around the
@@ -516,12 +515,17 @@ public final class ScenarioRecorder {
                 // As the server, at the origin of the overworld.
                 net.minecraft.commands.CommandSourceStack source =
                     server.createCommandSourceStack().withPosition(Vec3.ZERO);
+                String line = action.get("command").getAsString();
                 if (feedback) {
-                  source = source.withSource(trace.feedbackSource(server));
+                  // `"feedback"`: what the source got (messages as their JSON) and its results.
+                  List<String> out = trace.feedback;
+                  out.add("/" + line);
+                  source =
+                      source
+                          .withSource(new Feedback(server, level, out))
+                          .withCallback((success, result) -> out.add("result " + success + " " + result));
                 }
-                server
-                    .getCommands()
-                    .performPrefixedCommand(source, action.get("command").getAsString());
+                server.getCommands().performPrefixedCommand(source, line);
               } else if (op.equals("throw_potion")) {
                 entities.throwPotion(action);
               } else if (op.equals("use") || op.equals("attack")) {
@@ -907,6 +911,42 @@ public final class ScenarioRecorder {
     }
   }
 
+  /**
+   * The source of a scenario's commands with {@code "feedback"}: like the server's own source
+   * (accepts success and failure, informs the admins by {@code broadcast-console-to-ops}), but
+   * each message goes into the frame as {@code "msg <json>"} (the component's network JSON).
+   */
+  private record Feedback(
+      net.minecraft.server.MinecraftServer server, ServerLevel level, List<String> out)
+      implements net.minecraft.commands.CommandSource {
+    @Override
+    public void sendSystemMessage(net.minecraft.network.chat.Component message) {
+      out.add(
+          "msg "
+              + net.minecraft.network.chat.ComponentSerialization.CODEC
+                  .encodeStart(
+                      level.registryAccess().createSerializationContext(com.mojang.serialization.JsonOps.INSTANCE),
+                      message)
+                  .getOrThrow()
+                  .toString());
+    }
+
+    @Override
+    public boolean acceptsSuccess() {
+      return true;
+    }
+
+    @Override
+    public boolean acceptsFailure() {
+      return true;
+    }
+
+    @Override
+    public boolean shouldInformAdmins() {
+      return server.shouldInformAdmins();
+    }
+  }
+
   /** The trace being written: palette and one JSON line per frame. */
   private static final class Trace {
     private final BlockPos min;
@@ -930,34 +970,8 @@ public final class ScenarioRecorder {
     boolean clientView;
     /** Frames hold the block entities of the region ({@code "block_entities"}, #244). */
     boolean blockEntities;
-    /** The command feedback of the tick ({@code "feedback"}), as plain text. */
-    private final List<String> feedback = new ArrayList<>();
-
-    /** The server as command source, collecting its messages into the next frame. */
-    net.minecraft.commands.CommandSource feedbackSource(
-        net.minecraft.server.MinecraftServer server) {
-      return new net.minecraft.commands.CommandSource() {
-        @Override
-        public void sendSystemMessage(net.minecraft.network.chat.Component message) {
-          feedback.add(message.getString());
-        }
-
-        @Override
-        public boolean acceptsSuccess() {
-          return server.acceptsSuccess();
-        }
-
-        @Override
-        public boolean acceptsFailure() {
-          return server.acceptsFailure();
-        }
-
-        @Override
-        public boolean shouldInformAdmins() {
-          return server.shouldInformAdmins();
-        }
-      };
-    }
+    /** The feedback of the commands before the frame's tick ({@code "feedback"}). */
+    final List<String> feedback = new ArrayList<>();
 
     Trace(
         BlockPos min,
@@ -1089,8 +1103,8 @@ public final class ScenarioRecorder {
       }
       if (!feedback.isEmpty()) {
         sb.append(",\"feedback\":[");
-        for (int j = 0; j < feedback.size(); j++) {
-          sb.append(j == 0 ? "" : ",").append(new com.google.gson.JsonPrimitive(feedback.get(j)));
+        for (int f = 0; f < feedback.size(); f++) {
+          sb.append(f == 0 ? "" : ",").append(new com.google.gson.JsonPrimitive(feedback.get(f)));
         }
         sb.append(']');
         feedback.clear();

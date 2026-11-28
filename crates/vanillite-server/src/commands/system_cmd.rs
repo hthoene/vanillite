@@ -348,14 +348,14 @@ fn fetch_profile(
                 .ok_or_else(|| {
                     CommandError::new(
                         "commands.fetchprofile.no_profile",
-                        vec![ErrArg::Component(Box::new(target.display()))],
+                        vec![ErrArg::Component(Box::new(target.display(env.global)))],
                     )
                 })?;
             report_profile(
                 source,
                 env,
                 "commands.fetchprofile.entity.success",
-                target.display(),
+                target.display(env.global),
                 profile,
             );
             Ok(1)
@@ -458,7 +458,7 @@ fn spectate(
     if player.game_mode != vanillite_config::GameMode::Spectator {
         return Err(CommandError::new(
             "commands.spectate.not_spectator",
-            vec![ErrArg::Component(Box::new(player.display()))],
+            vec![ErrArg::Component(Box::new(player.display(env.global)))],
         ));
     }
     if let Some(t) = &target
@@ -466,7 +466,7 @@ fn spectate(
     {
         return Err(CommandError::new(
             "commands.spectate.cannot_spectate",
-            vec![ErrArg::Component(Box::new(t.display()))],
+            vec![ErrArg::Component(Box::new(t.display(env.global)))],
         ));
     }
     // `ServerPlayer.setCamera`: the spectator moves along with its camera.
@@ -485,7 +485,10 @@ fn spectate(
         }
     }
     let message = match &target {
-        Some(t) => Component::translatable("commands.spectate.success.started", vec![t.display()]),
+        Some(t) => Component::translatable(
+            "commands.spectate.success.started",
+            vec![t.display(env.global)],
+        ),
         None => Component::translatable("commands.spectate.success.stopped", vec![]),
     };
     source.send_success(env.global, message, false);
@@ -681,7 +684,7 @@ fn waypoint(
                     .map_or(0xFF_FFFF, |c| {
                         u32::from_ne_bytes(c.to_ne_bytes()) & 0xFF_FFFF
                     });
-                t.display()
+                t.display(env.global)
                     .click(ClickEvent::SuggestCommand(format!(
                         "/execute in {dimension} run tp @s {x} {y} {z}"
                     )))
@@ -878,7 +881,7 @@ fn transfer(
         |one, n, _| match one {
             Some(p) => tr(
                 "commands.transfer.success.single",
-                vec![Arg::from(p.display()), host, Arg::Int(port)],
+                vec![Arg::from(p.display(env.global)), host, Arg::Int(port)],
             ),
             None => tr(
                 "commands.transfer.success.multiple",

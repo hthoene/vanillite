@@ -591,12 +591,8 @@ pub(crate) fn resolve(
     };
     let library = global.systems.functions();
     if f.tag {
-        library.tag(&f.id).cloned().ok_or_else(|| {
-            CommandError::new(
-                "arguments.function.tag.unknown",
-                vec![ErrArg::Str(f.id.clone())],
-            )
-        })
+        // `ServerFunctionLibrary.getTag`: an unknown tag is empty.
+        Ok(library.tag(&f.id).cloned().unwrap_or_default())
     } else {
         library
             .get(&f.id)

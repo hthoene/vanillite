@@ -111,12 +111,25 @@ pub(crate) fn read(target: &DataTarget, env: &Env<'_>) -> Result<Compound, Comma
         DataTarget::Block(pos) => env
             .level
             .block_entity_nbt(*pos)
+            .map(metadata_last)
             .ok_or_else(|| CommandError::new("commands.data.block.invalid", vec![])),
     }
     .map(|mut c| {
         c.positive_zeros();
         c
     })
+}
+
+/// The keys in the order `BlockEntity.saveWithFullMetadata` puts them into its `HashMap`
+/// (`saveAdditional`, then `components`, `id`, `x`, `y`, `z`), which decides the order of
+/// keys that share a hash bucket in `/data get`.
+fn metadata_last(mut c: Compound) -> Compound {
+    for key in ["components", "id", "x", "y", "z"] {
+        if let Some(v) = c.remove(key) {
+            c.insert(key, v);
+        }
+    }
+    c
 }
 
 /// `DataAccessor.setData`.

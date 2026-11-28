@@ -1,0 +1,35 @@
+{
+  "description": "/advancement grant and revoke with only (whole and one criterion), from, through, until and everything, repeated (nothing to change), with unknown criteria and advancements and a non-player target; feedback, results and the player's progress.",
+  "tier": "fast",
+  "dimensions": true,
+  "feedback": true,
+  "region": [[-16, -61, -16], [31, -58, 31]],
+  "ticks": 4,
+  "rules": {"spawn_monsters": "false"},
+  "progress_state": true,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [1.5, -60.0, 2.5]},
+    {"name": "pig", "type": "minecraft:pig", "pos": [6.5, -60.0, 6.5], "seed": 3}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "advancement grant steve only minecraft:story/mine_stone"},
+    {"tick": 1, "op": "command", "command": "advancement grant steve only minecraft:story/mine_stone"},
+    {"tick": 1, "op": "command", "command": "advancement grant steve only minecraft:story/smelt_iron minecraft:iron"},
+    {"tick": 1, "op": "command", "command": "advancement grant steve only minecraft:story/smelt_iron nope"},
+    {"tick": 1, "op": "command", "command": "advancement revoke steve only minecraft:story/mine_stone"},
+    {"tick": 1, "op": "command", "command": "advancement revoke steve only minecraft:story/mine_stone"},
+    {"tick": 1, "op": "command", "command": "advancement grant steve until minecraft:story/iron_tools"},
+    {"tick": 1, "op": "command", "command": "advancement revoke steve from minecraft:story/smelt_iron"},
+    {"tick": 2, "op": "command", "command": "advancement grant steve through minecraft:nether/root"},
+    {"tick": 2, "op": "command", "command": "advancement grant steve from minecraft:husbandry/root"},
+    {"tick": 2, "op": "command", "command": "advancement revoke steve through minecraft:husbandry/plant_seed"},
+    {"tick": 2, "op": "command", "command": "advancement grant @a everything"},
+    {"tick": 2, "op": "command", "command": "advancement grant @a everything"},
+    {"tick": 2, "op": "command", "command": "advancement revoke steve everything"},
+    {"tick": 3, "op": "command", "command": "advancement revoke steve only minecraft:adventure/kill_all_mobs minecraft:zombie"},
+    {"tick": 3, "op": "command", "command": "advancement grant steve only minecraft:adventure/kill_all_mobs minecraft:zombie"},
+    {"tick": 3, "op": "command", "command": "advancement revoke steve only minecraft:adventure/kill_all_mobs minecraft:zombie"},
+    {"tick": 3, "op": "command", "command": "advancement grant steve only minecraft:nope"},
+    {"tick": 3, "op": "command", "command": "advancement grant @e[type=pig] only minecraft:story/root"}
+  ]
+}

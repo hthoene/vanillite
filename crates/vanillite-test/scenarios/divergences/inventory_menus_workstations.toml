@@ -1,0 +1,3 @@
+tick = 35
+cause = "the experience orbs of the grindstone start inside its shape: Vanilla's VoxelShape.collide stops their z motion against the shape's cells, Vanillite's per-box collision lets them move along z (the menus up to here match)"
+owner = "game-systems-developer #309"

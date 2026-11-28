@@ -2435,7 +2435,13 @@ impl ScenarioWorld for GameWorld {
             vanillite_server::install_command_runner(command_server(), &mut self.level);
         }
         let feedback = self.with_board(|w| {
-            vanillite_server::run_command_on_level(command_server(), &mut w.level, Vec3::ZERO, line)
+            vanillite_server::run_command_on_level(
+                command_server(),
+                &mut w.level,
+                Vec3::ZERO,
+                line,
+                w.spec.feedback,
+            )
         })?;
         self.finish_removals();
         self.spawn_drops();

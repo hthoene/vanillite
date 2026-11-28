@@ -12,6 +12,7 @@ use vanillite_worldgen::behaviour::StateExt;
 use super::{BlockBehaviour, Interaction, ItemInteraction, UseContext, sound_id};
 use crate::item::ItemStack;
 use crate::level::{BlockEntity, Level};
+use vanillite_world::entity::EntityId;
 
 /// `SoundSource.BLOCKS`.
 const BLOCKS: u8 = 4;
@@ -236,7 +237,71 @@ fn other_editing(sign: &Sign, uuid: Option<u128>) -> bool {
     sign.editor.is_some_and(|e| Some(e) != uuid)
 }
 
-/// `SignBlock.useWithoutItem`: waxed signs refuse, otherwise the editor opens.
+/// `SignBlockEntity.executeClickCommandsIfPresent`: the run-command, show-dialog and custom
+/// click events of the side's lines. Only signs with `allow_op_features` run their commands
+/// (as the player, permission level 2, at the sign's centre, without feedback); others tell
+/// the player that click actions are disabled. Whether there was any.
+fn execute_click_commands(level: &mut Level, pos: BlockPos, player: EntityId, front: bool) -> bool {
+    use vanillite_protocol::text::ClickEvent;
+    let Some(BlockEntity::Sign(sign)) = level.block_entity_mut(pos) else {
+        return false;
+    };
+    let allowed = sign.allow_op_features;
+    let mut commands = Vec::new();
+    let mut any = false;
+    for message in &sign.text_mut(front).messages {
+        match &message.style.click_event {
+            Some(ClickEvent::RunCommand(command)) => {
+                any = true;
+                commands.push(command.clone());
+            }
+            Some(ClickEvent::ShowDialog(_) | ClickEvent::Custom { .. }) => any = true,
+            _ => {}
+        }
+    }
+    if allowed {
+        if let Some(runner) = level.command_runner() {
+            let name = level
+                .entities
+                .player(player)
+                .map_or_else(Component::empty, |p| {
+                    Component::text(p.profile.name.as_str())
+                });
+            for command in &commands {
+                runner.run(
+                    level,
+                    &crate::block::technical::command_block::CommandRun {
+                        command,
+                        pos: Vec3::new(
+                            f64::from(pos.x) + 0.5,
+                            f64::from(pos.y) + 0.5,
+                            f64::from(pos.z) + 0.5,
+                        ),
+                        rot: (0.0, 0.0),
+                        name: name.clone(),
+                        entity: Some(player),
+                        track_output: false,
+                    },
+                );
+            }
+        }
+    } else if any && let Some(p) = level.entities.player(player) {
+        p.connection.sink.send(
+            &vanillite_protocol::packets::play::clientbound::SystemChat {
+                content: Component::translatable("sign.click_actions_disabled", vec![]).color(
+                    vanillite_protocol::text::Color::Named(
+                        vanillite_protocol::text::NamedColor::Red,
+                    ),
+                ),
+                overlay: true,
+            },
+        );
+    }
+    any
+}
+
+/// `SignBlock.useWithoutItem`: the click commands, then waxed signs refuse, otherwise the
+/// editor opens.
 fn use_without_item(
     level: &mut Level,
     state: BlockState,
@@ -245,6 +310,7 @@ fn use_without_item(
 ) -> Interaction {
     let front = facing_front(state, pos, player_pos(level, context));
     let uuid = player_uuid(level, context);
+    let clicked = execute_click_commands(level, pos, context.player, front);
     let Some(BlockEntity::Sign(sign)) = level.block_entity_mut(pos) else {
         return Interaction::Pass;
     };
@@ -258,6 +324,9 @@ fn use_without_item(
             "block.sign.waxed_interact_fail"
         };
         level.play_block_sound(None, pos, sound_id(sound), BLOCKS, 1.0, 1.0);
+        return Interaction::Success;
+    }
+    if clicked {
         return Interaction::Success;
     }
     let editable = sign

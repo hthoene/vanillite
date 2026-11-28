@@ -50,6 +50,9 @@ pub struct ExperienceOrbData {
     pub random_state: i64,
     /// `fallDistance`.
     pub fall_distance: f64,
+    /// Made by `new ExperienceOrb(level, pos, roughly, value)` and not ticked yet: its
+    /// `unstuckIfPossible` is due (see [`unstuck_if_possible`]).
+    pub fresh: bool,
 }
 
 impl ExperienceOrbData {
@@ -65,6 +68,7 @@ impl ExperienceOrbData {
             fire_ticks: 0,
             random_state: 0,
             fall_distance: 0.0,
+            fresh: false,
         }
     }
 }
@@ -228,6 +232,7 @@ pub(crate) fn spawn(
     };
     let mut data = ExperienceOrbData::new(value);
     data.random_state = random_state;
+    data.fresh = true;
     let id = entities.spawn_experience_orb(new, data);
     entities.spawned(id, vanillite_abi::spawn_reason::DEFAULT, 0);
     id
@@ -242,8 +247,125 @@ fn collides(level: &Level, b: &Aabb) -> bool {
     SCRATCH.with_borrow_mut(|scratch| crate::item_entity::collides(b, level, scratch))
 }
 
+/// The constructor's `unstuckIfPossible(size)` of an orb made inside a block: its centre
+/// moves to the nearest point where its box is free (`CollisionGetter.findFreePosition`),
+/// within half its size. Done before the orb's first tick: the spawn paths have no block
+/// access, and nothing reads the position in between.
+fn unstuck_if_possible(level: &mut Level, id: EntityId) {
+    if let Some(d) = level.entities.experience_orb_mut(id) {
+        d.fresh = false;
+    }
+    let Some(entity) = level.entities.store.get(id) else {
+        return;
+    };
+    let aabb = entity.aabb();
+    if !collides(level, &aabb) {
+        return;
+    }
+    let size = aabb.max_x - aabb.min_x;
+    let pos = entity.pos();
+    let half_height = (aabb.max_y - aabb.min_y) / 2.0;
+    let center = Vec3::new(pos.x, pos.y + half_height, pos.z);
+    let allowed = Aabb::new(
+        center.x - size / 2.0,
+        center.y - size / 2.0,
+        center.z - size / 2.0,
+        center.x + size / 2.0,
+        center.y + size / 2.0,
+        center.z + size / 2.0,
+    );
+    let width = aabb.max_x - aabb.min_x;
+    let height = aabb.max_y - aabb.min_y;
+    let Some(free) = find_free_position(level, &allowed, center, [width, height, width]) else {
+        return;
+    };
+    if let Some(mut e) = level.entities.store.get_mut(id) {
+        e.set_pos(Vec3::new(free.x, free.y - height / 2.0, free.z));
+    }
+}
+
+/// `CollisionGetter.findFreePosition`: the point of `allowed` nearest to `preferred` where a
+/// box of `size` centred there touches no block collision box (each grown by half the size).
+fn find_free_position(
+    level: &Level,
+    allowed: &Aabb,
+    preferred: Vec3,
+    size: [f64; 3],
+) -> Option<Vec3> {
+    let search = allowed.inflate(size[0], size[1], size[2]);
+    let blocked: Vec<Aabb> = SCRATCH.with_borrow_mut(|scratch| {
+        crate::item_entity::collides(&search, level, scratch);
+        scratch
+            .iter()
+            .map(|b| b.inflate(size[0] / 2.0, size[1] / 2.0, size[2] / 2.0))
+            .collect()
+    });
+    // The free space (`join(allowed, blocked, ONLY_FIRST)`) as the cells between every box
+    // edge inside `allowed`; `closestPointTo` takes the first nearest.
+    let cuts = |lo: f64, hi: f64, edges: &mut dyn Iterator<Item = f64>| {
+        let mut v = vec![lo, hi];
+        v.extend(edges.filter(|&e| e > lo && e < hi));
+        v.sort_by(f64::total_cmp);
+        v.dedup();
+        v
+    };
+    let xs = cuts(
+        allowed.min_x,
+        allowed.max_x,
+        &mut blocked.iter().flat_map(|b| [b.min_x, b.max_x]),
+    );
+    let ys = cuts(
+        allowed.min_y,
+        allowed.max_y,
+        &mut blocked.iter().flat_map(|b| [b.min_y, b.max_y]),
+    );
+    let zs = cuts(
+        allowed.min_z,
+        allowed.max_z,
+        &mut blocked.iter().flat_map(|b| [b.min_z, b.max_z]),
+    );
+    let mut best: Option<(f64, Vec3)> = None;
+    for x in xs.windows(2) {
+        for y in ys.windows(2) {
+            for z in zs.windows(2) {
+                let mid = [
+                    (x[0] + x[1]) / 2.0,
+                    (y[0] + y[1]) / 2.0,
+                    (z[0] + z[1]) / 2.0,
+                ];
+                let inside = blocked.iter().any(|b| {
+                    mid[0] > b.min_x
+                        && mid[0] < b.max_x
+                        && mid[1] > b.min_y
+                        && mid[1] < b.max_y
+                        && mid[2] > b.min_z
+                        && mid[2] < b.max_z
+                });
+                if inside {
+                    continue;
+                }
+                let p = Vec3::new(
+                    preferred.x.clamp(x[0], x[1]),
+                    preferred.y.clamp(y[0], y[1]),
+                    preferred.z.clamp(z[0], z[1]),
+                );
+                let d = (p.x - preferred.x).powi(2)
+                    + (p.y - preferred.y).powi(2)
+                    + (p.z - preferred.z).powi(2);
+                if best.is_none_or(|(bd, _)| d < bd) {
+                    best = Some((d, p));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// `ExperienceOrb.tick`.
 pub fn tick_entity(level: &mut Level, id: EntityId) {
+    if level.entities.experience_orb(id).is_some_and(|d| d.fresh) {
+        unstuck_if_possible(level, id);
+    }
     let Some(mut data) = level.entities.experience_orb(id).copied() else {
         return;
     };

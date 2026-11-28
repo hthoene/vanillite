@@ -135,6 +135,7 @@ fn apply(
         return world.use_item(use_item);
     }
     if let Some(command) = &op.command {
+        feedback.push(format!("/{command}"));
         feedback.extend(world.command(command)?);
         return Ok(());
     }

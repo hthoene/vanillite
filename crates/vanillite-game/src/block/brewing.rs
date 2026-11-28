@@ -47,9 +47,10 @@ impl Default for BrewingStand {
         BrewingStand {
             items: std::array::from_fn(|_| ItemStack::EMPTY),
             brew_time: 0,
-            total_brew_time: 400,
+            // A new stand's fields start at 0; loading defaults them to 400 and 20.
+            total_brew_time: 0,
             fuel: 0,
-            total_fuel: FUEL_USES,
+            total_fuel: 0,
             speed: 1.0,
             ingredient: 0,
             last_bottles: [false; 3],

@@ -1,0 +1,23 @@
+{
+  "description": "/datapack with its feedback: list, list available, list enabled, enabling an enabled pack, disabling an unknown and the vanilla pack, ordering errors, create (a new empty pack, an invalid name, an existing one).",
+  "tier": "fast",
+  "dimensions": true,
+  "feedback": true,
+  "region": [[-16, -61, -16], [31, -58, 31]],
+  "ticks": 2,
+  "rules": {"spawn_monsters": "false"},
+  "actions": [
+    {"tick": 1, "op": "command", "command": "datapack list"},
+    {"tick": 1, "op": "command", "command": "datapack list available"},
+    {"tick": 1, "op": "command", "command": "datapack list enabled"},
+    {"tick": 1, "op": "command", "command": "datapack enable vanilla"},
+    {"tick": 1, "op": "command", "command": "datapack enable \"file/nope\""},
+    {"tick": 1, "op": "command", "command": "datapack disable \"file/nope\""},
+    {"tick": 1, "op": "command", "command": "datapack enable minecraft:trade_rebalance before \"file/nope\""},
+    {"tick": 1, "op": "command", "command": "datapack create made \"A pack\""},
+    {"tick": 1, "op": "command", "command": "datapack create made \"Again\""},
+    {"tick": 1, "op": "command", "command": "datapack create \"bad/name\" \"x\""},
+    {"tick": 1, "op": "command", "command": "datapack create \"..\" \"x\""},
+    {"tick": 1, "op": "command", "command": "datapack list available"}
+  ]
+}

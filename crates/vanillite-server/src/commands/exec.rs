@@ -491,14 +491,11 @@ pub(crate) fn teleport(
             let message = match targets.as_slice() {
                 [one] => Component::translatable(
                     "commands.teleport.success.entity.single",
-                    vec![
-                        display_name(&one.name, one.uuid),
-                        display_name(&to.name, to.uuid),
-                    ],
+                    vec![one.display(global), to.display(global)],
                 ),
                 _ => Component::translatable_args(
                     "commands.teleport.success.entity.multiple",
-                    vec![Arg::Int(count), Arg::from(display_name(&to.name, to.uuid))],
+                    vec![Arg::Int(count), Arg::from(to.display(global))],
                 ),
             };
             let Some((pos, y_rot, x_rot)) = to.place else {
@@ -622,7 +619,7 @@ pub(crate) fn teleport(
             let coords = [pos.x, pos.y, pos.z].map(|v| Arg::String(format_double(v)));
             let message = match targets.as_slice() {
                 [one] => {
-                    let mut args = vec![Arg::from(display_name(&one.name, one.uuid))];
+                    let mut args = vec![Arg::from(one.display(global))];
                     args.extend(coords);
                     Component::translatable_args("commands.teleport.success.location.single", args)
                 }

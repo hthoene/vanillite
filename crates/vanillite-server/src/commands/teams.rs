@@ -260,7 +260,7 @@ pub(crate) fn run(
             tracker.feedback(source, env, true, false, None, |one, n, _| match one {
                 Some(h) => t(
                     "commands.team.join.success.single",
-                    vec![c(h.display.clone()), c(team)],
+                    vec![c(h.refreshed(global).display), c(team)],
                 ),
                 None => t(
                     "commands.team.join.success.multiple",
@@ -282,7 +282,7 @@ pub(crate) fn run(
             tracker.feedback(source, env, true, false, None, |one, n, _| match one {
                 Some(h) => t(
                     "commands.team.leave.success.single",
-                    vec![c(h.display.clone())],
+                    vec![c(h.refreshed(global).display)],
                 ),
                 None => t("commands.team.leave.success.multiple", vec![Arg::Int(n)]),
             })
@@ -309,6 +309,7 @@ fn own_holder(source: &CommandSource) -> Result<Holder, CommandError> {
             .hover(HoverEvent::ShowText(Component::text(name.as_str()))),
         score_display: Some(e.display.clone()),
         name,
+        target: None,
     })
 }
 

@@ -353,7 +353,7 @@ pub(crate) fn parse(
                     r.set_cursor(start);
                     return Err(CommandError::new(
                         "argument.component.invalid",
-                        vec![Arg::from(e.0)],
+                        vec![Arg::from(e.0.as_ref())],
                     )
                     .at(r));
                 }
@@ -366,9 +366,11 @@ pub(crate) fn parse(
                 Ok(s) => game(GameValue::Style(Box::new(s))),
                 Err(e) => {
                     r.set_cursor(start);
-                    return Err(
-                        CommandError::new("argument.style.invalid", vec![Arg::from(e.0)]).at(r),
-                    );
+                    return Err(CommandError::new(
+                        "argument.style.invalid",
+                        vec![Arg::from(e.0.as_ref())],
+                    )
+                    .at(r));
                 }
             }
         }

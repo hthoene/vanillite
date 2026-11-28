@@ -153,7 +153,7 @@ pub(crate) fn experience(
             env.global,
             Component::translatable_args(
                 format!("commands.experience.query.{unit}"),
-                vec![Arg::from(target.display()), Arg::Int(result)],
+                vec![Arg::from(target.display(env.global)), Arg::Int(result)],
             ),
             false,
         );
@@ -179,7 +179,7 @@ pub(crate) fn experience(
                 }
             }
         };
-        tracker.track(&player.display(), i32::from(changed));
+        tracker.track(&player.display(env.global), i32::from(changed));
     }
     let (action, on_zero) = match op {
         ExperienceOp::Add => ("add", None),
@@ -252,7 +252,7 @@ pub(crate) fn recipe(
             }
         };
         tracker.track(
-            &player.display(),
+            &player.display(env.global),
             i32::try_from(changed).unwrap_or(i32::MAX),
         );
     }
@@ -303,7 +303,7 @@ pub(crate) fn attribute(
     let name = args
         .identifier("attribute")
         .ok_or_else(|| missing("attribute"))?;
-    let display = target.display();
+    let display = target.display(env.global);
     let description = Component::translatable(
         format!("attribute.name.{}", name.rsplit(':').next().unwrap_or("")),
         vec![],

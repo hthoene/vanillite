@@ -368,12 +368,18 @@ fn state_for_connected_players(level: &mut Level, pos: BlockPos, range: f64) -> 
 }
 
 /// A random item of the display loot table (`getRandomDisplayItemFromLootTable`).
-fn random_display_item(level: &mut Level, table: &str) -> ItemStack {
+fn random_display_item(level: &mut Level, pos: BlockPos, table: &str) -> ItemStack {
     let Some(data) = crate::player::play::game_data() else {
         return ItemStack::EMPTY;
     };
     let mut items = Vec::new();
-    data.loot.random_items(table, level.random(), &mut items);
+    // `LootContextParamSets.VAULT`: the origin is the vault's centre.
+    let origin = Vec3::new(
+        f64::from(pos.x) + 0.5,
+        f64::from(pos.y) + 0.5,
+        f64::from(pos.z) + 0.5,
+    );
+    data.random_items(table, Some(origin), level.random(), &mut items);
     if items.is_empty() {
         return ItemStack::EMPTY;
     }
@@ -395,7 +401,7 @@ fn cycle_display_item(level: &mut Level, pos: BlockPos, state: VaultState) {
         .override_loot_table_to_display
         .clone()
         .unwrap_or_else(|| v.loot_table.clone());
-    let item = random_display_item(level, &table);
+    let item = random_display_item(level, pos, &table);
     if let Some(v) = vault_mut(level, pos) {
         v.set_display_item(item);
     }
@@ -553,7 +559,18 @@ pub fn use_item_on(
         return Some(false);
     };
     let mut items = Vec::new();
-    data.loot.random_items(&table, level.random(), &mut items);
+    let origin = Vec3::new(
+        f64::from(pos.x) + 0.5,
+        f64::from(pos.y) + 0.5,
+        f64::from(pos.z) + 0.5,
+    );
+    // `resolveItemsToEject`: `getRandomItems(params)` draws from the table's random sequence.
+    match data.loot.random_sequence(&table) {
+        Some(key) => level.with_random_sequence(key, |r| {
+            data.random_items(&table, Some(origin), r, &mut items);
+        }),
+        None => data.random_items(&table, Some(origin), level.random(), &mut items),
+    }
     if items.is_empty() {
         return Some(false);
     }

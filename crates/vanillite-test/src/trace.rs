@@ -37,6 +37,10 @@
 //! - Block entities (scenarios with `"block_entities": true`, #244): `"block_entities":
 //!   ["x,y,z <nbt>", ...]`, sorted, the block entities of the region with the canonical text of
 //!   their full saved data ([`canonical_nbt`]).
+//! - Feedback (scenarios with `"feedback": true`): `"feedback": ["/<line>", "msg <json>",
+//!   "result <success> <value>", ...]`, in order: each command run before the frame's tick, the
+//!   messages its source got (the components' network JSON in Vanilla's field order) and the
+//!   results it reported (`CommandResultCallback`).
 //! - Light (scenarios with `"light": true`): `"light":[count,level,...]` in every frame, run-length
 //!   pairs over the region in y, z, x order; a level is `sky << 4 | block` as a client sees it.
 
@@ -156,7 +160,8 @@ pub struct Frame {
     pub view: Vec<String>,
     /// `x,y,z <nbt>` of the region's block entities, sorted (`"block_entities"` scenarios).
     pub block_entities: Vec<String>,
-    /// The plain text of the command feedback of the tick, in order (`"feedback"` scenarios).
+    /// The commands before the tick with their messages and results, in order (`"feedback"`
+    /// scenarios).
     pub feedback: Vec<String>,
 }
 
@@ -642,10 +647,7 @@ impl Trace {
                 block_entity_diff(t, &e.block_entities, &a.block_entities, &mut out);
             }
             if e.feedback != a.feedback {
-                out.push(format!(
-                    "tick {t} feedback {:?}, expected {:?}",
-                    a.feedback, e.feedback
-                ));
+                feedback_diff(t, &e.feedback, &a.feedback, &mut out);
             }
             if e.level_rng != a.level_rng {
                 out.push(format!(
@@ -704,6 +706,25 @@ fn view_diff(t: u32, expected: &[String], actual: &[String], out: &mut Vec<Strin
 }
 
 /// The block entities of a frame that differ, by position.
+/// The first differing feedback entries of a frame (the command they belong to first).
+fn feedback_diff(t: u32, expected: &[String], actual: &[String], out: &mut Vec<String>) {
+    let mut command = "";
+    for i in 0..expected.len().max(actual.len()) {
+        let (e, a) = (expected.get(i), actual.get(i));
+        if let Some(c) = e.filter(|e| e.starts_with('/')) {
+            command = c;
+        }
+        if e != a {
+            out.push(format!(
+                "tick {t} feedback of `{command}`: {}, expected {}",
+                a.map_or("nothing", String::as_str),
+                e.map_or("nothing", String::as_str)
+            ));
+            return;
+        }
+    }
+}
+
 fn block_entity_diff(t: u32, expected: &[String], actual: &[String], out: &mut Vec<String>) {
     let split = |e: &String| {
         let (pos, nbt) = e.split_once(' ').unwrap_or((e.as_str(), ""));

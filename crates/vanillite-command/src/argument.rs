@@ -240,7 +240,8 @@ fn parse_entity(
     allow: bool,
     limits: &Limits,
 ) -> Result<EntitySelector, CommandError> {
-    let selector = SelectorParser::new(r, allow, limits).parse()?;
+    let mut selector = SelectorParser::new(r, allow, limits).parse()?;
+    selector.players_arg = players_only;
     if selector.max_results > 1 && single {
         r.set_cursor(0);
         let key = if players_only {

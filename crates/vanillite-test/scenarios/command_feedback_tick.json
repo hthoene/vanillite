@@ -1,0 +1,31 @@
+{
+  "description": "/tick with its feedback (not query: it shows measured tick times): rate (and its bounds), freeze, step while frozen and not, step stop, unfreeze, sprint stop without a sprint; a pig shows when the world is frozen.",
+  "tier": "fast",
+  "dimensions": true,
+  "feedback": true,
+  "region": [[-16, -61, -16], [31, -58, 31]],
+  "ticks": 12,
+  "rules": {"spawn_monsters": "false"},
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [1.5, -60.0, 2.5]},
+    {"name": "pig", "type": "minecraft:pig", "pos": [6.5, -60.0, 6.5], "seed": 3}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "tick rate 40"},
+    {"tick": 1, "op": "command", "command": "tick rate 0.5"},
+    {"tick": 1, "op": "command", "command": "tick rate 10001"},
+    {"tick": 1, "op": "command", "command": "tick rate 20"},
+    {"tick": 1, "op": "command", "command": "tick step"},
+    {"tick": 1, "op": "command", "command": "tick step stop"},
+    {"tick": 1, "op": "command", "command": "tick sprint stop"},
+    {"tick": 1, "op": "command", "command": "tick unfreeze"},
+    {"tick": 2, "op": "command", "command": "tick freeze"},
+    {"tick": 2, "op": "command", "command": "tick freeze"},
+    {"tick": 4, "op": "command", "command": "tick step 2"},
+    {"tick": 5, "op": "command", "command": "tick step stop"},
+    {"tick": 5, "op": "command", "command": "tick step 1t"},
+    {"tick": 8, "op": "command", "command": "tick unfreeze"},
+    {"tick": 8, "op": "command", "command": "tick rate 20.5"},
+    {"tick": 8, "op": "command", "command": "tick rate 20"}
+  ]
+}

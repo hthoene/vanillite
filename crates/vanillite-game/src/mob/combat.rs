@@ -1465,6 +1465,16 @@ pub(crate) fn mob_name(m: &super::MobData) -> Component {
     Component::translatable(m.kind.translation_key(), vec![])
 }
 
+/// `Entity.getCustomName` of any entity: a mob's, a decoration's, a boat's or a minecart's.
+pub fn custom_name_of(ents: &Entities, id: EntityId) -> Option<Component> {
+    ents.mob(id)
+        .and_then(|m| m.custom_name.as_deref())
+        .or_else(|| crate::decoration::custom_name(ents, id))
+        .or_else(|| ents.boat(id).and_then(|b| b.custom_name.as_deref()))
+        .or_else(|| ents.minecart(id).and_then(|m| m.custom_name.as_deref()))
+        .and_then(nbt_name)
+}
+
 /// A custom name as network NBT.
 fn nbt_name(bytes: &[u8]) -> Option<Component> {
     let mut input = bytes;

@@ -145,7 +145,7 @@ pub(crate) fn play_sound(
         |player| {
             Component::translatable_args(
                 "commands.playsound.success.single",
-                vec![literal(&sound), Arg::from(player.display())],
+                vec![literal(&sound), Arg::from(player.display(env.global))],
             )
         },
         |count| {
@@ -267,12 +267,15 @@ pub(crate) fn post_effect(
             .map(|p| p.post_effects.clone())
             .ok_or_else(|| CommandError::new("argument.entity.notfound.player", vec![]))?;
         let message = if effects.is_empty() {
-            Component::translatable("commands.posteffect.list.empty", vec![target.display()])
+            Component::translatable(
+                "commands.posteffect.list.empty",
+                vec![target.display(env.global)],
+            )
         } else {
             Component::translatable_args(
                 "commands.posteffect.list.success",
                 vec![
-                    Arg::from(target.display()),
+                    Arg::from(target.display(env.global)),
                     Arg::Int(i32::try_from(effects.len()).unwrap_or(i32::MAX)),
                     Arg::String(effects.join(", ")),
                 ],
@@ -341,7 +344,7 @@ pub(crate) fn post_effect(
             if with_effect {
                 args.push(effect_arg());
             }
-            args.push(Arg::from(player.display()));
+            args.push(Arg::from(player.display(env.global)));
             Component::translatable_args(single, args)
         },
         |count| {

@@ -1,0 +1,43 @@
+{
+  "description": "Signs edited through the sign editor packets: a placed sign opens the editor and takes its lines (a second update ignored), dyed, dyed again with the same colour, glowing, ink sac, reopened by a click and edited (formatting codes and a long line), waxed (edits refused); a waxed wall sign runs its front and back click commands as the player, unwaxed it opens the editor; a hanging sign; the back side of a new sign.",
+  "tier": "fast",
+  "dimensions": true,
+  "player_state": true,
+  "progress_state": true,
+  "block_entities": true,
+  "rules": {"spawn_monsters": "false"},
+  "region": [[-16, -61, -16], [31, -57, 31]],
+  "ticks": 26,
+  "setup": [
+    {"op": "set", "pos": [0, -60, 0], "block": "minecraft:stone"}
+  ],
+  "entities": [
+    {"name": "alex", "type": "minecraft:player", "client": true, "pos": [2.5, -60.0, 2.5], "rot": [0, 30], "inventory": [[0, "minecraft:oak_sign", 2], [1, "minecraft:spruce_sign", 1], [2, "minecraft:oak_hanging_sign", 1]]}
+  ],
+  "actions": [
+    {"tick": 2, "op": "packet", "entity": "alex", "packet": "use_item_on", "data": "000000008000004fc3013f0000003f8000003f000000000001", "what": "UseItemOn { hand 0, 2 -61 4, up, hit (0.5, 1.0, 0.5) }"},
+    {"tick": 3, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000008000004fc40548656c6c6f0005576f726c64012101", "what": "SignUpdate { 2 -60 4, ['Hello', '', 'World', '!'], front True }"},
+    {"tick": 4, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000008000004fc405416761696e00000001", "what": "SignUpdate { 2 -60 4, ['Again', '', '', ''], front True }"},
+    {"tick": 5, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:red_dye", "count": 1},
+    {"tick": 6, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:red_dye", "count": 1},
+    {"tick": 7, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:glow_ink_sac", "count": 1},
+    {"tick": 8, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:ink_sac", "count": 1},
+    {"tick": 9, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:air", "count": 1},
+    {"tick": 10, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000008000004fc40645646974656406c2a7637265645a616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161017801", "what": "SignUpdate { 2 -60 4, ['Edited', '§cred', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'x'], front True }"},
+    {"tick": 11, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:honeycomb", "count": 1},
+    {"tick": 12, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:air", "count": 1},
+    {"tick": 12, "op": "use", "entity": "alex", "pos": [2, -60, 4], "face": "up", "item": "minecraft:blue_dye", "count": 1},
+    {"tick": 13, "op": "command", "command": "setblock 4 -60 2 minecraft:oak_wall_sign[facing=west]"},
+    {"tick": 13, "op": "command", "command": "data merge block 4 -60 2 {is_waxed:1b,front_text:{messages:[{text:\"Run\",click_event:{action:\"run_command\",command:\"setblock 0 -60 0 minecraft:gold_block\"}},{text:\"\",click_event:{action:\"run_command\",command:\"say @s clicked\"}},\"\",\"\"]},back_text:{messages:[{text:\"Back\",click_event:{action:\"run_command\",command:\"setblock 0 -60 1 minecraft:diamond_block\"}},\"\",\"\",\"\"]}}"},
+    {"tick": 14, "op": "use", "entity": "alex", "pos": [4, -60, 2], "face": "west", "item": "minecraft:air", "count": 1},
+    {"tick": 15, "op": "command", "command": "data merge block 4 -60 2 {is_waxed:0b}"},
+    {"tick": 16, "op": "use", "entity": "alex", "pos": [4, -60, 2], "face": "west", "item": "minecraft:air", "count": 1},
+    {"tick": 17, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000010000002fc40457616c6c00000001", "what": "SignUpdate { 4 -60 2, ['Wall', '', '', ''], front True }"},
+    {"tick": 18, "op": "command", "command": "setblock 0 -59 4 minecraft:oak_planks"},
+    {"tick": 19, "op": "packet", "entity": "alex", "packet": "use_item_on", "data": "000000000000004fc5003f000000000000003f000000000002", "what": "UseItemOn { hand 0, 0 -59 4, down, hit (0.5, 0.0, 0.5) }"},
+    {"tick": 20, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000000000004fc40448616e6703696e67000001", "what": "SignUpdate { 0 -60 4, ['Hang', 'ing', '', ''], front True }"},
+    {"tick": 21, "op": "packet", "entity": "alex", "packet": "set_carried_item", "data": "0001", "what": "SetCarriedItem { 1 }"},
+    {"tick": 22, "op": "packet", "entity": "alex", "packet": "use_item_on", "data": "000000008000006fc3013f0000003f8000003f000000000003", "what": "UseItemOn { hand 0, 2 -61 6, up, hit (0.5, 1.0, 0.5) }"},
+    {"tick": 23, "op": "packet", "entity": "alex", "packet": "sign_update", "data": "0000008000006fc40a4261636b20736964653f00000000", "what": "SignUpdate { 2 -60 6, ['Back side?', '', '', ''], front False }"}
+  ]
+}

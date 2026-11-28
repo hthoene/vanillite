@@ -19,8 +19,15 @@ use vanillite_nbt::{Compound, List, Tag};
 pub const MAX_DEPTH: usize = 256;
 
 /// Why a component could not be decoded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TextError(pub &'static str);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextError(pub std::borrow::Cow<'static, str>);
+
+impl TextError {
+    /// An error with a fixed reason.
+    pub const fn new(reason: &'static str) -> Self {
+        Self(std::borrow::Cow::Borrowed(reason))
+    }
+}
 
 impl fmt::Display for TextError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -272,7 +279,7 @@ impl Style {
     pub fn try_from_nbt(tag: &Tag) -> Result<Self> {
         let v = NbtIn(tag);
         if !v.is_map() {
-            return Err(TextError("not a map"));
+            return Err(TextError::new("not a map"));
         }
         let mut style = decode_style(&v)?;
         if let Some(e) = v.field("hover_event") {
@@ -1129,6 +1136,8 @@ fn hover_to_nbt(e: &HoverEvent) -> Tag {
 /// An ordered JSON tree (Gson keeps insertion order; `serde_json` maps here do not).
 enum Json {
     Scalar(Value),
+    /// A float or double as Gson writes it (`Float.toString`, `Double.toString`).
+    Decimal(String),
     Array(Vec<Json>),
     Object(Vec<(&'static str, Json)>),
     /// An object with owned keys (opaque NBT compounds).
@@ -1143,6 +1152,7 @@ impl Json {
     fn write(&self, out: &mut String) {
         match self {
             Self::Scalar(v) => out.push_str(&v.to_string()),
+            Self::Decimal(v) => out.push_str(v),
             Self::Array(items) => {
                 out.push('[');
                 for (i, item) in items.iter().enumerate() {
@@ -1184,6 +1194,7 @@ impl Json {
 fn json_value(j: &Json) -> Value {
     match j {
         Json::Scalar(v) => v.clone(),
+        Json::Decimal(v) => serde_json::from_str(v).unwrap_or(Value::Null),
         Json::Array(items) => Value::Array(items.iter().map(json_value).collect()),
         Json::Object(fields) => Value::Object(
             fields
@@ -1200,8 +1211,13 @@ fn json_value(j: &Json) -> Value {
     }
 }
 
-fn json_f64(v: f64) -> Json {
-    Json::Scalar(Number::from_f64(v).map_or(Value::Null, Value::Number))
+/// A finite float in Java's form; others are `null` like `serde_json` writes them.
+fn json_decimal(text: String, finite: bool) -> Json {
+    if finite {
+        Json::Decimal(text)
+    } else {
+        Json::Scalar(Value::Null)
+    }
 }
 
 /// `NbtOps` → `JsonOps` conversion of opaque data.
@@ -1212,8 +1228,8 @@ fn tag_to_json(tag: &Tag) -> Json {
         Tag::Short(v) => num(Number::from(*v)),
         Tag::Int(v) => num(Number::from(*v)),
         Tag::Long(v) => num(Number::from(*v)),
-        Tag::Float(v) => json_f64(f64::from(*v)),
-        Tag::Double(v) => json_f64(*v),
+        Tag::Float(v) => json_decimal(java_float(*v), v.is_finite()),
+        Tag::Double(v) => json_decimal(java_double(*v), v.is_finite()),
         Tag::String(s) => Json::str(s),
         Tag::ByteArray(a) => Json::Array(a.iter().map(|v| num(Number::from(*v))).collect()),
         Tag::IntArray(a) => Json::Array(a.iter().map(|v| num(Number::from(*v))).collect()),
@@ -1328,8 +1344,8 @@ fn arg_to_json(arg: &Arg) -> Json {
         Arg::Short(v) => num(Number::from(*v)),
         Arg::Int(v) => num(Number::from(*v)),
         Arg::Long(v) => num(Number::from(*v)),
-        Arg::Float(v) => json_f64(f64::from(*v)),
-        Arg::Double(v) => json_f64(*v),
+        Arg::Float(v) => json_decimal(java_float(*v), v.is_finite()),
+        Arg::Double(v) => json_decimal(java_double(*v), v.is_finite()),
         Arg::Bool(v) => Json::Scalar(Value::Bool(*v)),
     }
 }
@@ -1652,7 +1668,7 @@ fn identifier(s: &str) -> Result<String> {
         .chars()
         .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_' | '-' | '.' | '/'));
     if !ns_ok || !path_ok {
-        return Err(TextError("invalid identifier"));
+        return Err(TextError::new("invalid identifier"));
     }
     let ns = if ns.is_empty() { "minecraft" } else { ns };
     Ok(format!("{ns}:{path}"))
@@ -1661,7 +1677,7 @@ fn identifier(s: &str) -> Result<String> {
 /// `ExtraCodecs.CHAT_STRING`: no `§`, no control characters, no DEL.
 fn chat_string(s: &str) -> Result<String> {
     if s.chars().any(|c| c == '§' || c < ' ' || c == '\u{7f}') {
-        return Err(TextError("illegal characters in command"));
+        return Err(TextError::new("illegal characters in command"));
     }
     Ok(s.to_owned())
 }
@@ -1669,14 +1685,16 @@ fn chat_string(s: &str) -> Result<String> {
 fn req_str<I: Input>(v: &I, name: &str) -> Result<String> {
     v.field(name)
         .and_then(|f| f.as_str().map(str::to_owned))
-        .ok_or(TextError("missing string field"))
+        .ok_or(TextError::new("missing string field"))
 }
 
 /// `optionalFieldOf`: absent is fine, present but invalid is an error.
 fn opt<I: Input, T>(v: &I, name: &str, f: impl FnOnce(&I) -> Option<T>) -> Result<Option<T>> {
     match v.field(name) {
         None => Ok(None),
-        Some(x) => f(&x).map(Some).ok_or(TextError("invalid optional field")),
+        Some(x) => f(&x)
+            .map(Some)
+            .ok_or(TextError::new("invalid optional field")),
     }
 }
 
@@ -1691,14 +1709,14 @@ fn opt_component<I: Input>(v: &I, name: &str, depth: usize) -> Result<Option<Box
 fn decode<I: Input>(v: &I, depth: usize) -> Result<Component> {
     let mut out = Vec::with_capacity(1);
     decode_into(v, depth, &mut out)?;
-    out.pop().ok_or(TextError("not a component"))
+    out.pop().ok_or(TextError::new("not a component"))
 }
 
 /// Decodes one component and pushes it to `out`. Recursion goes through this small frame only,
 /// so nesting up to [`MAX_DEPTH`] fits on a network thread's stack.
 fn decode_into<I: Input>(v: &I, depth: usize, out: &mut Vec<Component>) -> Result<()> {
     if depth > MAX_DEPTH {
-        return Err(TextError("too deeply nested"));
+        return Err(TextError::new("too deeply nested"));
     }
     let next = depth.saturating_add(1);
     if let Some(s) = v.as_str() {
@@ -1712,20 +1730,20 @@ fn decode_into<I: Input>(v: &I, depth: usize, out: &mut Vec<Component>) -> Resul
             decode_into(item, next, &mut parts)?;
         }
         let mut parts = parts.into_iter();
-        let mut first = parts.next().ok_or(TextError("empty component list"))?;
+        let mut first = parts.next().ok_or(TextError::new("empty component list"))?;
         first.extra.extend(parts);
         out.push(first);
         return Ok(());
     }
     if !v.is_map() {
-        return Err(TextError("not a component"));
+        return Err(TextError::new("not a component"));
     }
     let content = Box::new(decode_content(v, next)?);
     let mut extra = Vec::new();
     if let Some(e) = v.field("extra") {
-        let items = e.as_list().ok_or(TextError("extra is not a list"))?;
+        let items = e.as_list().ok_or(TextError::new("extra is not a list"))?;
         if items.is_empty() {
-            return Err(TextError("extra is empty"));
+            return Err(TextError::new("extra is empty"));
         }
         extra.reserve(items.len());
         for item in &items {
@@ -1758,16 +1776,16 @@ const CONTENT_TYPES: [&str; 7] = [
 #[inline(never)]
 fn decode_content<I: Input>(v: &I, depth: usize) -> Result<Content> {
     if let Some(t) = v.field("type") {
-        let name = t.as_str().ok_or(TextError("type is not a string"))?;
+        let name = t.as_str().ok_or(TextError::new("type is not a string"))?;
         if !CONTENT_TYPES.contains(&name) {
-            return Err(TextError("unknown content type"));
+            return Err(TextError::new("unknown content type"));
         }
         return decode_content_of(v, name, depth);
     }
     CONTENT_TYPES
         .iter()
         .find_map(|name| decode_content_of(v, name, depth).ok())
-        .ok_or(TextError("no content"))
+        .ok_or(TextError::new("no content"))
 }
 
 #[inline(never)]
@@ -1784,7 +1802,7 @@ fn decode_content_of<I: Input>(v: &I, kind: &str, depth: usize) -> Result<Conten
         },
         "keybind" => Content::Keybind(req_str(v, "keybind")?),
         "score" => {
-            let s = v.field("score").ok_or(TextError("missing score"))?;
+            let s = v.field("score").ok_or(TextError::new("missing score"))?;
             Content::Score {
                 name: req_str(&s, "name")?,
                 objective: req_str(&s, "objective")?,
@@ -1799,7 +1817,7 @@ fn decode_content_of<I: Input>(v: &I, kind: &str, depth: usize) -> Result<Conten
             let interpret = lenient_bool("interpret");
             let plain = lenient_bool("plain");
             if interpret && plain {
-                return Err(TextError("interpret and plain are both on"));
+                return Err(TextError::new("interpret and plain are both on"));
             }
             Content::Nbt {
                 path: req_str(v, "nbt")?,
@@ -1813,7 +1831,7 @@ fn decode_content_of<I: Input>(v: &I, kind: &str, depth: usize) -> Result<Conten
             info: decode_object(v)?,
             fallback: opt_component(v, "fallback", depth)?,
         },
-        _ => return Err(TextError("unknown content type")),
+        _ => return Err(TextError::new("unknown content type")),
     })
 }
 
@@ -1825,15 +1843,15 @@ fn decode_nbt_source<I: Input>(v: &I) -> Result<NbtSource> {
             "entity" => NbtSource::Entity(req_str(v, "entity")?),
             "block" => NbtSource::Block(req_str(v, "block")?),
             "storage" => NbtSource::Storage(identifier(&req_str(v, "storage")?)?),
-            _ => return Err(TextError("unknown nbt source")),
+            _ => return Err(TextError::new("unknown nbt source")),
         })
     };
     match v.field("source") {
-        Some(s) => of(s.as_str().ok_or(TextError("source is not a string"))?),
+        Some(s) => of(s.as_str().ok_or(TextError::new("source is not a string"))?),
         None => kinds
             .iter()
             .find_map(|k| of(k).ok())
-            .ok_or(TextError("no nbt source")),
+            .ok_or(TextError::new("no nbt source")),
     }
 }
 
@@ -1852,19 +1870,19 @@ fn decode_object<I: Input>(v: &I) -> Result<ObjectInfo> {
                 player: OpaqueNbt(
                     v.field("player")
                         .and_then(|p| p.to_tag())
-                        .ok_or(TextError("missing player"))?,
+                        .ok_or(TextError::new("missing player"))?,
                 ),
                 hat: opt(v, "hat", Input::as_bool)?.unwrap_or(true),
             },
-            _ => return Err(TextError("unknown object type")),
+            _ => return Err(TextError::new("unknown object type")),
         })
     };
     match v.field("object") {
-        Some(t) => of(t.as_str().ok_or(TextError("object is not a string"))?),
+        Some(t) => of(t.as_str().ok_or(TextError::new("object is not a string"))?),
         None => ["atlas", "player"]
             .iter()
             .find_map(|k| of(k).ok())
-            .ok_or(TextError("no object")),
+            .ok_or(TextError::new("no object")),
     }
 }
 
@@ -1875,7 +1893,7 @@ fn decode_args<I: Input>(v: &I, depth: usize) -> Result<Vec<Arg>> {
     let Some(w) = v.field("with") else {
         return Ok(Vec::new());
     };
-    let items = w.as_list().ok_or(TextError("with is not a list"))?;
+    let items = w.as_list().ok_or(TextError::new("with is not a list"))?;
     let mut args = Vec::with_capacity(items.len());
     let mut parts = Vec::with_capacity(1);
     for item in &items {
@@ -1894,10 +1912,22 @@ fn decode_args<I: Input>(v: &I, depth: usize) -> Result<Vec<Arg>> {
     Ok(args)
 }
 
+/// `TextColor.parseColor`'s error.
+#[cold]
+fn invalid_color(color: &str) -> TextError {
+    TextError(std::borrow::Cow::Owned(match color.strip_prefix('#') {
+        Some(hex) if i32::from_str_radix(hex, 16).is_ok() => {
+            format!("Color value out of range: {color}")
+        }
+        Some(_) => format!("Invalid color value: {color}"),
+        None => format!("Invalid color name: {color}"),
+    }))
+}
+
 #[inline(never)]
 fn decode_style<I: Input>(v: &I) -> Result<Style> {
     let color = match opt(v, "color", |c| c.as_str().map(str::to_owned))? {
-        Some(c) => Some(Color::parse(&c).ok_or(TextError("invalid color"))?),
+        Some(c) => Some(Color::parse(&c).ok_or_else(|| invalid_color(&c))?),
         None => None,
     };
     let int = |x: &I| x.as_i64().and_then(|v| i32::try_from(v).ok());
@@ -1931,7 +1961,7 @@ fn decode_click<I: Input>(v: &I) -> Result<ClickEvent> {
             let url = req_str(v, "url")?;
             let lower = url.to_ascii_lowercase();
             if !lower.starts_with("http://") && !lower.starts_with("https://") {
-                return Err(TextError("unsupported URL scheme"));
+                return Err(TextError::new("unsupported URL scheme"));
             }
             ClickEvent::OpenUrl(url)
         }
@@ -1941,21 +1971,21 @@ fn decode_click<I: Input>(v: &I) -> Result<ClickEvent> {
         "show_dialog" => ClickEvent::ShowDialog(OpaqueNbt(
             v.field("dialog")
                 .and_then(|d| d.to_tag())
-                .ok_or(TextError("missing dialog"))?,
+                .ok_or(TextError::new("missing dialog"))?,
         )),
         "change_page" => ClickEvent::ChangePage(
             v.field("page")
                 .and_then(|p| p.as_i64())
                 .and_then(|p| i32::try_from(p).ok())
                 .filter(|p| *p >= 1)
-                .ok_or(TextError("invalid page"))?,
+                .ok_or(TextError::new("invalid page"))?,
         ),
         "copy_to_clipboard" => ClickEvent::CopyToClipboard(req_str(v, "value")?),
         "custom" => ClickEvent::Custom {
             id: identifier(&req_str(v, "id")?)?,
             payload: opt(v, "payload", |p| p.to_tag())?.map(OpaqueNbt),
         },
-        _ => return Err(TextError("unknown click action")),
+        _ => return Err(TextError::new("unknown click action")),
     })
 }
 
@@ -1965,9 +1995,9 @@ fn decode_hover<I: Input>(v: &I, depth: usize) -> Result<Box<HoverEvent>> {
     let mut parts = Vec::with_capacity(1);
     match action.as_str() {
         "show_text" => {
-            let value = v.field("value").ok_or(TextError("missing value"))?;
+            let value = v.field("value").ok_or(TextError::new("missing value"))?;
             decode_into(&value, depth, &mut parts)?;
-            let text = parts.pop().ok_or(TextError("missing value"))?;
+            let text = parts.pop().ok_or(TextError::new("missing value"))?;
             Ok(Box::new(HoverEvent::ShowText(text)))
         }
         "show_entity" => {
@@ -1982,7 +2012,7 @@ fn decode_hover<I: Input>(v: &I, depth: usize) -> Result<Box<HoverEvent>> {
             }))
         }
         "show_item" => decode_item_tooltip(v),
-        _ => Err(TextError("unknown hover action")),
+        _ => Err(TextError::new("unknown hover action")),
     }
 }
 
@@ -1992,7 +2022,7 @@ fn decode_entity_tooltip<I: Input>(v: &I) -> Result<(String, u128)> {
         identifier(&req_str(v, "id")?)?,
         v.field("uuid")
             .and_then(|u| u.as_uuid())
-            .ok_or(TextError("invalid uuid"))?,
+            .ok_or(TextError::new("invalid uuid"))?,
     ))
 }
 
@@ -2004,7 +2034,7 @@ fn decode_item_tooltip<I: Input>(v: &I) -> Result<Box<HoverEvent>> {
             Some(c) => i32::try_from(c)
                 .ok()
                 .filter(|c| (1..=99).contains(c))
-                .ok_or(TextError("invalid count"))?,
+                .ok_or(TextError::new("invalid count"))?,
             None => 1,
         },
         components: opt(v, "components", |c| c.to_tag())?

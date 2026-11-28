@@ -47,6 +47,8 @@ pub(crate) enum Callback {
     Condition(Arc<Condition>),
     /// Counts the successful results (a command block's `successCount`).
     Count(Arc<AtomicI32>),
+    /// Parity scenarios with `"feedback"`: keeps `result <success> <value>`.
+    Record(Arc<Mutex<Vec<String>>>),
 }
 
 impl Callback {
@@ -95,6 +97,10 @@ impl Callback {
                 );
                 next.fire(env, success, value);
             }
+            Callback::Record(out) => out
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(format!("result {success} {value}")),
             Callback::Count(count) => {
                 if success {
                     count.fetch_add(1, Ordering::Relaxed);
@@ -733,7 +739,10 @@ impl Engine {
         let args = &line.parsed.args;
         let found = functions::resolve(env.global, args, "name")?;
         if found.is_empty() {
-            let name = functions::name_arg(args, "name");
+            // `Component.translationArg(id)`: the id without `#`.
+            let name = functions::name_arg(args, "name")
+                .trim_start_matches('#')
+                .to_owned();
             return Err(CommandError::new(
                 "commands.function.scheduled.no_functions",
                 vec![ErrArg::Str(name)],

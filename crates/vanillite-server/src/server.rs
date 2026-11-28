@@ -2724,8 +2724,8 @@ impl Server {
     }
 
     /// Runs a command as the console at `pos` of the overworld now (parity scenarios) and
-    /// returns the plain text of the console's messages (sequential worlds only: a world
-    /// thread runs it later).
+    /// returns what the console got (`msg <network JSON>`, `result <success> <value>`;
+    /// sequential worlds only: a world thread runs it later).
     pub fn command_at(&mut self, line: &str, pos: vanillite_base::Vec3) -> Vec<String> {
         let global = Arc::clone(&self.global);
         let line = line.to_owned();

@@ -74,6 +74,19 @@ pub(super) fn locate(
         LocateOp::Structure => {
             let arg = resource_or_tag(args, "structure")?;
             let ids = match arg {
+                // `getHolders`: an id the registry does not have is invalid.
+                ResourceOrTag::Resource(id)
+                    if !vanillite_command::Source::resource_exists(
+                        source,
+                        "minecraft:worldgen/structure",
+                        id,
+                    ) =>
+                {
+                    return Err(CommandError::new(
+                        "commands.locate.structure.invalid",
+                        vec![ErrArg::Str(printable(arg))],
+                    ));
+                }
                 ResourceOrTag::Resource(id) => vec![id.clone()],
                 ResourceOrTag::Tag(tag) => {
                     let tags = env.global.systems.tags();

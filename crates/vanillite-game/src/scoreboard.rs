@@ -195,13 +195,15 @@ impl Objective {
     /// `getFormattedDisplayName`: the display name with a hover of the name, in brackets.
     pub fn formatted_display_name(&self) -> Component {
         use vanillite_protocol::text::HoverEvent;
-        Component::text("[")
-            .append(
+        // `ComponentUtils.wrapInSquareBrackets`.
+        Component::translatable(
+            "chat.square_brackets",
+            vec![
                 self.display_name
                     .clone()
                     .hover(HoverEvent::ShowText(Component::text(self.name.as_str()))),
-            )
-            .append(Component::text("]"))
+            ],
+        )
     }
 }
 

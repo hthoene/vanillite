@@ -474,7 +474,7 @@ pub(crate) fn give(
         on_player(env, player, move |level, id| {
             give_to(level, id, &stack, count, max)
         });
-        tracker.track(&player.display(), 1);
+        tracker.track(&player.display(env.global), 1);
     }
     tracker.feedback(source, env, true, false, None, |one, n, _| match one {
         Some(player) => Component::translatable_args(
@@ -901,7 +901,7 @@ pub(crate) fn clear(
                 0
             }
         };
-        tracker.track(&player.display(), count);
+        tracker.track(&player.display(env.global), count);
     }
     if tracker.total() == 0 {
         return Err(match tracker.pick(true) {
@@ -1383,7 +1383,7 @@ pub(crate) fn item(
         if changed > 0 {
             sync_inventory(entities, id);
         }
-        tracker.track(&target.display(), changed);
+        tracker.track(&target.display(env.global), changed);
     }
     if selected == 0 {
         return Err(error(
@@ -1471,7 +1471,7 @@ fn modify_items(
         if changed > 0 {
             sync_inventory(&mut env.level.entities, id);
         }
-        tracker.track(&target.display(), changed);
+        tracker.track(&target.display(env.global), changed);
     }
     if selected == 0 {
         return Err(error(
@@ -1587,7 +1587,7 @@ pub(crate) fn enchant(
     let stored = DATA_COMPONENT_TYPE.id("minecraft:stored_enchantments");
     let mut tracker = Tracker::<Component>::default();
     for target in &targets {
-        let display = target.display();
+        let display = target.display(env.global);
         if target.kind.info().attributes.is_empty() {
             if single {
                 return Err(error(

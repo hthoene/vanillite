@@ -130,7 +130,8 @@ pub trait ScenarioWorld {
         Err(format!("this world has no effects for `{}`", effect.entity))
     }
     /// Runs a `command` action: the line as the server at the origin of the overworld.
-    /// Returns the plain text of the messages the server got (its `System chat` lines).
+    /// Returns what the server's source got: `msg <network JSON>` per message and
+    /// `result <success> <value>` per result.
     fn command(&mut self, line: &str) -> Result<Vec<String>, String> {
         Err(format!("this world runs no commands (`{line}`)"))
     }

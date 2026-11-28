@@ -314,7 +314,7 @@ pub(crate) fn tick(
     };
     // `PlayerAdvancements.award`: the rewards and the announcement of what completed, then
     // `flushDirty` at the end of `ServerPlayer.tick` (the progress and its toasts).
-    for id in order {
+    for &id in &order {
         let completed = env
             .level
             .entities
@@ -323,10 +323,79 @@ pub(crate) fn tick(
         if completed {
             grant_rewards(&mut env, id);
         }
+    }
+    settle(&mut env, dimension);
+    for id in order {
         if let Some(player) = env.level.entities.player_mut(id)
             && let Some(packet) = player.advancements.flush(true)
         {
             player.connection.sink.send(&packet);
+        }
+    }
+}
+
+/// Rounds of the triggers that rewards fire at most ([`settle`]).
+const SETTLE_ROUNDS: usize = 16;
+
+/// `CriterionTrigger.trigger` runs at once in Vanilla: the triggers that rewards (unlocked
+/// recipes) or commands queued fire now, before anything else changes the progress, and
+/// what they complete is rewarded in turn.
+pub(crate) fn settle(env: &mut Env<'_>, dimension: &str) {
+    for _ in 0..SETTLE_ROUNDS {
+        let pending: Vec<EntityId> = env
+            .level
+            .entities
+            .players
+            .iter()
+            .filter(|(_, p)| p.advancements.has_events())
+            .map(|(id, _)| id)
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+        let global = env.global;
+        let tags = global.systems.tags();
+        let no_biomes = Vec::new();
+        let biomes = global
+            .registries
+            .get("minecraft:worldgen/biome")
+            .unwrap_or(&no_biomes);
+        let spectators: Vec<EntityId> = env
+            .level
+            .entities
+            .players
+            .iter()
+            .filter(|(_, p)| p.game_mode == GameMode::Spectator)
+            .map(|(id, _)| id)
+            .collect();
+        let mut players = std::mem::take(&mut env.level.entities.players);
+        {
+            let ctx = Checks {
+                level: &*env.level,
+                global,
+                dimension,
+                tags: &tags,
+                biomes,
+                spectators: &spectators,
+            };
+            let structures = RefCell::new(StructureIndex::default());
+            for (id, player) in players.iter_mut() {
+                if pending.contains(&id) {
+                    process_events(&ctx, &structures, id, player, Vec::new());
+                }
+            }
+        }
+        env.level.entities.players = players;
+        drop(tags);
+        for id in pending {
+            let completed = env
+                .level
+                .entities
+                .player(id)
+                .is_some_and(|p| p.advancements.has_completed());
+            if completed {
+                grant_rewards(env, id);
+            }
         }
     }
 }
@@ -352,17 +421,9 @@ fn check_player(
     id: EntityId,
     player: &mut PlayerData,
 ) {
-    let Checks {
-        level,
-        global,
-        dimension,
-        tags,
-        biomes,
-        spectators,
-    } = *ctx;
-    let Some(entity) = level.entities.store.get(id) else {
+    if ctx.level.entities.store.get(id).is_none() {
         return;
-    };
+    }
     for award in std::mem::take(&mut player.inventory.awards) {
         award.apply(player);
     }
@@ -386,6 +447,29 @@ fn check_player(
     if player.survival.tick_count % 20 == 0 && a.listens(TriggerKind::LOCATION) {
         extra.push(Event::Location);
     }
+    process_events(ctx, structures, id, player, extra);
+}
+
+/// Fires the player's queued triggers and `extra`.
+fn process_events(
+    ctx: &Checks<'_>,
+    structures: &RefCell<StructureIndex>,
+    id: EntityId,
+    player: &mut PlayerData,
+    extra: Vec<Event>,
+) {
+    let Checks {
+        level,
+        global,
+        dimension,
+        tags,
+        biomes,
+        spectators,
+    } = *ctx;
+    let Some(entity) = level.entities.store.get(id) else {
+        return;
+    };
+    let a = &player.advancements;
     if !extra.is_empty() || a.has_events() {
         let name = &player.profile.name;
         let team = global

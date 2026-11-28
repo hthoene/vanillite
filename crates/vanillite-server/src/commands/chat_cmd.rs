@@ -154,7 +154,9 @@ fn title(
         TitleOp::Times => "commands.title.times",
     };
     tracker.feedback(source, env, true, false, None, |one, n, _| match one {
-        Some(player) => Component::translatable(format!("{base}.single"), vec![player.display()]),
+        Some(player) => {
+            Component::translatable(format!("{base}.single"), vec![player.display(env.global)])
+        }
         None => Component::translatable_args(format!("{base}.multiple"), vec![Arg::Int(n)]),
     })
 }
@@ -357,7 +359,9 @@ fn dialog(
         "commands.dialog.clear"
     };
     tracker.feedback(source, env, true, false, None, |one, n, _| match one {
-        Some(player) => Component::translatable(format!("{base}.single"), vec![player.display()]),
+        Some(player) => {
+            Component::translatable(format!("{base}.single"), vec![player.display(env.global)])
+        }
         None => Component::translatable_args(format!("{base}.multiple"), vec![Arg::Int(n)]),
     })
 }

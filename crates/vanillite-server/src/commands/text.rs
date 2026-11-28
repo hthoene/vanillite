@@ -128,7 +128,11 @@ impl Context<'_, '_> {
             }
             Content::Selector { pattern, separator } => {
                 let separator = self.separator(separator.as_deref(), depth)?;
-                let names = self.select(pattern)?.iter().map(Target::display).collect();
+                let names = self
+                    .select(pattern)?
+                    .iter()
+                    .map(|t| t.display(self.env.global))
+                    .collect();
                 Ok(join(names, separator))
             }
             Content::Score { name, objective } => self.score(name, objective),

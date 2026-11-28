@@ -403,7 +403,7 @@ pub(crate) fn player_source(
         world,
         entity.pos(),
         (entity.rot().y_rot, entity.rot().x_rot),
-        Some(target.source_entity()),
+        Some(target.source_entity(global)),
     ))
 }
 
@@ -461,7 +461,10 @@ fn send_error(source: &CommandSource, global: &Global, error: &CommandError, com
     if context.ellipsis {
         line = line.append(Component::text("..."));
     }
-    line = line.append(Component::text(context.before));
+    // `MutableComponent.append(String)` leaves out an empty text.
+    if !context.before.is_empty() {
+        line = line.append(Component::text(context.before));
+    }
     if !context.after.is_empty() {
         line = line.append(
             Component::text(context.after)
@@ -627,23 +630,35 @@ fn collect_signed_arguments(
 /// A console command, run on the overworld.
 /// Runs a command line as the server (permission level 4) at `pos` in the overworld on
 /// `level`, outside a running server (parity scenarios): the execution is the console's;
-/// a line that does not parse is an error. Returns the plain text of the console's messages
-/// (what the console would log as `System chat: <text>`).
+/// a line that does not parse is an error (with `errors_as_feedback` its messages, like on
+/// the console). Returns what the console got: `msg <network JSON>` per message and
+/// `result <success> <value>` per result, in order.
 pub fn run_command_on_level(
     global: &Global,
     level: &mut vanillite_game::level::Level,
     pos: vanillite_base::Vec3,
     line: &str,
+    errors_as_feedback: bool,
 ) -> Result<Vec<String>, String> {
     let arc = global.arc().ok_or("the server is gone")?;
     let world = WorldId(0);
     let mut source = CommandSource::new(arc, SourceKind::Console, 4, world, pos, (0.0, 0.0), None);
     let feedback = Arc::new(std::sync::Mutex::new(Vec::new()));
     source.feedback = Some(Arc::clone(&feedback));
-    let parsed = global
-        .commands()
-        .parse_command(line.trim().trim_start_matches('/'), &source)
-        .map_err(|e| format!("`{line}`: {}", error_message(&e).plain()))?;
+    source.callback = engine::Callback::Record(Arc::clone(&feedback));
+    let command = line.trim().trim_start_matches('/');
+    let parsed = match global.commands().parse_command(command, &source) {
+        Ok(parsed) => parsed,
+        Err(e) if errors_as_feedback => {
+            send_error(&source, global, &e, command);
+            return Ok(std::mem::take(
+                &mut feedback
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            ));
+        }
+        Err(e) => return Err(format!("`{line}`: {}", error_message(&e).plain())),
+    };
     let mut env = Env {
         level,
         global,
@@ -732,7 +747,7 @@ impl vanillite_game::block::technical::command_block::CommandRunner for BlockCom
         let entity = run
             .entity
             .and_then(|id| select::local(&level.entities, self.world, id))
-            .map(|t| t.source_entity());
+            .map(|t| t.source_entity(&global));
         let successes = Arc::new(std::sync::atomic::AtomicI32::new(0));
         let source = CommandSource::new(
             Arc::clone(&global),
@@ -802,7 +817,8 @@ impl vanillite_game::block::technical::command_block::CommandRunner for BlockCom
         };
         // `createCommandSourceStack().withPermission(GAMEMASTER).withSuppressedOutput()
         // .withEntity(entity).withLevel(level).withPosition(pos).withRotation(rot)`.
-        let entity = select::local(&level.entities, self.world, entity).map(|t| t.source_entity());
+        let entity =
+            select::local(&level.entities, self.world, entity).map(|t| t.source_entity(&global));
         let mut source = CommandSource::new(
             Arc::clone(&global),
             SourceKind::Server,
@@ -894,6 +910,9 @@ fn run_server_command_at(
     };
     let mut source = CommandSource::new(arc, kind, 4, world.id(), pos, (0.0, 0.0), None);
     source.feedback = feedback;
+    if let Some(out) = &source.feedback {
+        source.callback = engine::Callback::Record(Arc::clone(out));
+    }
     let id = world.id();
     let mut env = Env {
         level: world.level_mut(),

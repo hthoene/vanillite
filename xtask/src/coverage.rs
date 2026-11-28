@@ -606,15 +606,40 @@ fn parse(xml: &str) -> Vec<Class> {
     classes
 }
 
-/// Leaves out code a server never runs in game: the creative tabs (client), the registry
-/// bootstraps of data generation (`bootstrap(BootstrapContext)` and its lambdas), `toString` and
-/// crash report details. Returns the rest and what was left out.
+/// Classes (with their inner classes) a release server never runs: the hard-coded trade
+/// lists only the data generator reads (the game reads the `villager_trade` registry), the
+/// development commands `Commands` registers only in the IDE or with debug flags, and the
+/// client half of block entities.
+const NOT_IN_GAME: &[&str] = &[
+    "net/minecraft/world/item/trading/VillagerTrades",
+    "net/minecraft/world/item/trading/TradeRebalanceVillagerTrades",
+    "net/minecraft/world/item/trading/VillagerTrade$Builder",
+    "net/minecraft/server/commands/ChaseCommand",
+    "net/minecraft/server/commands/RaidCommand",
+    "net/minecraft/server/commands/DebugPathCommand",
+    "net/minecraft/server/commands/DebugMobSpawningCommand",
+    "net/minecraft/server/commands/WardenSpawnTrackerCommand",
+    "net/minecraft/server/commands/SpawnArmorTrimsCommand",
+    "net/minecraft/server/commands/ServerPackCommand",
+    "net/minecraft/server/commands/DebugConfigCommand",
+    "net/minecraft/world/level/block/entity/vault/VaultBlockEntity$Client",
+];
+
+/// Leaves out code a server never runs in game: the creative tabs (client), [`NOT_IN_GAME`],
+/// the registry bootstraps of data generation (`bootstrap(BootstrapContext)` and its
+/// lambdas), `toString` and crash report details. Returns the rest and what was left out.
 fn exclude(classes: Vec<Class>) -> (Vec<Class>, Counts) {
     let mut excluded = Counts::default();
     let mut kept = Vec::with_capacity(classes.len());
     for mut c in classes {
-        if c.name
-            .starts_with("net/minecraft/world/item/CreativeModeTab")
+        let not_in_game = NOT_IN_GAME.iter().any(|n| {
+            c.name
+                .strip_prefix(n)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('$'))
+        });
+        if not_in_game
+            || c.name
+                .starts_with("net/minecraft/world/item/CreativeModeTab")
         {
             excluded.add(&c.counts);
             continue;

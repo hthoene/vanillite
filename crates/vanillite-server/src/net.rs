@@ -258,6 +258,9 @@ pub(crate) fn prepare(
         "minecraft:enchantment",
         "minecraft:dialog",
         "minecraft:worldgen/biome",
+        // Checked by command arguments (`ResourceArgument`, `/locate structure`).
+        "minecraft:damage_type",
+        "minecraft:worldgen/structure",
     ]
     .into_iter()
     .map(|name| {

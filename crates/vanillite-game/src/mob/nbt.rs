@@ -604,6 +604,7 @@ pub fn load_orb(tag: &Compound) -> Option<(Vec3, Vec3, u128, ExperienceOrbData)>
             random_state: vanillite_base::random::LegacyRandom::new(crate::mob::new_unique_seed())
                 .state(),
             fall_distance: double(tag, "fall_distance").unwrap_or(0.0),
+            fresh: false,
         },
     ))
 }

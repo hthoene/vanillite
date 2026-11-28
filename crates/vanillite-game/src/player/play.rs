@@ -98,6 +98,27 @@ pub fn game_data() -> Option<std::sync::Arc<GameData>> {
 }
 
 impl GameData {
+    /// `LootTable.getRandomItems(params, random)` of a table with the level's registries (the
+    /// enchantments and tags its functions read) and an optional `origin`.
+    pub fn random_items(
+        &self,
+        table: &str,
+        origin: Option<vanillite_base::Vec3>,
+        rng: &mut dyn crate::loot::LootRandom,
+        out: &mut Vec<crate::item::ItemStack>,
+    ) {
+        let item_in_tag = |item: u16, tag: &str| self.item_in_tag(item, tag);
+        let holder_set = |registry: &str, entry: &str| self.holder_set(registry, entry);
+        let ctx = crate::loot::LootContext {
+            origin,
+            item_in_tag: &item_in_tag,
+            enchanting: Some(&self.enchanting),
+            holder_set: &holder_set,
+            ..crate::loot::LootContext::empty()
+        };
+        self.loot.random_items_in(table, &ctx, rng, out);
+    }
+
     /// Level of the enchantment `name` on `stack`.
     pub fn enchantment_level(&self, stack: &ItemStack, name: &str) -> i32 {
         let Some(&id) = self.enchantments.get(name) else {

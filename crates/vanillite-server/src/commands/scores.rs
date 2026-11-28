@@ -22,6 +22,8 @@ pub(crate) struct Holder {
     pub(crate) display: Component,
     /// `getDisplayName`: what a `displayAutoUpdate` objective shows (none for a plain name).
     pub(crate) score_display: Option<Component>,
+    /// The entity, for the names after a team change ([`Holder::refreshed`]).
+    pub(crate) target: Option<select::Target>,
 }
 
 impl Holder {
@@ -30,18 +32,29 @@ impl Holder {
             name: name.to_owned(),
             display: Component::text(name),
             score_display: None,
+            target: None,
         }
     }
 
-    fn of(target: &select::Target) -> Holder {
+    fn of(target: &select::Target, global: &crate::global::Global) -> Holder {
         let name = target.score_name();
-        let shown = target.display();
+        let shown = target.display(global);
         Holder {
             display: shown
                 .clone()
                 .hover(HoverEvent::ShowText(Component::text(name.as_str()))),
             score_display: Some(shown),
             name,
+            target: Some(target.clone()),
+        }
+    }
+
+    /// The holder with its names as they are now (`getFeedbackDisplayName` is evaluated after
+    /// a team change).
+    pub(crate) fn refreshed(&self, global: &crate::global::Global) -> Holder {
+        match &self.target {
+            Some(t) => Holder::of(t, global),
+            None => self.clone(),
         }
     }
 }
@@ -67,7 +80,7 @@ pub(crate) fn holders(
     let found = match arg {
         ScoreHolderArg::Selector(selector) => select::optional(env, source, selector)?
             .iter()
-            .map(Holder::of)
+            .map(|t| Holder::of(t, env.global))
             .collect(),
         ScoreHolderArg::Wildcard => {
             let tracked: Vec<Holder> = if wildcard {
@@ -102,14 +115,14 @@ fn named(env: &Env<'_>, source: &CommandSource, text: &str) -> Holder {
         if let Some(t) = select::find_uuid(&env.level.entities, uuid.0)
             .and_then(|id| select::local(&env.level.entities, env.world, id))
         {
-            return Holder::of(&t);
+            return Holder::of(&t, env.global);
         }
         return Holder::name_only(text);
     }
     select::online_players(&env.level.entities, env.global, source.world)
         .iter()
         .find(|p| p.name.eq_ignore_ascii_case(text))
-        .map_or_else(|| Holder::name_only(text), Holder::of)
+        .map_or_else(|| Holder::name_only(text), |t| Holder::of(t, env.global))
 }
 
 /// `ScoreHolderArgument.getName`: the first holder's name.

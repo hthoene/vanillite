@@ -522,8 +522,19 @@ impl LootTables {
     /// with an empty context (no block, no tool, no entity). Appends to `out`; unknown tables
     /// drop nothing.
     pub fn random_items(&self, name: &str, rng: &mut dyn LootRandom, out: &mut Vec<ItemStack>) {
+        self.random_items_in(name, &LootContext::empty(), rng, out);
+    }
+
+    /// [`Self::random_items`] with a context.
+    pub fn random_items_in(
+        &self,
+        name: &str,
+        ctx: &LootContext<'_>,
+        rng: &mut dyn LootRandom,
+        out: &mut Vec<ItemStack>,
+    ) {
         if self.by_name.contains_key(name) {
-            self.roll(name, &LootContext::empty(), rng, out);
+            self.roll(name, ctx, rng, out);
         }
     }
 

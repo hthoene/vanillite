@@ -165,8 +165,11 @@ pub(crate) fn advancement(
                 }
             }
         };
-        tracker.track(&player.display(), count);
+        tracker.track(&player.display(env.global), count);
     }
+    // The triggers the rewards fired (unlocked recipes) run at once, like Vanilla's.
+    let global = env.global;
+    crate::progress::settle(env, super::entities_cmd::dimension_of(global, env.world));
     // The messages name the criterion and/or the advancement (one) or count them (many).
     let only = (list.len() == 1)
         .then(|| list.first().and_then(|&i| set.get(i)))

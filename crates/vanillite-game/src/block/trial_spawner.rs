@@ -975,9 +975,9 @@ fn eject_reward(level: &mut Level, pos: BlockPos, table: &str) {
     // `LootContext.Builder.create`: the table's random sequence, else the level random.
     match data.loot.random_sequence(table) {
         Some(key) => {
-            level.with_random_sequence(key, |r| data.loot.random_items(table, r, &mut items));
+            level.with_random_sequence(key, |r| data.random_items(table, None, r, &mut items));
         }
-        None => data.loot.random_items(table, level.random(), &mut items),
+        None => data.random_items(table, None, level.random(), &mut items),
     }
     if items.is_empty() {
         return;
@@ -1321,7 +1321,7 @@ fn dispensing_items(level: &mut Level, pos: BlockPos) -> Vec<(ItemStack, i32)> {
     let seed = level.seed().wrapping_add(low.as_long());
     let mut rng = vanillite_base::random::LegacyRandom::new(seed);
     let mut drops = Vec::new();
-    data.loot.random_items(&table, &mut rng, &mut drops);
+    data.random_items(&table, None, &mut rng, &mut drops);
     if drops.is_empty() {
         return Vec::new();
     }

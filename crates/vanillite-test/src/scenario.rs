@@ -35,8 +35,8 @@
 //!   fade in); with `advance_weather` off it stays.
 //! - `block_entities`: frames also hold the block entities of the region (their full saved
 //!   data, see [`crate::trace`]). Default `false`.
-//! - `feedback`: frames also hold the plain text of the messages the `command` actions of
-//!   their tick sent to the server (its `System chat` lines), in order. Default `false`.
+//! - `feedback`: frames also hold the `command` actions of their tick with the messages their
+//!   source got and their results (see [`crate::trace`]). Default `false`.
 //! - `level_rng`: frames also hold the state of the level random (always with entities).
 //!   Scenarios with random ticks set it: the random draws must match call by call.
 //!
@@ -113,7 +113,10 @@
 //!   Vanilla with its agent (`ParityAgent.java`).
 //!
 //! Commands: `{"tick": 2, "op": "command", "command": "fill 0 1 0 3 1 3 stone"}` runs the line
-//! as the server (permission level 4) at the origin of the overworld before that tick.
+//! as the server (permission level 4) at the origin of the overworld before that tick. With
+//! `"feedback": true` the frame of that tick holds the line, the messages its source got (as
+//! the server's own source would: success and failure) and its results (see
+//! [`crate::trace`]).
 //!
 //! Known divergences from Vanilla live in `scenarios/divergences/<scenario>.toml`, not in the
 //! scenario (so they change without a new recording), one file per scenario so parallel
@@ -286,7 +289,8 @@ pub struct WorldSpec {
     pub normal_end: bool,
     /// Whether frames hold the region's block entities (`"block_entities": true`, #244).
     pub block_entities: bool,
-    /// Whether frames hold the command feedback of their tick (`"feedback": true`, #304).
+    /// Whether frames hold the commands of their tick with their messages and results
+    /// (`"feedback": true`, #304, #309).
     pub feedback: bool,
 }
 

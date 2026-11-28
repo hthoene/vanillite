@@ -184,6 +184,7 @@ pub(crate) fn self_target(env: &Env<'_>, source: &CommandSource) -> Result<Targe
                     place: None,
                     game_mode: vanillite_config::GameMode::Survival,
                     kind: own.kind,
+                    custom: None,
                 })
             }),
     };

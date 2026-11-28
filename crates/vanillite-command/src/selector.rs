@@ -98,6 +98,9 @@ pub struct EntitySelector {
     pub uuid: Option<u128>,
     /// Written with `@` (needs the selector permission when executed).
     pub uses_selector: bool,
+    /// The argument takes players only (`EntityArgument.players()`): finding none is
+    /// `argument.entity.notfound.player` (`getPlayers`), else `.entity` (`getEntities`).
+    pub players_arg: bool,
 }
 
 impl EntitySelector {
@@ -119,6 +122,7 @@ impl EntitySelector {
             player_name: None,
             uuid: None,
             uses_selector: false,
+            players_arg: false,
         }
     }
 }
