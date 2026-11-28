@@ -5,6 +5,7 @@
 //! (`NumericTag`); a floating point value read as an integer is floored.
 
 use vanillite_base::Vec3;
+use vanillite_config::GameMode;
 use vanillite_data::entity::{EntityTypeId, ids};
 use vanillite_nbt::{Compound, List, Tag};
 use vanillite_world::entity::{EntityFlags, EntityId};
@@ -500,4 +501,192 @@ fn modifier_tag(x: &Modifier) -> Tag {
         c.insert("operation", *op);
     }
     Tag::Compound(c)
+}
+
+/// A UUID as Vanilla's int array.
+fn uuid_tag(uuid: u128) -> Tag {
+    Tag::IntArray(vanillite_nbt::snbt::uuid_to_ints(uuid).to_vec())
+}
+
+fn vec3_list(v: Vec3) -> Tag {
+    Tag::List(List(vec![
+        Tag::Double(v.x),
+        Tag::Double(v.y),
+        Tag::Double(v.z),
+    ]))
+}
+
+/// `Entity.saveWithoutId` (`NbtPredicate.getEntityTagToCompare`, `/data get entity`) for the data the server keeps for every entity, with the kind's own
+/// data for players and items.
+pub fn save_full(entities: &Entities, id: EntityId) -> Option<Compound> {
+    let mut nbt = save_own(entities, id)?;
+    // `saveWithoutId`: the passengers as `saveAsPassenger` writes them (players are left out).
+    let passengers: Vec<Tag> = entities
+        .riding
+        .passengers_of(id)
+        .iter()
+        .filter(|&&p| entities.player(p).is_none())
+        .filter_map(|&p| {
+            let kind = entities.store.get(p)?.kind();
+            let mut c = Compound::new();
+            c.insert("id", Tag::String(kind.name().to_owned()));
+            for (k, v) in save_full(entities, p)?.iter() {
+                c.insert(k, v.clone());
+            }
+            Some(Tag::Compound(c))
+        })
+        .collect();
+    if !passengers.is_empty() {
+        nbt.insert("Passengers", Tag::List(List(passengers)));
+    }
+    Some(nbt)
+}
+
+/// [`save_full`] without the passengers.
+fn save_own(entities: &Entities, id: EntityId) -> Option<Compound> {
+    let e = entities.store.get(id)?;
+    // Decorations, mobs (armor stands and mannequins too) and minecarts with all their
+    // stored data.
+    let full = crate::decoration::save(entities, id)
+        .or_else(|| entities.mob(id).map(|m| super::nbt::save_mob(&e, m)))
+        .or_else(|| {
+            entities
+                .minecart(id)
+                .map(|m| super::nbt::save_minecart(&e, m))
+        });
+    if let Some(mut full) = full {
+        full.remove("id");
+        save_base(entities, id, &mut full);
+        let tags = entities.tags_of(id);
+        if !tags.is_empty() {
+            full.insert(
+                "Tags",
+                Tag::List(List(tags.iter().map(|t| Tag::String(t.clone())).collect())),
+            );
+        }
+        return Some(full);
+    }
+    let mut out = Compound::new();
+    out.insert("Pos", vec3_list(e.pos()));
+    out.insert("Motion", vec3_list(e.velocity()));
+    let rot = e.rot();
+    out.insert(
+        "Rotation",
+        Tag::List(List(vec![Tag::Float(rot.y_rot), Tag::Float(rot.x_rot)])),
+    );
+    out.insert("fall_distance", Tag::Double(0.0));
+    out.insert("Fire", Tag::Short(-1));
+    out.insert("Air", Tag::Short(300));
+    out.insert(
+        "OnGround",
+        Tag::Byte(i8::from(e.flags().contains(EntityFlags::ON_GROUND))),
+    );
+    save_flags(e.flags(), &mut out);
+    out.insert("PortalCooldown", Tag::Int(0));
+    out.insert("UUID", uuid_tag(e.uuid()));
+    save_base(entities, id, &mut out);
+    let tags = entities.tags_of(id);
+    if !tags.is_empty() {
+        out.insert(
+            "Tags",
+            Tag::List(List(tags.iter().map(|t| Tag::String(t.clone())).collect())),
+        );
+    }
+    if e.kind() == ids::PLAYER
+        && let Some(p) = entities.player(id)
+    {
+        p.survival.save(&mut out);
+        p.inventory.save(&mut out);
+        out.insert("playerGameType", Tag::Int(game_type(p.game_mode)));
+        if let Some(prev) = p.previous_game_mode {
+            out.insert("previousPlayerGameType", Tag::Int(game_type(prev)));
+        }
+        // `ServerPlayer.addAdditionalSaveData`'s other live state.
+        out.insert(
+            "FallFlying",
+            Tag::Byte(i8::from(e.flags().contains(EntityFlags::FALL_FLYING))),
+        );
+        out.insert(
+            "abilities",
+            Tag::Compound(abilities_nbt(
+                p.game_mode,
+                p.survival.flying,
+                Compound::new(),
+            )),
+        );
+        out.insert("recipeBook", p.recipe_book.save());
+        out.insert(
+            "post_effects",
+            Tag::List(List(
+                p.post_effects
+                    .iter()
+                    .map(|e| Tag::String(e.clone()))
+                    .collect(),
+            )),
+        );
+        // `NbtPredicate.getEntityTagToCompare`: the selected item of a player.
+        let selected = p.inventory.selected_item();
+        if !selected.is_empty() {
+            out.insert(
+                "SelectedItem",
+                Tag::Compound(crate::inventory::stack_to_nbt(selected)),
+            );
+        }
+    } else if e.kind() == ids::ITEM
+        && let Some(item) = entities.item(id)
+    {
+        out.insert(
+            "Item",
+            Tag::Compound(crate::inventory::stack_to_nbt(&item.stack)),
+        );
+        out.insert("Age", Tag::Short(item.age));
+        out.insert("PickupDelay", Tag::Short(item.pickup_delay));
+        if let Some(owner) = item.target {
+            out.insert("Owner", uuid_tag(owner));
+        }
+        if let Some(thrower) = item.thrower {
+            out.insert("Thrower", uuid_tag(thrower));
+        }
+    }
+    Some(out)
+}
+
+fn game_type(mode: GameMode) -> i32 {
+    match mode {
+        GameMode::Survival => 0,
+        GameMode::Creative => 1,
+        GameMode::Adventure => 2,
+        GameMode::Spectator => 3,
+    }
+}
+
+/// `Abilities.Packed.CODEC` of a player in `mode` with the flying state over `out` (the saved
+/// compound): the speeds the server does not change stay as saved.
+pub fn abilities_nbt(mode: GameMode, flying: bool, mut out: Compound) -> Compound {
+    let creative = mode == GameMode::Creative;
+    let spectator = mode == GameMode::Spectator;
+    out.insert("invulnerable", Tag::Byte(i8::from(creative || spectator)));
+    out.insert("flying", Tag::Byte(i8::from(flying)));
+    out.insert(
+        "mayfly",
+        Tag::Byte(i8::from(
+            crate::survival::player::Abilities::of(mode).mayfly,
+        )),
+    );
+    out.insert("instabuild", Tag::Byte(i8::from(creative)));
+    // `isBlockPlacingRestricted`.
+    out.insert(
+        "mayBuild",
+        Tag::Byte(i8::from(matches!(
+            mode,
+            GameMode::Survival | GameMode::Creative
+        ))),
+    );
+    if !matches!(out.get("flySpeed"), Some(Tag::Float(_))) {
+        out.insert("flySpeed", Tag::Float(0.05));
+    }
+    if !matches!(out.get("walkSpeed"), Some(Tag::Float(_))) {
+        out.insert("walkSpeed", Tag::Float(0.1));
+    }
+    out
 }

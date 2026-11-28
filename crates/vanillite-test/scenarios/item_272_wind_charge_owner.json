@@ -1,0 +1,59 @@
+{
+  "description": "Wind charge owner (#272, I3-37): a player throws a wind charge at a pig; AbstractWindCharge.onHitEntity sets the player's lastHurtMob, so its tamed wolf takes the pig as its target (OwnerHurtTargetGoal).",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 30,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        3.5,
+        -60.0,
+        8.5
+      ],
+      "rot": [
+        -90,
+        10
+      ]
+    },
+    {
+      "name": "pig",
+      "type": "minecraft:pig",
+      "pos": [
+        8.5,
+        -60.0,
+        8.5
+      ],
+      "seed": 3,
+      "finalize": false
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:wolf 3.5 -60 4.5 {Owner:[I;1447120457,1,0,0]}"
+    },
+    {
+      "tick": 5,
+      "op": "use_item",
+      "entity": "steve",
+      "item": "minecraft:wind_charge"
+    }
+  ]
+}

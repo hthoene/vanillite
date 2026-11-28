@@ -1,0 +1,19 @@
+{
+  "description": "Entity.interact with shears (#272, I5-26): shearOffAllLeashConnections on a cow that holds a pig's lead drops that lead (the cow has none of its own), then the shears take damage.",
+  "tier": "fast",
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [[0, -61, 0], [15, -57, 15]],
+  "ticks": 20,
+  "entities": [
+    {"name": "p", "type": "minecraft:player", "pos": [1.5, -60.0, 5.5]},
+    {"name": "cow", "type": "minecraft:cow", "pos": [3.5, -60.0, 5.5], "seed": 5, "finalize": false}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:cow,limit=1] {NoAI:1b}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:pig 5.5 -60 5.5 {leash:{UUID:[I;1447120457,2,0,5]}}"},
+    {"tick": 5, "op": "interact", "entity": "p", "target": "cow", "item": "minecraft:shears", "count": 1}
+  ]
+}

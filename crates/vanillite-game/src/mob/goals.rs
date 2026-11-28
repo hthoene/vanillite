@@ -252,6 +252,12 @@ impl Goal {
             Goal::Fam(crate::mob::fam::FamGoal::Wildlife(g)) => {
                 crate::mob::fam::wildlife::goal_interruptable(g)
             }
+            // `FoxPounceGoal.isInterruptable`.
+            Goal::Fam(crate::mob::fam::FamGoal::Companion(
+                crate::mob::fam::companion::Goal::Fox(
+                    crate::mob::fam::companion::fox::Goal::Pounce,
+                ),
+            )) => false,
             _ => true,
         }
     }
@@ -1097,6 +1103,10 @@ fn fluid_jump_threshold(t: &Tick<'_, '_>) -> f64 {
 
 /// `canUse`.
 pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
+    if matches!(g, Goal::LookAtPlayer { .. }) && t.mob_ref().kind == Kind::Fox {
+        // `FoxLookAtPlayerGoal.canUse`: `super.canUse()` first (it draws its chance).
+        return can_use_goal(t, g) && super::fam::companion::fox::can_look(t.mob_ref());
+    }
     if matches!(g, Goal::Melee { .. }) {
         match t.mob_ref().kind {
             // `BeeAttackGoal`: only an angry bee that has not stung yet.
@@ -1104,6 +1114,11 @@ pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
             // `FoxMeleeAttackGoal`: not while sitting, sleeping, crouching or faceplanted.
             Kind::Fox => {
                 return super::fam::companion::fox::can_melee(t.mob_ref()) && can_use_goal(t, g);
+            }
+            // `PandaAttackGoal`: only when it can perform an action (the check comes first, so
+            // the 20 tick throttle does not move while it sits, eats or rolls).
+            Kind::Panda => {
+                return super::fam::companion::panda::can_perform(t) && can_use_goal(t, g);
             }
             _ => {}
         }
@@ -1411,6 +1426,10 @@ pub(crate) fn can_continue(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
         // `BeeAttackGoal`: only an angry bee that has not stung yet.
         return can_continue_goal(t, g) && super::fam::wildlife::bee::can_attack(t);
     }
+    if matches!(g, Goal::LookAtPlayer { .. }) && t.mob_ref().kind == Kind::Fox {
+        // `FoxLookAtPlayerGoal.canContinueToUse`.
+        return can_continue_goal(t, g) && super::fam::companion::fox::can_look(t.mob_ref());
+    }
     can_continue_goal(t, g)
 }
 
@@ -1491,6 +1510,13 @@ fn can_continue_goal(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
         }
         Goal::OwnerHurtBy { state, .. } | Goal::OwnerHurt { state, .. } => {
             target_can_continue(t, state)
+        }
+        // `BeeHurtByOtherGoal.canContinueToUse`: only while the bee is angry.
+        Goal::HurtBy { .. }
+            if t.mob_ref().kind == Kind::Bee
+                && !super::common::is_angry(t.mob_ref(), t.env.game_time) =>
+        {
+            false
         }
         Goal::NearestTarget { state, .. } | Goal::HurtBy { state, .. } => {
             target_can_continue(t, state)

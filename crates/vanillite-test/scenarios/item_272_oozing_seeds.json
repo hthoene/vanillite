@@ -1,0 +1,33 @@
+{
+  "description": "Oozing (#272, S-04): a zombie with Oozing is killed; at death time 20 it spawns two size-2 slimes whose own randoms take the next entity seeds and whose yaw comes from the level random.",
+  "tier": "fast",
+  "level_rng": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 40,
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:zombie 8.5 -60 8.5 {NoAI:1b,active_effects:[{id:\"minecraft:oozing\",amplifier:0b,duration:600}]}"
+    },
+    {
+      "tick": 3,
+      "op": "command",
+      "command": "kill @e[type=minecraft:zombie]"
+    }
+  ]
+}

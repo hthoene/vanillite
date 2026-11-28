@@ -166,7 +166,8 @@ impl FanOut {
                 };
                 if receivers
                     && mark != BatchMark::UNKNOWN
-                    && packet_id(packet.body())
+                    && packet
+                        .id()
                         .is_none_or(|id| tap.wants_at(Stage::Receiver, State::Play, id))
                 {
                     mark = BatchMark::UNKNOWN;
@@ -453,6 +454,12 @@ pub(crate) struct WorldPlayers {
     pub(crate) recording: crate::session_recording::SessionRecording,
     /// The locator bar.
     waypoints: crate::waypoints::Waypoints,
+    /// The attribute updates of equipment changes, sent with the next tick's entity tracking
+    /// (`ServerEntity.sendDirtyEntityData`).
+    dirty_attributes: Vec<(
+        EntityId,
+        vanillite_protocol::packets::play::clientbound::UpdateAttributes,
+    )>,
 }
 
 fn chunk_of(pos: Vec3) -> ChunkPos {
@@ -472,6 +479,7 @@ impl WorldPlayers {
             left: Vec::new(),
             chatting: Vec::new(),
             respawns: Vec::new(),
+            dirty_attributes: Vec::new(),
             recording: crate::session_recording::SessionRecording::default(),
             waypoints: crate::waypoints::Waypoints::default(),
         }
@@ -582,7 +590,7 @@ impl WorldPlayers {
         if let Some(icon) = icon {
             global.systems.waypoints().insert(arrival.uuid, icon);
         }
-        let data = PlayerData {
+        let mut data = PlayerData {
             stats,
             advancements,
             recipe_book,
@@ -608,6 +616,10 @@ impl WorldPlayers {
             survival,
             post_effects,
         };
+        // Published for the other worlds through the player list entry.
+        if let Some((_, presence)) = global.players.presence(Uuid(arrival.uuid)) {
+            data.connection.presence = presence;
+        }
         let id = entities.spawn_player(
             &global.network_ids,
             arrival.uuid,
@@ -794,7 +806,7 @@ impl WorldPlayers {
             .filter(|(_, p)| p.game_mode == GameMode::Spectator)
             .map(|(id, _)| id)
             .collect();
-        let mut swings: Vec<(EntityId, Hand)> = Vec::new();
+        let mut swings: Vec<(EntityId, (Hand, bool))> = Vec::new();
         for (id, player) in players.iter_mut() {
             player.connection.play.fast_break_check = rules.digging.fast_break_check;
             let Some(entity) = level.entities.store.get(id) else {
@@ -843,7 +855,7 @@ impl WorldPlayers {
             let protected = |pos: BlockPos| protection.protects(pos, op);
             let (aabb, dims) = (entity.aabb(), entity.dims());
             let mut drops: Vec<Drop> = Vec::new();
-            let mut hands: Vec<Hand> = Vec::new();
+            let mut hands: Vec<(Hand, bool)> = Vec::new();
             let handled = {
                 let mut level = WorldLevel {
                     level: &mut *level,
@@ -868,6 +880,7 @@ impl WorldPlayers {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 let handled = player.connection.handle_packets(
                     &mut state,
@@ -886,6 +899,13 @@ impl WorldPlayers {
                 );
                 actor = play.actor;
                 for mut drop in drops {
+                    // `LivingEntity.drop`: a stack to drop swings the main hand.
+                    if !drop.stack.is_empty() {
+                        hands.push((
+                            vanillite_protocol::packets::play::serverbound::Hand::MainHand,
+                            false,
+                        ));
+                    }
                     // Bukkit's `PlayerDropItemEvent`: cancelled, the stack goes back into the
                     // inventory (what no longer fits still falls).
                     if drop.thrown
@@ -1037,15 +1057,27 @@ impl WorldPlayers {
         }
         let entities = &mut level.entities;
         // Hand swings go to the players that see the swinging one (`sendToTrackingPlayers`).
-        for (id, hand) in swings {
+        for (id, (hand, attack)) in swings {
             let Some(network_id) = entities.store.get(id).map(|e| e.network_id().0) else {
+                continue;
+            };
+            // `LivingEntity.swing(hand, animation, false)`: only when `startIfAble` lets it.
+            let Some((kind, duration)) = entities.player_mut(id).and_then(|p| {
+                let animation = if attack {
+                    vanillite_game::item::attack_animation(p.inventory.selected_item())
+                } else {
+                    (1, 6)
+                };
+                vanillite_game::survival::player::start_swing(&mut p.survival, animation.1)
+                    .then_some(animation)
+            }) else {
                 continue;
             };
             let packet = SharedPacket::of(&SwingAnimation {
                 entity_id: network_id,
                 hand,
-                kind: 1,
-                duration: 6,
+                kind,
+                duration,
             });
             for viewer in blocks.tracker.seen_by(id) {
                 if let Some(p) = entities.player(*viewer) {
@@ -1102,6 +1134,26 @@ impl WorldPlayers {
 
     /// Sends the tracker's updates: each encoded once, then copied into one batch per viewer
     /// and tick, which is queued as a single entry ([`FanOut`]).
+    /// The attribute updates of the last tick's equipment changes to the players and those
+    /// tracking them.
+    pub(crate) fn send_dirty_attributes(
+        &mut self,
+        entities: &Entities,
+        tracker: &dyn vanillite_world::tracking::EntityTracker,
+    ) {
+        for (id, packet) in self.dirty_attributes.drain(..) {
+            let packet = SharedPacket::of(&packet);
+            if let Some(p) = entities.player(id) {
+                p.connection.sink.send_shared(&packet);
+            }
+            for viewer in tracker.seen_by(id) {
+                if let Some(p) = entities.player(*viewer) {
+                    p.connection.sink.send_shared(&packet);
+                }
+            }
+        }
+    }
+
     pub(crate) fn send_entity_updates(
         entities: &Entities,
         updates: &TrackerOutput,
@@ -1238,6 +1290,7 @@ impl WorldPlayers {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 player.connection.play.tick(&mut play, sink.as_ref());
             }
@@ -1454,17 +1507,9 @@ impl WorldPlayers {
         for (picker, thrower, stack) in thrown {
             vanillite_game::mob::animal::item_picked_up(entities, picker, thrower, &stack);
         }
-        for (id, packet) in attributes {
-            let packet = SharedPacket::of(&packet);
-            if let Some(p) = entities.player(id) {
-                p.connection.sink.send_shared(&packet);
-            }
-            for viewer in blocks.tracker.seen_by(id) {
-                if let Some(p) = entities.player(*viewer) {
-                    p.connection.sink.send_shared(&packet);
-                }
-            }
-        }
+        // `detectEquipmentUpdates` changed the attributes in the player's tick; the tracking
+        // of the next tick sends them.
+        self.dirty_attributes.extend(attributes);
         for (id, packet) in equipment {
             let packet = SharedPacket::of(&packet);
             for viewer in blocks.tracker.seen_by(id) {
@@ -1838,40 +1883,9 @@ struct Abilities {
 impl Abilities {
     /// `Abilities.Packed.CODEC` over the saved compound: the speeds the server does not
     /// change stay as saved.
-    fn save(self, mut out: vanillite_nbt::Compound) -> vanillite_nbt::Compound {
-        let creative = self.mode == GameMode::Creative;
-        let spectator = self.mode == GameMode::Spectator;
-        out.insert("invulnerable", Tag::Byte(i8::from(creative || spectator)));
-        out.insert("flying", Tag::Byte(i8::from(self.flying)));
-        out.insert(
-            "mayfly",
-            Tag::Byte(i8::from(
-                vanillite_game::survival::player::Abilities::of(self.mode).mayfly,
-            )),
-        );
-        out.insert("instabuild", Tag::Byte(i8::from(creative)));
-        // `isBlockPlacingRestricted`.
-        out.insert(
-            "mayBuild",
-            Tag::Byte(i8::from(matches!(
-                self.mode,
-                GameMode::Survival | GameMode::Creative
-            ))),
-        );
-        if !matches!(out.get("flySpeed"), Some(Tag::Float(_))) {
-            out.insert("flySpeed", Tag::Float(0.05));
-        }
-        if !matches!(out.get("walkSpeed"), Some(Tag::Float(_))) {
-            out.insert("walkSpeed", Tag::Float(0.1));
-        }
-        out
+    fn save(self, out: vanillite_nbt::Compound) -> vanillite_nbt::Compound {
+        vanillite_game::mob::entity_nbt::abilities_nbt(self.mode, self.flying, out)
     }
-}
-
-/// The `abilities` compound of a player in `mode` (`Abilities.Packed`) with the default
-/// speeds.
-pub(crate) fn abilities_nbt(mode: GameMode, flying: bool) -> vanillite_nbt::Compound {
-    Abilities { mode, flying }.save(vanillite_nbt::Compound::new())
 }
 
 /// `Entity.load`'s `Tags`.

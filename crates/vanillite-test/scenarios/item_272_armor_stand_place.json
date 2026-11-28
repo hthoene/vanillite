@@ -1,0 +1,21 @@
+{
+  "description": "ArmorStandItem.useOn (#272, I5-29): EntityType.create(.., tryMoveDown, movedUp) puts a stand clicked onto a bottom slab on the slab (getYOffset) and one clicked onto the side of a raised block one block lower, and draws the level random's yaw.",
+  "tier": "fast",
+  "level_rng": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [[0, -61, 0], [15, -56, 15]],
+  "ticks": 20,
+  "entities": [
+    {"name": "p", "type": "minecraft:player", "pos": [4.5, -60.0, 8.5], "rot": [180, 30]}
+  ],
+  "setup": [
+    {"op": "set", "pos": [4, -60, 4], "block": "minecraft:stone_slab[type=bottom,waterlogged=false]"},
+    {"op": "set", "pos": [8, -59, 4], "block": "minecraft:stone"}
+  ],
+  "actions": [
+    {"tick": 2, "op": "use", "entity": "p", "pos": [4, -60, 4], "face": "up", "item": "minecraft:armor_stand"},
+    {"tick": 4, "op": "use", "entity": "p", "pos": [8, -59, 4], "face": "east", "item": "minecraft:armor_stand"}
+  ]
+}

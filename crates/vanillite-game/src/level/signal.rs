@@ -79,11 +79,23 @@ impl Level {
         self.state_direct_signal(self.block(pos), pos, direction)
     }
 
+    /// Whether `state` surely emits no signal, so the behaviour table is not needed: air, and
+    /// wire while wires emit nothing. Most neighbours a wire reads are one of the two.
+    #[inline]
+    fn emits_nothing(&self, state: BlockState) -> bool {
+        state == BlockState::AIR || (!self.wire_signals && state.is(ids::REDSTONE_WIRE))
+    }
+
     /// `getDirectSignalTo(pos)`: the strongest strong signal into `pos`.
     pub fn direct_signal_to(&self, pos: BlockPos) -> i32 {
         let mut result = 0;
         for direction in DIRECTIONS {
-            result = result.max(self.direct_signal(pos.relative(direction), direction));
+            let neighbour = pos.relative(direction);
+            let state = self.block(neighbour);
+            if self.emits_nothing(state) {
+                continue;
+            }
+            result = result.max(self.state_direct_signal(state, neighbour, direction));
             if result >= 15 {
                 return result;
             }
@@ -120,6 +132,10 @@ impl Level {
     /// or for a conductor the strongest strong signal it receives.
     pub fn signal(&self, pos: BlockPos, direction: Direction) -> i32 {
         let state = self.block(pos);
+        // Neither air nor wire is a conductor.
+        if self.emits_nothing(state) {
+            return 0;
+        }
         let signal = self.state_signal(state, pos, direction);
         if Self::is_redstone_conductor(state) {
             signal.max(self.direct_signal_to(pos))

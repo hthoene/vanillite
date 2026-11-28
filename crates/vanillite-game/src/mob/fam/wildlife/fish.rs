@@ -603,8 +603,8 @@ fn varint_value(v: i32) -> Box<[u8]> {
 }
 
 /// `saveToBucketTag`: the custom name, `bucket_entity_data` and the kind's components.
-pub(super) fn bucket_stack(m: &MobData) -> ItemStack {
-    let (mut stack, data) = crate::mob::fam::bucket_default(m, bucket_item(m.kind));
+pub(super) fn bucket_stack(m: &MobData, flags: vanillite_world::entity::EntityFlags) -> ItemStack {
+    let (mut stack, data) = crate::mob::fam::bucket_default(m, flags, bucket_item(m.kind));
     crate::mob::fam::set_bucket_data(&mut stack, data);
     let s = st(m);
     match m.kind {
@@ -638,7 +638,13 @@ pub(super) fn interact(ix: &mut Interact<'_, '_>) -> Interaction {
     let Some(m) = ix.ents.mob(ix.target).filter(|m| m.is_alive()) else {
         return Interaction::Pass;
     };
-    let bucket = bucket_stack(m);
+    let flags = ix
+        .ents
+        .store
+        .get(ix.target)
+        .map(|e| e.flags())
+        .unwrap_or_default();
+    let bucket = bucket_stack(m, flags);
     // `pickupEntity.playSound(getPickupSound(), 1.0F, 1.0F)`: no voice pitch, no draws.
     let source = m.sound_source();
     if let Some(pos) = ix.ents.store.get(ix.target).map(|e| e.pos()) {

@@ -21,8 +21,8 @@
     {"tick": 12, "op": "command", "command": "item replace entity @e[tag=f,limit=1] contents from entity steve weapon.mainhand"},
     {"tick": 14, "op": "command", "command": "summon minecraft:glow_item_frame 4 -60 0 {Facing:3b,Tags:[\"g\"],Item:{id:\"minecraft:filled_map\",count:1,components:{\"minecraft:map_id\":0}}}"},
     {"tick": 16, "op": "use", "entity": "steve", "pos": [5, -60, 1], "face": "north"},
+    {"tick": 17, "op": "command", "command": "tp steve 300 -60 300"},
     {"tick": 18, "op": "use_item", "entity": "steve", "item": "minecraft:map", "count": 1},
-    {"tick": 18, "op": "command", "command": "tp steve 300 -60 300"},
     {"tick": 22, "op": "command", "command": "tp steve 1.5 -60 2.5"},
     {"tick": 25, "op": "command", "command": "kill @e[tag=g]"}
   ]

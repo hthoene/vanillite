@@ -723,7 +723,7 @@ pub fn save_arrow(
     #[allow(clippy::cast_possible_wrap)]
     out.insert("PierceLevel", a.pierce_level as i8);
     out.insert("SoundEvent", hit_sound(a));
-    if let Some(o) = owner {
+    if let Some(o) = owner.or(a.owner_uuid) {
         out.insert("Owner", uuid_ints(o));
     }
     out.insert("HasBeenShot", a.has_been_shot);
@@ -778,6 +778,7 @@ pub fn load_arrow(
         e,
         super::projectile::ArrowData {
             owner: None,
+            owner_uuid: uuid_key(tag, "Owner"),
             base_damage: damage,
             in_ground: boolean(tag, "inGround"),
             life: int(tag, "life").unwrap_or(0),
@@ -866,6 +867,17 @@ pub fn load_boat(tag: &Compound, seed: i64) -> Option<(LoadedEntity, crate::vehi
         b.loot_table = load_chest_vehicle(tag, &mut b.items);
     }
     Some((e, b))
+}
+
+/// `Entity.load` on a boat (`/data`, `entity_data`): its name and chest contents from `tag`.
+pub fn apply_boat(b: &mut crate::vehicle::BoatData, tag: &Compound) {
+    b.custom_name = tag.get("CustomName").and_then(tag_component);
+    if b.kind.chest {
+        b.items
+            .iter_mut()
+            .for_each(|s| *s = crate::item::ItemStack::EMPTY);
+        b.loot_table = load_chest_vehicle(tag, &mut b.items);
+    }
 }
 
 /// `ContainerEntity.addChestVehicleSaveData`: the loot table, or the items.
@@ -1025,5 +1037,32 @@ pub fn apply_minecart(m: &mut crate::minecart::MinecartData, tag: &Compound) {
             m.spawner = Some(Box::new(crate::block::spawner::MobSpawner::load(tag)));
         }
         MinecartKind::Plain => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `AbstractArrow` keeps its owner as an `EntityReference`: a loaded arrow knows the
+    /// owner's UUID (`Owner`) and saves it again even while the owner is not here (#272, I3-19).
+    #[test]
+    fn arrow_owner_uuid_round_trip() {
+        let owner = 0x5641_4e49_0000_0001_0000_0000_0000_0007_u128;
+        let mut tag = Compound::new();
+        tag.insert("id", "minecraft:arrow");
+        tag.insert(
+            "Pos",
+            Tag::List(vanillite_nbt::List(vec![
+                Tag::Double(0.5),
+                Tag::Double(64.0),
+                Tag::Double(0.5),
+            ])),
+        );
+        tag.insert("Owner", Tag::IntArray(uuid_ints(owner)));
+        tag.insert("UUID", Tag::IntArray(uuid_ints(9)));
+        let (_, arrow) = load_arrow(&tag, Some(1)).unwrap_or_else(|| panic!("arrow"));
+        assert_eq!(arrow.owner, None);
+        assert_eq!(arrow.owner_uuid, Some(owner));
     }
 }

@@ -471,8 +471,7 @@ impl PlayerInventory {
     /// player is in creative.
     pub(crate) fn armor_locked(&self, stack: &ItemStack) -> bool {
         !self.menu.creative
-            && crate::player::play::game_data()
-                .is_some_and(|d| d.enchantment_level(stack, "minecraft:binding_curse") > 0)
+            && crate::player::play::game_data().is_some_and(|d| d.prevents_armor_change(stack))
     }
 
     /// `slotChangedCraftingGrid`: the result of the 2×2 grid; the client gets it at once.

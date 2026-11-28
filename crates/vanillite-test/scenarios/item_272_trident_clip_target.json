@@ -1,0 +1,58 @@
+{
+  "description": "Trident target choice (#272, I3-30): a trident flies at a ravager with an armor stand inside its box whose feet are nearer; ProjectileUtil.getEntityHitResult takes the nearest clip point, the ravager.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 30,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        2.5,
+        -60.0,
+        8.5
+      ],
+      "rot": [
+        -90,
+        0
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:ravager 9.5 -60 8.5 {NoAI:1b}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:armor_stand 9.0 -60 8.5"
+    },
+    {
+      "tick": 2,
+      "op": "use_item",
+      "entity": "steve",
+      "item": "minecraft:trident"
+    },
+    {
+      "tick": 15,
+      "op": "release_item",
+      "entity": "steve"
+    }
+  ]
+}

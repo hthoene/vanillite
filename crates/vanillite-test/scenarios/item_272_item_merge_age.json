@@ -1,0 +1,14 @@
+{
+  "description": "ItemEntity.tick (#272, I5-43): mergeWithNeighbours runs before age++ and the lifetime check, so an item at age 5999 that takes in a younger neighbour on the merge tick survives with the younger age instead of despawning.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [[0, -61, 0], [15, -57, 15]],
+  "ticks": 60,
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 5.5 -60 5.5 {Item:{id:\"minecraft:stone\",count:5},Age:5960s,PickupDelay:0s}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 5.7 -60 5.5 {Item:{id:\"minecraft:stone\",count:1},Age:100s,PickupDelay:0s}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 10.5 -60 10.5 {Item:{id:\"minecraft:dirt\",count:1},Age:5980s,PickupDelay:0s}"}
+  ]
+}

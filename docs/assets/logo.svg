@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="128" height="128" role="img" aria-label="Vanillite"><title>Vanillite</title><style>@media (prefers-color-scheme: dark){.rind{fill:#c9935c}.flesh{fill:#f5e7c4}.seeds{fill:#3b2414}}</style><path class="rind" fill="#3b2414" d="M1.86 7.69 Q-0.74 3.18 4.47 3.18 Q16 0.95 27.53 3.18 Q32.74 3.18 30.14 7.69 Q26.3 18.8 18.6 27.68 Q16 32.19 13.4 27.68 Q5.7 18.8 1.86 7.69 Z"/><path class="flesh" fill="#f5e7c4" d="M6.14 9.3 Q4.28 6.08 8 6.08 Q16 4.59 24 6.08 Q27.72 6.08 25.86 9.3 Q23.15 16.98 17.86 23.17 Q16 26.39 14.14 23.17 Q8.85 16.98 6.14 9.3 Z"/><path class="seeds" fill="#3b2414" d="M11.97 12.16 Q10.98 10.45 12.96 10.45 Q16 9.83 19.04 10.45 Q21.02 10.45 20.03 12.16 Q19.05 15.11 16.99 17.43 Q16 19.15 15.01 17.43 Q12.95 15.11 11.97 12.16 Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 200 200" role="img" aria-label="Vanillite">
+ <title>Vanillite</title>
+ <defs><mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200">
+  <rect width="200" height="200" fill="#fff"/>
+  <polyline points="18,43 100,152 182,43" fill="none" stroke="#000" stroke-width="9" stroke-linejoin="miter" stroke-miterlimit="10"/>
+ </mask></defs>
+ <g mask="url(#cut)">
+  <polygon points="100,20 169,60 100,152 31,60" fill="#e3b85c"/>
+  <polygon points="31,60 100,152 100,180 31,140" fill="#c08a2e"/>
+  <polygon points="169,60 100,152 100,180 169,140" fill="#8f6018"/>
+ </g>
+</svg>

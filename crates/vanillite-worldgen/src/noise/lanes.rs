@@ -8,11 +8,17 @@ compile_error!("x86-64 without SSE2");
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{__m128, _mm_add_ps, _mm_mul_ps, _mm_set_ps, _mm_set1_ps, _mm_sub_ps};
 
-/// Whether the CPU supports AVX2 (checked once, then cached).
+/// Whether the CPU supports AVX2 and the AVX2 kernel is not switched off (checked once, then
+/// cached). `VANILLITE_NOISE_LANES=sse` forces the SSE2 path every x86-64 CPU has, so the path
+/// of CPUs without AVX2 can be tested and measured on any machine (#291).
 #[cfg(target_arch = "x86_64")]
 #[inline]
 pub(crate) fn has_avx2() -> bool {
-    std::arch::is_x86_feature_detected!("avx2")
+    static AVX2: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVX2.get_or_init(|| {
+        std::env::var_os("VANILLITE_NOISE_LANES").is_none_or(|lanes| lanes != "sse")
+            && std::arch::is_x86_feature_detected!("avx2")
+    })
 }
 
 /// Four `f32` values.

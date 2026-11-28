@@ -1552,6 +1552,7 @@ impl Server {
             details: arrival.details.clone(),
             bedrock: arrival.virtual_connection && !arrival.memory_connection,
             debug_subscriptions: 0,
+            presence: Arc::default(),
         });
         let global = Arc::clone(&self.global);
         self.run_in_world(

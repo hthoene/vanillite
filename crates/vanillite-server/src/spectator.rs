@@ -117,6 +117,7 @@ pub(crate) fn tick(entities: &mut Entities) {
         };
         if let Some(p) = entities.player_mut(player) {
             p.connection.movement.reset_position(pos);
+            p.connection.movement.chunk_move = true;
         }
         // `wantsToStopRiding`.
         if sneaking {

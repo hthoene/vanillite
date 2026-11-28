@@ -67,24 +67,23 @@ pub fn visibility_percent(t: &Tick<'_, '_>, id: EntityId) -> f64 {
         let cover = (worn as f32 / 4.0).max(0.1);
         v *= f64::from(0.7 * cover);
     }
-    // `mob_visibility` of the worn heads: the mob kind they imitate sees the wearer at half
-    // the range.
-    let head = match (t.ents.player(id), t.ents.mob(id)) {
-        (Some(p), _) => Some(p.inventory.equipment(EquipmentSlot::Head).item),
-        (None, Some(m)) => Some(m.equipment.get(EquipmentSlot::Head).item),
-        _ => None,
-    };
-    if let Some(head) = head {
-        let viewer = t.core().kind().name();
-        let fooled: &[&str] = match vanillite_data::registry::ITEM.name(head).unwrap_or("") {
-            "minecraft:skeleton_skull" => &["minecraft:skeleton"],
-            "minecraft:zombie_head" => &["minecraft:zombie"],
-            "minecraft:creeper_head" => &["minecraft:creeper"],
-            "minecraft:piglin_head" => &["minecraft:piglin", "minecraft:piglin_brute"],
-            _ => &[],
+    // `mob_visibility` of the equipment worn in its `equippable` slot: the targeting types see
+    // the wearer at the component's factor (the mob heads: their mob at half the range).
+    let viewer = t.core().kind();
+    let (player, mob) = (t.ents.player(id), t.ents.mob(id));
+    for slot in (0..8).filter_map(EquipmentSlot::from_ordinal) {
+        let stack = match (player, mob) {
+            (Some(p), _) => p.inventory.equipment(slot),
+            (None, Some(m)) => m.equipment.get(slot),
+            _ => break,
         };
-        if fooled.contains(&viewer) {
-            v *= 0.5;
+        if stack.is_empty() {
+            continue;
+        }
+        if let Some(factor) = mob_visibility(stack, viewer)
+            && crate::item::equippable_slot(stack) == Some(slot)
+        {
+            v *= f64::from(factor);
         }
     }
     v.clamp(0.0, 10.0)
@@ -224,4 +223,47 @@ pub fn visible_find_all(
 /// `BehaviorUtils.entityIsVisible(brain, entity)`.
 pub fn entity_is_visible(t: &mut Tick<'_, '_>, id: EntityId) -> bool {
     visible_contains(t, id)
+}
+
+/// The factor of a stack's `mob_visibility` for a targeting entity type (`None` when it does
+/// not apply): the patched component, or the mob heads' own (their mob at 0.5).
+fn mob_visibility(
+    stack: &crate::item::ItemStack,
+    viewer: vanillite_data::entity::EntityTypeId,
+) -> Option<f32> {
+    use vanillite_protocol::components::ids::MOB_VISIBILITY;
+    match crate::item::patched(stack, MOB_VISIBILITY) {
+        crate::item::Patched::Value(v) => {
+            // `HolderSet` of entity types (0: a tag, else count + 1 ids), then the factor.
+            let mut r = vanillite_protocol::codec::Reader::new(v);
+            let n = r.varint().ok()?;
+            let targets = if n == 0 {
+                let tag = r.string(32767).ok()?.to_owned();
+                crate::effect::entity_in_tag(viewer, &tag)
+            } else {
+                let mut found = false;
+                for _ in 1..n {
+                    let id = r.varint().ok()?;
+                    found |= i32::from(viewer.0) == id;
+                }
+                found
+            };
+            let factor = r.f32().ok()?;
+            targets.then_some(factor)
+        }
+        crate::item::Patched::Removed => None,
+        crate::item::Patched::Default => {
+            let fooled: &[&str] = match vanillite_data::registry::ITEM
+                .name(stack.item)
+                .unwrap_or("")
+            {
+                "minecraft:skeleton_skull" => &["minecraft:skeleton"],
+                "minecraft:zombie_head" => &["minecraft:zombie"],
+                "minecraft:creeper_head" => &["minecraft:creeper"],
+                "minecraft:piglin_head" => &["minecraft:piglin", "minecraft:piglin_brute"],
+                _ => &[],
+            };
+            fooled.contains(&viewer.name()).then_some(0.5)
+        }
+    }
 }

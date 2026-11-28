@@ -374,6 +374,20 @@ impl ServerWorld {
         let Some((target, route)) = self.portal_route(ctx.global, id, kind, entry) else {
             return;
         };
+        // `ThrownEnderpearl.canTeleport`: out of the End to the overworld only once its
+        // player owner has seen the credits.
+        if self.id == END && target == OVERWORLD {
+            let entities = &self.level.entities;
+            let blocked = entities.missile(id).is_some_and(|d| {
+                d.kind == vanillite_game::mob::missile::MissileKind::EnderPearl
+                    && vanillite_game::mob::missile::resolve_owner(entities, d.owner, d.owner_uuid)
+                        .and_then(|o| entities.player(o))
+                        .is_some_and(|p| !p.survival.portal.seen_credits)
+            });
+            if blocked {
+                return;
+            }
+        }
         let Some((target, route)) = self.portal_event(ctx.global, id, kind, target, route) else {
             return;
         };
@@ -646,6 +660,14 @@ impl ServerWorld {
         if cooldown > 0 {
             self.level.entities.portals.entry(id).or_default().cooldown = cooldown;
         }
+        crate::blocks::merge_after_teleport(
+            &mut self.level.entities,
+            id,
+            crate::blocks::ItemSettings {
+                lifetime: i16::try_from(self.rules.items.despawn_ticks).unwrap_or(i16::MAX),
+                merge_radius: self.rules.items.merge_radius,
+            },
+        );
         if let Some(pos) = landing.ticket {
             self.place_portal_ticket(pos);
         }

@@ -27,7 +27,8 @@ fn locate_pos(placement: &StructurePlacement, chunk: ChunkPos) -> BlockPos {
     )
 }
 
-/// `getStructureGeneratingAt` without stored chunks: the set's start in `chunk`, if wanted.
+/// `getStructureGeneratingAt`: the set's start in `chunk`, if wanted and `claim` takes it
+/// (`createReference`: `checkStructurePresence` skips referenced starts, `tryAddReference`).
 fn generating_at(
     terrain: &TerrainGenerator,
     state: &StructureState<'_>,
@@ -35,9 +36,10 @@ fn generating_at(
     wanted: &[StructureId],
     chunk: ChunkPos,
     level: LevelHeight,
+    claim: &mut dyn FnMut(ChunkPos, StructureId) -> bool,
 ) -> Option<(BlockPos, StructureId)> {
     let id = terrain.structure_start_in(state, set, chunk, level)?;
-    wanted.contains(&id).then(|| {
+    (wanted.contains(&id) && claim(chunk, id)).then(|| {
         (
             locate_pos(&terrain.structures().set(set).placement, chunk),
             id,
@@ -77,6 +79,21 @@ pub fn nearest_structure(
     level: LevelHeight,
     max_radius: i32,
 ) -> Option<(BlockPos, StructureId)> {
+    nearest_structure_claiming(terrain, wanted, origin, level, max_radius, &mut |_, _| true)
+}
+
+/// `ChunkGenerator.findNearestMapStructure(level, structures, pos, radius, createReference)`:
+/// a start counts only when `claim(start chunk, structure)` takes it (with `createReference`:
+/// unreferenced, and then referenced). Like Vanilla, every closer ring start found on the way
+/// is claimed.
+pub fn nearest_structure_claiming(
+    terrain: &TerrainGenerator,
+    wanted: &[StructureId],
+    origin: BlockPos,
+    level: LevelHeight,
+    max_radius: i32,
+    claim: &mut dyn FnMut(ChunkPos, StructureId) -> bool,
+) -> Option<(BlockPos, StructureId)> {
     let state = StructureState::new(terrain);
     let registry = terrain.structures();
     // `getPlacementsForStructure` of the wanted structures, by set.
@@ -107,7 +124,7 @@ pub fn nearest_structure(
                     let dist = dist_sqr(center, origin);
                     if closest.as_ref().is_none_or(|(_, d)| dist < *d)
                         && let Some(found) =
-                            generating_at(terrain, &state, set, wanted, chunk, level)
+                            generating_at(terrain, &state, set, wanted, chunk, level, claim)
                     {
                         closest = Some((found, dist));
                     }
@@ -146,7 +163,7 @@ pub fn nearest_structure(
                     else {
                         continue;
                     };
-                    found = generating_at(terrain, &state, set, wanted, chunk, level);
+                    found = generating_at(terrain, &state, set, wanted, chunk, level, claim);
                     if found.is_some() {
                         break 'ring;
                     }

@@ -30,6 +30,7 @@ pub fn use_item(
     env: &mut Env<'_>,
     network_ids: &NetworkIds,
     player: EntityId,
+    hand: vanillite_protocol::packets::play::serverbound::Hand,
     stack: &mut ItemStack,
 ) -> Used {
     let Some(e) = ents.store.get(player) else {
@@ -42,14 +43,10 @@ pub fn use_item(
         pos.y + crate::survival::player::eye_height(height),
         pos.z,
     );
-    let range = crate::mob::attack::player_attribute(
-        ents,
-        player,
-        "minecraft:block_interaction_range",
-        4.5,
-        0.0,
-        64.0,
-    );
+    // `blockInteractionRange()` with the creative mode modifier.
+    let range = ents.player(player).map_or(4.5, |p| {
+        crate::player::play::interaction_ranges(&p.inventory, p.game_mode).0
+    });
     let view = missile::direction_from_rotation(rot.x_rot, rot.y_rot, 0.0);
     if let Some((b, _)) = physics::clip(level as &dyn Blocks, eye, eye + view * range)
         && level
@@ -58,6 +55,9 @@ pub fn use_item(
     {
         return Used::Pass;
     }
+    // `player.startUsingItem(hand)`: the eye's use duration is 0, so it stays in use until the
+    // client releases it or the hand changes.
+    crate::player::using::start_using(ents, env, player, hand, stack, 0);
     let Some(target) = nearest_stronghold(level, pos) else {
         return Used::Started;
     };
@@ -87,6 +87,8 @@ pub fn use_item(
     data.ints[0] = 1;
     data.ints[1] = i32::from(own.next_int_bounded(5) > 0);
     data.random_state = own.state();
+    // `gameEvent(PROJECTILE_SHOOT, eye.position(), Context.of(player))` before it is added.
+    missile::shoot_event(env.out, start, Some(player));
     missile::spawn(
         ents,
         network_ids,
@@ -124,6 +126,9 @@ pub fn use_item(
     });
     if !creative {
         stack.shrink(1);
+        if stack.is_empty() {
+            crate::player::using::mark_emptied(ents, player);
+        }
     }
     if let Some(p) = ents.player_mut(player) {
         p.stats.award(
