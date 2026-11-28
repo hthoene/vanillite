@@ -2713,6 +2713,7 @@ impl Chunks {
     /// ahead).
     pub fn release_memory(&mut self) {
         self.slots.generator.release_memory();
+        self.slots.store.release_memory();
         self.levels.shrink_to_fit();
         self.generation.shrink_to_fit();
         self.block_ticks.shrink_to_fit();

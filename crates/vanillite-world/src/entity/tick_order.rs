@@ -14,6 +14,11 @@ pub(super) struct TickOrder {
 }
 
 impl TickOrder {
+    /// Gives back the spare room of the list.
+    pub(super) fn shrink_to_fit(&mut self) {
+        self.list.shrink_to_fit();
+    }
+
     /// Appends an id and returns its slot.
     pub(super) fn push(&mut self, id: EntityId) -> u32 {
         let slot = u32::try_from(self.list.len()).expect("tick order full");

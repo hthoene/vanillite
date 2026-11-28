@@ -65,6 +65,13 @@ pub struct SectionIndex {
 const REGION: i32 = 3;
 
 impl SectionIndex {
+    /// Gives back the room of emptied sections and regions.
+    pub fn shrink_to_fit(&mut self) {
+        self.sections.shrink_to_fit();
+        self.columns.shrink_to_fit();
+        self.player_regions.shrink_to_fit();
+    }
+
     pub(super) fn insert(
         &mut self,
         section: SectionPos,

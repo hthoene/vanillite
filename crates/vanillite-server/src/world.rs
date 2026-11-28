@@ -1189,9 +1189,17 @@ impl ServerWorld {
         self.level.chunks.release_memory();
         self.packets.release_memory();
         let entities = &mut self.level.entities;
+        entities.store.shrink_to_fit();
         entities.mobs.shrink_to_fit();
         entities.items.shrink_to_fit();
         entities.players.shrink_to_fit();
+        entities.falling_blocks.shrink_to_fit();
+        entities.arrows.shrink_to_fit();
+        entities.primed_tnts.shrink_to_fit();
+        entities.by_network_id.shrink_to_fit();
+        entities.stuck_arrows.shrink_to_fit();
+        self.tracker.release_memory();
+        self.entity_updates.release_memory();
         self.memory_released = true;
     }
 
