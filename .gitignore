@@ -10,3 +10,6 @@
 /crates/vanillite-multiversion/src/generated/
 # Bedrock identity keys that runs and tests generate.
 bedrock-identity.key
+
+# Go build output of the Bedrock test client (#307)
+/tools/bedrock-strict/bedrock-strict
