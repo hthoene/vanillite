@@ -76,6 +76,9 @@ impl Profile {
             Profile::Performance => {
                 "Vanillite's strongest optimizations, deviates a little from Vanilla"
             }
+            Profile::Crowd => {
+                "performance plus crowd mode for very many players in one place"
+            }
         }
     }
 
