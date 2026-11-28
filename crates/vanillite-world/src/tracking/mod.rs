@@ -31,6 +31,10 @@ pub trait EntityTracker: Send {
         let _ = entity;
         &[]
     }
+
+    /// Gives back what the tracker keeps for its capacity (the world has been empty for a
+    /// while); the next update must work as before.
+    fn release_memory(&mut self) {}
 }
 
 /// Creates the tracker of each world.
@@ -147,9 +151,10 @@ pub struct TrackerInput<'a> {
     /// Whether a chunk inside a viewer's view has not been sent to that viewer yet
     /// (Vanilla's `chunkSender.isPending`); entities there stay invisible.
     pub chunk_pending: &'a dyn Fn(EntityId, ChunkPos) -> bool,
-    /// Chunks sent to viewers since the last update (Vanilla's `playerLoadedChunk`): entities
-    /// there may have become visible to that viewer.
-    pub chunks_sent: &'a [(EntityId, ChunkPos)],
+    /// Viewers whose client moves the server took since the last update (`ChunkMap.move`):
+    /// every entity is checked against them again (`updatePlayer`), so entities in chunks
+    /// sent since become visible. Only then: Vanilla pairs nothing when a chunk is sent.
+    pub moved_viewers: &'a [EntityId],
     /// Factor on every entity type's movement update interval (1 = Vanilla). Larger under
     /// overload (`performance.entity-tracking.overload-tick-millis`).
     pub update_scale: i32,
@@ -283,6 +288,12 @@ pub struct TrackerOutput {
 }
 
 impl TrackerOutput {
+    /// Empties the output and gives back its capacity.
+    pub fn release_memory(&mut self) {
+        self.messages = Vec::new();
+        self.viewers = Vec::new();
+    }
+
     /// Empties the output, keeping its capacity.
     pub fn clear(&mut self) {
         self.messages.clear();

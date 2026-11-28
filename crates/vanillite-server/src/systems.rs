@@ -125,7 +125,13 @@ pub(crate) struct GameSystems {
     scoreboard_sync: Mutex<crate::scoreboard::ScoreboardSync>,
     storage: Mutex<CommandStorage>,
     functions: RwLock<Arc<FunctionLibrary>>,
-    advancements: RwLock<Arc<Advancements>>,
+    /// `None` until first needed ([`GameSystems::advancements`]) and again after
+    /// [`GameSystems::release_advancements`].
+    advancements: RwLock<Option<Arc<Advancements>>>,
+    /// The pack directories the advancements are read from.
+    advancement_roots: RwLock<Vec<PathBuf>>,
+    /// Held while the advancements are read, so they are read once.
+    advancements_loading: Mutex<()>,
     post_reload: AtomicBool,
     /// `function-permission-level`.
     pub(crate) function_level: u8,
@@ -168,6 +174,8 @@ impl GameSystems {
             storage: Mutex::default(),
             functions: RwLock::new(Arc::new(FunctionLibrary::default())),
             advancements: RwLock::default(),
+            advancement_roots: RwLock::default(),
+            advancements_loading: Mutex::new(()),
             post_reload: AtomicBool::new(false),
             function_level,
             level_dir,
@@ -346,22 +354,86 @@ impl GameSystems {
         self.post_reload.store(true, Ordering::Release);
     }
 
-    /// The advancements (`ServerAdvancementManager`).
+    /// The advancements (`ServerAdvancementManager`), read from the packs on first use: only
+    /// players need them, and a login reads them ahead ([`GameSystems::prefetch_advancements`]).
     pub(crate) fn advancements(&self) -> Arc<Advancements> {
-        Arc::clone(
-            &self
-                .advancements
-                .read()
-                .unwrap_or_else(PoisonError::into_inner),
-        )
-    }
-
-    /// Replaces the advancements; players that join afterwards use them.
-    pub(crate) fn set_advancements(&self, advancements: Advancements) {
+        if let Some(set) = self.loaded_advancements() {
+            return set;
+        }
+        let _loading = lock(&self.advancements_loading);
+        if let Some(set) = self.loaded_advancements() {
+            return set;
+        }
+        let roots = self
+            .advancement_roots
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let set = Arc::new(crate::commands::load_advancements_from(&roots));
         *self
             .advancements
             .write()
-            .unwrap_or_else(PoisonError::into_inner) = Arc::new(advancements);
+            .unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&set));
+        set
+    }
+
+    fn loaded_advancements(&self) -> Option<Arc<Advancements>> {
+        self.advancements
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Reads the advancements on a background thread if they are not loaded (a player logs in).
+    pub(crate) fn prefetch_advancements(
+        global: &Arc<crate::global::Global>,
+        compute: &crate::compute::Compute,
+    ) {
+        if global.systems.loaded_advancements().is_none() {
+            let global = Arc::clone(global);
+            compute.spawn_background(0, move || {
+                global.systems.advancements();
+            });
+        }
+    }
+
+    /// Where the advancements are read from on first use (the start).
+    pub(crate) fn set_advancement_roots(&self, roots: Vec<PathBuf>) {
+        *self
+            .advancement_roots
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = roots;
+        *self
+            .advancements
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// Replaces the advancements read from `roots` (`/reload`); players that join afterwards
+    /// use them.
+    pub(crate) fn set_advancements(&self, advancements: Advancements, roots: Vec<PathBuf>) {
+        let _loading = lock(&self.advancements_loading);
+        *self
+            .advancement_roots
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = roots;
+        *self
+            .advancements
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(advancements));
+    }
+
+    /// Drops the advancements if nobody holds them (no player is online); the next use reads
+    /// them again.
+    pub(crate) fn release_advancements(&self) {
+        let _loading = lock(&self.advancements_loading);
+        let mut set = self
+            .advancements
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if set.as_ref().is_some_and(|set| Arc::strong_count(set) == 1) {
+            *set = None;
+        }
     }
 
     /// Whether the load functions are due; clears the flag.

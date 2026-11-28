@@ -84,6 +84,8 @@ struct PoolInner {
     queue: Mutex<PoolQueue>,
     wake: Condvar,
     threads: Mutex<Vec<JoinHandle<()>>>,
+    /// Runs on a thread that runs out of work ([`IoPool::set_idle_hook`]).
+    idle: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 #[derive(Default)]
@@ -109,6 +111,8 @@ enum Work {
         to: CompletionTarget,
         upto: u64,
     },
+    /// Close the idle files and drop the read-ahead records ([`ChunkStore::release_memory`]).
+    Release(Arc<StoreInner>),
 }
 
 impl PartialEq for Job {
@@ -143,6 +147,7 @@ impl IoPool {
             queue: Mutex::new(PoolQueue::default()),
             wake: Condvar::new(),
             threads: Mutex::new(Vec::new()),
+            idle: std::sync::OnceLock::new(),
         });
         for index in 0..threads.max(1) {
             let worker = Arc::clone(&inner);
@@ -167,6 +172,19 @@ impl IoPool {
         self.inner.wake.notify_one();
     }
 
+    /// Sets what a thread runs, without the queue lock, each time it runs out of work and
+    /// after each [`IoPool::wake_idle`] (the server's memory hand-back of the thread's
+    /// allocator heap).
+    pub fn set_idle_hook(&self, hook: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.inner.idle.set(hook);
+    }
+
+    /// Wakes the idle threads so they run the idle hook.
+    pub fn wake_idle(&self) {
+        let _queue = lock(&self.inner.queue);
+        self.inner.wake.notify_all();
+    }
+
     /// Runs the queued jobs to the end and stops the threads.
     pub fn shutdown(&self) {
         lock(&self.inner.queue).stop = true;
@@ -179,6 +197,8 @@ impl IoPool {
 }
 
 fn worker_loop(pool: &PoolInner) {
+    // The idle hook ran since the last job or wake-up.
+    let mut idled = false;
     loop {
         let job = {
             let mut queue = lock(&pool.queue);
@@ -189,12 +209,21 @@ fn worker_loop(pool: &PoolInner) {
                 if queue.stop {
                     return;
                 }
+                if !idled && let Some(idle) = pool.idle.get() {
+                    drop(queue);
+                    idle();
+                    idled = true;
+                    queue = lock(&pool.queue);
+                    continue;
+                }
                 queue = pool
                     .wake
                     .wait(queue)
                     .unwrap_or_else(PoisonError::into_inner);
+                idled = false;
             }
         };
+        idled = false;
         match job.work {
             Work::File(store, key) => store.run_file(key),
             Work::Commit {
@@ -206,6 +235,7 @@ fn worker_loop(pool: &PoolInner) {
                 let result = store.run_commit(upto);
                 to.post_commit(round, result);
             }
+            Work::Release(store) => store.release_memory(),
         }
     }
 }
@@ -386,11 +416,15 @@ impl FileSlot {
     }
 }
 
-/// Records read ahead, first in first out under a byte budget.
+/// Records read ahead but not asked for within this time are dropped: the chunk they were
+/// read ahead for went the other way.
+const READ_AHEAD_AGE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Records read ahead, first in first out under a byte budget and [`READ_AHEAD_AGE`].
 #[derive(Default)]
 struct ReadCache {
     map: FxHashMap<(Stream, ChunkPos), Record>,
-    order: VecDeque<(Stream, ChunkPos)>,
+    order: VecDeque<((Stream, ChunkPos), std::time::Instant)>,
     bytes: usize,
     budget: usize,
 }
@@ -410,17 +444,25 @@ impl ReadCache {
         if let Some(old) = self.map.insert(key, record) {
             self.bytes -= old.1.len();
         }
-        self.order.push_back(key);
-        while self.bytes > self.budget {
-            let Some(oldest) = self.order.pop_front() else {
-                break;
-            };
+        let now = std::time::Instant::now();
+        self.order.push_back((key, now));
+        while let Some(&(oldest, at)) = self.order.front()
+            && (self.bytes > self.budget || now.duration_since(at) > READ_AHEAD_AGE)
+        {
+            self.order.pop_front();
             self.take(oldest);
         }
         if self.order.len() > self.map.len() * 4 + 64 {
             let map = &self.map;
-            self.order.retain(|k| map.contains_key(k));
+            self.order.retain(|(k, _)| map.contains_key(k));
         }
+    }
+
+    /// Drops every record and gives back the room.
+    fn clear(&mut self) {
+        self.map = FxHashMap::default();
+        self.order = VecDeque::new();
+        self.bytes = 0;
     }
 }
 
@@ -919,10 +961,28 @@ impl StoreInner {
     }
 
     /// Closes the least recently used idle files until a quarter of the limit is free again.
-    /// Files with queued work or an IO thread on them stay open. A file is made durable
-    /// before it leaves the table, so the next instance of it sees every write.
     fn evict(self: &Arc<Self>) {
-        let target = self.settings.max_open_files * 3 / 4;
+        self.evict_to(self.settings.max_open_files * 3 / 4);
+    }
+
+    /// Closes every idle file and drops the records read ahead (nobody plays in the
+    /// dimension for a while).
+    fn release_memory(self: &Arc<Self>) {
+        self.evict_to(0);
+        for shard in &self.shards {
+            let mut state = lock(&shard.state);
+            state.cache.clear();
+            state
+                .files
+                .retain(|_, file| !(file.idle() && file.region.is_none() && !file.dirty));
+            state.files.shrink_to_fit();
+        }
+    }
+
+    /// Closes the least recently used idle files until at most `target` are open. Files
+    /// with queued work or an IO thread on them stay open. A file is made durable before it
+    /// leaves the table, so the next instance of it sees every write.
+    fn evict_to(self: &Arc<Self>, target: usize) {
         let open = self.open.load(Ordering::Relaxed);
         if open <= target {
             return;
@@ -1157,6 +1217,12 @@ impl ChunkStore for RegionStore {
 
     fn backlog(&self) -> usize {
         self.inner.backlog.load(Ordering::Relaxed)
+    }
+
+    fn release_memory(&self) {
+        self.inner
+            .pool
+            .push(Priority::Background, Work::Release(Arc::clone(&self.inner)));
     }
 }
 

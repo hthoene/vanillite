@@ -124,6 +124,11 @@ pub struct Movement {
     /// without one (`getKnownMovement`).
     pub known_movement: Vec3,
     received_movement_this_tick: bool,
+    /// `ServerChunkCache.move(player)` is due: the server took a move of the client (or a
+    /// vehicle move, or a spectator's camera moved it). The player's chunk tickets follow it
+    /// then, and every entity is checked against it again (`TrackedEntity.updatePlayer`);
+    /// the world clears it after its entity tracking.
+    pub chunk_move: bool,
     /// `movementThisTick`: the moves `Entity.move` made since the player's last tick, for
     /// the blocks on their way (`applyEffectsFromBlocks`).
     pub path: Vec<crate::survival::inside::Movement>,
@@ -189,6 +194,7 @@ impl Movement {
             passenger: false,
             known_movement: Vec3::ZERO,
             received_movement_this_tick: false,
+            chunk_move: false,
             path: Vec::new(),
             wrongly_logged: None,
             wrongly_held: 0,
@@ -449,8 +455,11 @@ impl Movement {
             return Ok(());
         }
         let (y_rot, x_rot) = request.rot.unwrap_or((body.y_rot, body.x_rot));
-        if self.update_awaiting_teleport(body, sink) || self.passenger {
+        if self.update_awaiting_teleport(body, sink) {
             snap_rotation(body, wrap_degrees(y_rot), wrap_degrees(x_rot));
+        } else if self.passenger {
+            snap_rotation(body, wrap_degrees(y_rot), wrap_degrees(x_rot));
+            self.chunk_move = true;
         } else {
             self.position_change(
                 request.pos.unwrap_or(body.pos),
@@ -574,6 +583,7 @@ impl Movement {
             body.pos.z - from.z,
         );
         self.received_movement_this_tick = true;
+        self.chunk_move = true;
         self.moves.push(crate::survival::player::MoveRecord {
             from,
             to: body.pos,

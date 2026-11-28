@@ -7,7 +7,8 @@
 use vanillite_base::random::RandomSource;
 use vanillite_base::{Aabb, BlockPos, Vec3};
 use vanillite_config::GameMode;
-use vanillite_world::entity::{EntityFlags, EntityId};
+use vanillite_data::entity::ids;
+use vanillite_world::entity::{EntityFlags, EntityId, KindSet};
 
 use super::goals::{
     TargetState, can_attack, distance_sqr, flag, reduced, set_target, target_can_continue,
@@ -18,6 +19,29 @@ use crate::survival::rules::{Difficulty, Rule};
 
 /// Which entities a target or avoid goal considers (`Class<T>` plus the selector).
 pub type TargetFilter = fn(&Tick<'_, '_>, EntityId) -> bool;
+
+/// The entity types a [`TargetFilter`] can accept at all (its `Class<T>`): searches skip the
+/// other entities of crowded sections without asking the filter, which would refuse them.
+pub type TargetKinds = Option<&'static KindSet>;
+
+/// `AbstractVillager`.
+pub static VILLAGERS: KindSet = KindSet::of(&[ids::VILLAGER, ids::WANDERING_TRADER]);
+/// `IronGolem`.
+pub static IRON_GOLEMS: KindSet = KindSet::of(&[ids::IRON_GOLEM]);
+/// `Turtle`.
+pub static TURTLES: KindSet = KindSet::of(&[ids::TURTLE]);
+/// `Axolotl`.
+pub static AXOLOTLS: KindSet = KindSet::of(&[ids::AXOLOTL]);
+/// `Wolf`.
+pub static WOLVES: KindSet = KindSet::of(&[ids::WOLF]);
+/// `Ocelot`.
+pub static OCELOTS: KindSet = KindSet::of(&[ids::OCELOT]);
+/// `Cat`.
+pub static CATS: KindSet = KindSet::of(&[ids::CAT]);
+/// `Armadillo`.
+pub static ARMADILLOS: KindSet = KindSet::of(&[ids::ARMADILLO]);
+/// `Endermite`.
+pub static ENDERMITES: KindSet = KindSet::of(&[ids::ENDERMITE]);
 
 /// A shared goal with its state.
 #[derive(Clone, Copy, Debug)]
@@ -30,6 +54,8 @@ pub enum CommonGoal {
         interval: i32,
         found: Option<EntityId>,
         filter: TargetFilter,
+        /// The types `filter` accepts at most.
+        kinds: TargetKinds,
         players_only: bool,
         /// What a subclass checks before `super.canUse` and `super.canContinueToUse`
         /// (`BeeBecomeAngryTargetGoal.beeCanTarget`), before the interval roll.
@@ -38,6 +64,8 @@ pub enum CommonGoal {
     /// `AvoidEntityGoal(mob, type, maxDist, walkSpeed, sprintSpeed, predicate)`.
     Avoid {
         filter: TargetFilter,
+        /// The types `filter` accepts at most.
+        kinds: TargetKinds,
         max_dist: f32,
         walk: f64,
         sprint: f64,
@@ -73,6 +101,7 @@ impl CommonGoal {
             interval: reduced(10),
             found: None,
             filter,
+            kinds: None,
             players_only: true,
             precheck: None,
         }
@@ -86,6 +115,7 @@ impl CommonGoal {
             interval: reduced(interval),
             found: None,
             filter,
+            kinds: None,
             players_only: false,
             precheck: None,
         }
@@ -103,11 +133,24 @@ impl CommonGoal {
     pub fn avoid(filter: TargetFilter, max_dist: f32, walk: f64, sprint: f64) -> CommonGoal {
         CommonGoal::Avoid {
             filter,
+            kinds: None,
             max_dist,
             walk,
             sprint,
             to_avoid: None,
         }
+    }
+
+    /// Declares the only entity types the filter of a target or avoid goal accepts (a
+    /// promise: the filter refuses every other type), so its searches skip the others.
+    #[must_use]
+    pub fn of_kinds(mut self, only: &'static KindSet) -> CommonGoal {
+        if let CommonGoal::NearestAttackable { kinds, .. } | CommonGoal::Avoid { kinds, .. } =
+            &mut self
+        {
+            *kinds = Some(only);
+        }
+        self
     }
 
     pub fn ranged(speed: f64, interval_min: i32, interval_max: i32, radius: f32) -> CommonGoal {
@@ -229,6 +272,7 @@ pub fn test_combat(t: &mut Tick<'_, '_>, target: EntityId, range: f64, must_see:
 pub fn find_nearest(
     t: &mut Tick<'_, '_>,
     filter: TargetFilter,
+    kinds: TargetKinds,
     range: f64,
     must_see: bool,
     players_only: bool,
@@ -238,9 +282,17 @@ pub fn find_nearest(
     let at = Vec3::new(p.x, t.eye_y(), p.z);
     let mut candidates = std::mem::take(&mut t.cx.ids);
     candidates.clear();
-    t.ents
-        .store
-        .for_each_in(&area, players_only, |id| candidates.push(id));
+    match kinds {
+        Some(kinds) if !players_only => {
+            t.ents
+                .store
+                .for_each_of_kinds_in(&area, kinds, |id| candidates.push(id));
+        }
+        _ => t
+            .ents
+            .store
+            .for_each_in(&area, players_only, |id| candidates.push(id)),
+    }
     let mut best: Option<(EntityId, f64)> = None;
     for &id in &candidates {
         if id == t.id {
@@ -442,6 +494,7 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut CommonGoal) -> bool {
             interval,
             found,
             filter,
+            kinds,
             players_only,
             precheck,
         } => {
@@ -457,11 +510,20 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut CommonGoal) -> bool {
             } else {
                 t.aabb().inflate(range, range, range)
             };
-            *found = find_nearest(t, *filter, range, state.must_see, *players_only, area);
+            *found = find_nearest(
+                t,
+                *filter,
+                *kinds,
+                range,
+                state.must_see,
+                *players_only,
+                area,
+            );
             found.is_some()
         }
         CommonGoal::Avoid {
             filter,
+            kinds,
             max_dist,
             to_avoid,
             ..
@@ -472,9 +534,17 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut CommonGoal) -> bool {
             let p = t.pos();
             let mut candidates = std::mem::take(&mut t.cx.ids);
             candidates.clear();
-            t.ents
-                .store
-                .for_each_in(&area, false, |id| candidates.push(id));
+            match kinds {
+                Some(kinds) => {
+                    t.ents
+                        .store
+                        .for_each_of_kinds_in(&area, kinds, |id| candidates.push(id));
+                }
+                None => t
+                    .ents
+                    .store
+                    .for_each_in(&area, false, |id| candidates.push(id)),
+            }
             let mut best: Option<(EntityId, f64)> = None;
             for &id in &candidates {
                 if id == t.id

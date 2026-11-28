@@ -373,6 +373,10 @@ fn check_chunk(data: &[u8], v: &OldVersion) {
 /// A current-version player.
 struct Player {
     client: TestClient<Mem>,
+    /// While set, it sends this position every tick like a real client: the server pairs
+    /// entities in chunks sent since with it only at a move it takes (`ChunkMap.move`).
+    idle: Option<[f64; 3]>,
+    last_idle: Instant,
 }
 
 impl Player {
@@ -382,6 +386,17 @@ impl Player {
             assert!(Instant::now() < deadline, "timed out waiting for {what}");
             let raw = self.client.recv_raw().expect("receive");
             let packet = ClientboundPlay::decode(&raw).expect("decode");
+            if let Some([x, y, z]) = self.idle
+                && self.last_idle.elapsed() >= Duration::from_millis(50)
+            {
+                self.last_idle = Instant::now();
+                let flags = MoveFlags {
+                    on_ground: true,
+                    horizontal_collision: false,
+                };
+                self.client.send(&MovePlayerPos { x, y, z, flags }).unwrap();
+                self.client.send(&ClientTickEnd).unwrap();
+            }
             match &packet {
                 ClientboundPlay::ChunkBatchFinished(_) => self
                     .client
@@ -575,6 +590,8 @@ fn join_walk_see(dir: &str, release: &'static str) {
     // --- A current-version player joins; both see each other.
     let mut new = Player {
         client: mem(&opener, "Newbie"),
+        idle: None,
+        last_idle: Instant::now(),
     };
     new.client
         .handshake("localhost", 25565, Intent::Login)
@@ -596,6 +613,8 @@ fn join_walk_see(dir: &str, release: &'static str) {
         })
         .unwrap();
     new.client.send(&PlayerLoaded).unwrap();
+    let p = new_pos.change.position;
+    new.idle = Some([p.x, p.y, p.z]);
 
     let player_type = old
         .v
@@ -619,6 +638,7 @@ fn join_walk_see(dir: &str, release: &'static str) {
         ClientboundPlay::AddEntity(a) if a.uuid.0 == oldie => Some(a.entity_id),
         _ => None,
     });
+    new.idle = None;
 
     // --- The new player walks; the old client sees it in its movement format.
     let p = new_pos.change.position;

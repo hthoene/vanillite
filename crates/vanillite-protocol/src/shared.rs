@@ -13,9 +13,22 @@ use crate::sets::ServerboundPlay;
 /// with the same compression threshold. Clients of an older version (multi-version layer) get
 /// a translated body, likewise built once per version by the first writer that needs it (up to
 /// [`TRANSLATIONS`] versions; the slots are allocated by the first translation).
+///
+/// A packet kept for long (a cached chunk packet) can be replaced by its [`compacted`] copy,
+/// which holds only the frame: its body is inflated from the frame by the first caller that
+/// needs it (another threshold, a translation, a packet listener) and kept from then on.
+///
+/// [`compacted`]: SharedPacket::compacted
 #[derive(Debug)]
 pub struct SharedPacket {
-    body: Vec<u8>,
+    /// The encoded body; empty until first needed in a [`SharedPacket::compacted`] copy.
+    body: OnceLock<Vec<u8>>,
+    /// Length of the body.
+    len: usize,
+    /// Packet id at the start of the body.
+    id: Option<i32>,
+    /// Made by [`SharedPacket::compacted`].
+    compacted: bool,
     frame: OnceLock<(Option<usize>, Vec<u8>)>,
     translated: OnceLock<Box<[Translation; TRANSLATIONS]>>,
     /// What the broadcast listeners of the packet tap decided (allocated by the first
@@ -32,7 +45,10 @@ impl SharedPacket {
     /// Wraps an encoded body (`id` + fields).
     pub fn new(body: Vec<u8>) -> Self {
         Self {
-            body,
+            len: body.len(),
+            id: crate::tap::packet_id(&body),
+            body: OnceLock::from(body),
+            compacted: false,
             frame: OnceLock::new(),
             translated: OnceLock::new(),
             tapped: OnceLock::new(),
@@ -50,7 +66,53 @@ impl SharedPacket {
 
     /// The encoded body.
     pub fn body(&self) -> &[u8] {
-        &self.body
+        self.body.get_or_init(|| {
+            let mut body = Vec::new();
+            if let Some((threshold, frame)) = self.frame.get() {
+                let _ = crate::frame::for_each_body(frame, *threshold, |b| {
+                    body.extend_from_slice(b);
+                    Ok(false)
+                });
+            }
+            body
+        })
+    }
+
+    /// Length of the body.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the body is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// The packet id (the first field of the body).
+    pub fn id(&self) -> Option<i32> {
+        self.id
+    }
+
+    /// A copy that holds only the frame, once a writer built it (`None` before, for an
+    /// unencodable body and for a copy that is compacted already): for a cache that keeps
+    /// the packet long after its first receivers.
+    pub fn compacted(&self) -> Option<Self> {
+        if self.compacted {
+            return None;
+        }
+        let (threshold, frame) = self.frame.get()?;
+        if frame.is_empty() {
+            return None;
+        }
+        Some(Self {
+            body: OnceLock::new(),
+            len: self.len,
+            id: self.id,
+            compacted: true,
+            frame: OnceLock::from((*threshold, frame.clone())),
+            translated: OnceLock::new(),
+            tapped: OnceLock::new(),
+        })
     }
 
     /// The cached frame for `threshold`, built with `build` by the first caller. Returns
@@ -60,7 +122,7 @@ impl SharedPacket {
         threshold: Option<usize>,
         build: impl FnOnce(&[u8]) -> Vec<u8>,
     ) -> Option<&[u8]> {
-        let (t, frame) = self.frame.get_or_init(|| (threshold, build(&self.body)));
+        let (t, frame) = self.frame.get_or_init(|| (threshold, build(self.body())));
         (*t == threshold).then_some(frame.as_slice())
     }
 
@@ -80,7 +142,7 @@ impl SharedPacket {
             // Only the caller that fills an empty slot builds, so a slot of another version
             // leaves `build` for the next one.
             let (v, body) = slot.get_or_init(|| {
-                let body = build.take().and_then(|b| b(&self.body));
+                let body = build.take().and_then(|b| b(self.body()));
                 (version, body.map(Vec::into_boxed_slice))
             });
             if *v == version {
@@ -199,6 +261,35 @@ impl Drop for InboundReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn compacted_packet_keeps_frame_and_inflates_body() {
+        let body: Vec<u8> = std::iter::once(0x27)
+            .chain((0..4000u32).map(|i| i.to_le_bytes()[0]))
+            .collect();
+        for threshold in [None, Some(256)] {
+            let packet = SharedPacket::new(body.clone());
+            assert!(packet.compacted().is_none());
+            let mut codec = crate::compress::Codec::default();
+            let frame = packet
+                .frame(threshold, |b| {
+                    let mut f = Vec::new();
+                    crate::frame::encode_frame(b, threshold, &mut codec, &mut f).unwrap();
+                    f
+                })
+                .unwrap()
+                .to_vec();
+            let compacted = packet.compacted().unwrap();
+            assert!(compacted.compacted().is_none());
+            assert_eq!((compacted.id(), compacted.len()), (Some(0x27), body.len()));
+            assert_eq!(
+                compacted.frame(threshold, |_| unreachable!()),
+                Some(&frame[..])
+            );
+            assert_eq!(compacted.body(), &body[..]);
+        }
+    }
 
     fn packet(seq: u64) -> Inbound {
         Inbound {

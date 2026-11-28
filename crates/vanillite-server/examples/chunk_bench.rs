@@ -4,8 +4,8 @@
 //!
 //! ```text
 //! cargo run --profile release-fast -p vanillite-server --example chunk_bench -- \
-//!     --radius 16 --threads 4 [--tick-ms 50] [--pump] [--seed N] [--dir /tmp/bench] [--load] \\
-//!     [--anti-xray] [--fly N]
+//!     --radius 16 --threads 4 [--tick-ms 50] [--pump] [--inline] [--seed N] [--dir /tmp/bench] \\
+//!     [--load] [--anti-xray] [--fly N]
 //! ```
 //!
 //! `--tick-ms` is the world tick interval: the runtime applies results and starts jobs once per
@@ -15,6 +15,8 @@
 //! `--fly N` (with `--load`) then moves a view distance 10 player ticket `N` chunks along x
 //! through the saved terrain, one chunk at a time, and reports the chunks read per chunk moved
 //! and the chunks in memory (`--radius` must cover the flight and the view).
+//! `--inline` runs every job on the world thread at submission (the test-mode scheduler): one
+//! deterministic job order, for instruction counts (callgrind) that compare between builds.
 //! Output is one JSON object per phase on stdout.
 
 use std::path::PathBuf;
@@ -98,6 +100,14 @@ impl ChunkGenerator for TimedGenerator {
         self.0.prepare();
     }
 
+    fn release_memory(&self) {
+        self.0.release_memory();
+    }
+
+    fn trim_idle(&self) {
+        self.0.trim_idle();
+    }
+
     fn generate(
         &self,
         status: ChunkStatus,
@@ -127,6 +137,14 @@ impl LightEngine for TimedLight {
 
     fn relight(&self, changes: &[BlockPos], area: &Neighbours<'_>) -> Vec<(ChunkPos, ChunkLight)> {
         self.0.relight(changes, area)
+    }
+
+    fn changes_light(&self, old: u16, new: u16) -> bool {
+        self.0.changes_light(old, new)
+    }
+
+    fn release_memory(&self) {
+        self.0.release_memory();
     }
 }
 
@@ -175,6 +193,7 @@ struct Args {
     load: bool,
     max_jobs: usize,
     pump: bool,
+    inline: bool,
     anti_xray: bool,
     fly: i32,
 }
@@ -188,6 +207,7 @@ fn args() -> Args {
         dir: std::env::temp_dir().join("vanillite-chunk-bench"),
         load: false,
         pump: false,
+        inline: false,
         anti_xray: false,
         fly: 0,
         max_jobs: ChunkSettings::default().max_jobs,
@@ -204,6 +224,7 @@ fn args() -> Args {
             "--max-jobs" => a.max_jobs = value().parse().expect("max jobs"),
             "--load" => a.load = true,
             "--pump" => a.pump = true,
+            "--inline" => a.inline = true,
             "--anti-xray" => a.anti_xray = true,
             "--fly" => a.fly = value().parse().expect("fly"),
             other => panic!("unknown flag {other}"),
@@ -387,8 +408,12 @@ fn main() {
     let terrain = TerrainGenerator::new(&packs, spec, a.seed).expect("generator");
     eprintln!("generator setup {:?}", setup.elapsed());
     let timings = Arc::new(Timings::default());
-    let pool = ComputePool::new(a.threads).expect("pool");
-    let executor: Arc<dyn Executor> = Arc::new(PoolExecutor(Compute::new(Arc::new(pool))));
+    let compute = if a.inline {
+        Compute::inline()
+    } else {
+        Compute::new(Arc::new(ComputePool::new(a.threads).expect("pool")))
+    };
+    let executor: Arc<dyn Executor> = Arc::new(PoolExecutor(compute));
     let generator: Arc<dyn ChunkGenerator> = Arc::new(TimedGenerator(
         Arc::new(VanillaChunkGenerator::new(terrain, info.clone())),
         Arc::clone(&timings),

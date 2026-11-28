@@ -1,0 +1,6 @@
+# Java does not fuse multiply and add: a fused `mul_add` changes the rounding and breaks the
+# bit-exact Vanilla parity of world generation, light and physics (#291, invariant I5).
+disallowed-methods = [
+    { path = "f32::mul_add", reason = "Java does not fuse multiply-add; keep Vanilla's rounding" },
+    { path = "f64::mul_add", reason = "Java does not fuse multiply-add; keep Vanilla's rounding" },
+]

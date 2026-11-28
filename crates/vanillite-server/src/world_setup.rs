@@ -713,10 +713,14 @@ impl Executor for ComputeExecutor {
 
 /// Chunk packets for the players' chunk sending, encoded once per chunk and shared by every
 /// player that receives it. Entries are dropped when a chunk's blocks or light change or it
-/// unloads.
+/// unloads. Once a writer built an entry's compressed frame, the entry keeps only that
+/// ([`SharedPacket::compacted`]): at the next request for it, or at the latest at the next
+/// sweep ([`COMPACT_INTERVAL`]).
 #[derive(Debug, Default)]
 pub(crate) struct ChunkPackets {
     cache: RefCell<FxHashMap<ChunkPos, Arc<SharedPacket>>>,
+    /// Calls of [`ChunkPackets::invalidate`] (once per tick) until the next sweep.
+    until_compact: u32,
     /// `anticheat.anti-xray`, `None` when disabled.
     anti_xray: Option<crate::anti_xray::AntiXray>,
     /// Block changes of the tick, for Anti-Xray.
@@ -790,6 +794,15 @@ impl ChunkPackets {
         if cache.len() > 4096 {
             cache.retain(|pos, _| chunks.chunk(*pos).is_some());
         }
+        if self.until_compact == 0 {
+            self.until_compact = COMPACT_INTERVAL;
+            for packet in cache.values_mut() {
+                if let Some(compacted) = packet.compacted() {
+                    *packet = Arc::new(compacted);
+                }
+            }
+        }
+        self.until_compact -= 1;
     }
 
     /// Drops the packet of one chunk (its block entity data changed).
@@ -812,6 +825,9 @@ impl ChunkPackets {
     }
 }
 
+/// Ticks between the sweeps that compact the cached chunk packets.
+const COMPACT_INTERVAL: u32 = 100;
+
 /// [`ChunkSource`] over the full chunks of a world.
 pub(crate) struct WorldChunkSource<'a> {
     chunks: &'a Chunks,
@@ -826,7 +842,10 @@ impl ChunkSource for WorldChunkSource<'_> {
     }
 
     fn chunk_packet(&self, pos: ChunkPos) -> Option<Arc<SharedPacket>> {
-        if let Some(packet) = self.cache.borrow().get(&pos) {
+        if let Some(packet) = self.cache.borrow_mut().get_mut(&pos) {
+            if let Some(compacted) = packet.compacted() {
+                *packet = Arc::new(compacted);
+            }
             return Some(Arc::clone(packet));
         }
         let chunk = self.chunks.chunk(pos)?;

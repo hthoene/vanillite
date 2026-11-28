@@ -140,6 +140,7 @@ struct Reloaded {
     /// from tags.
     game: Option<vanillite_game::player::play::GameData>,
     advancements: vanillite_game::advancements::Advancements,
+    advancement_roots: Vec<std::path::PathBuf>,
 }
 
 impl DataPacks {
@@ -201,11 +202,13 @@ impl DataPacks {
         };
         let functions = functions::load(global, &opened);
         let advancements = crate::commands::load_advancements(&opened);
+        let roots: Vec<std::path::PathBuf> = opened
+            .iter()
+            .flat_map(|p| p.layers.iter().cloned())
+            .collect();
         Ok(Reloaded {
-            template_roots: opened
-                .iter()
-                .flat_map(|p| p.layers.iter().cloned())
-                .collect(),
+            advancement_roots: roots.clone(),
+            template_roots: roots,
             tags,
             functions,
             game,
@@ -247,7 +250,9 @@ impl DataPacks {
             global.players.broadcast_shared(&packet, None);
         }
         // `ServerAdvancementManager` reload; `PlayerAdvancements.reload` per online player.
-        global.systems.set_advancements(reloaded.advancements);
+        global
+            .systems
+            .set_advancements(reloaded.advancements, reloaded.advancement_roots);
         crate::progress::reload_advancements(global);
     }
 }
@@ -291,6 +296,7 @@ pub(crate) fn reload(global: &Global, ids: Vec<String>, source: CommandSource) {
                     let applied = Arc::clone(&global);
                     handle.run_global(move |server| {
                         applied.packs.apply(&applied, reloaded, server.network());
+                        server.release_memory_soon();
                     });
                 }
             }

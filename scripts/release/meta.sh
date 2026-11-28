@@ -8,9 +8,11 @@
 # Outputs: version, mc, tag, name (archive prefix), prerelease (true/false) and docker_tags
 # (comma-separated): 0.1.0-beta.1-mc26.3, mc26.3-beta, beta for a pre-release and
 # 0.1.0-mc26.3, mc26.3, latest plus mc26.3-beta, beta for a stable version (the beta tags always
-# hold the newest build). A pre-release never moves latest or mc<id>. The tags of a whole channel
-# (beta, latest) move only for the newest Minecraft version of deploy/minecraft-versions.txt, so
-# an update for an older Minecraft version does not take them back.
+# hold the newest build). latest is the newest release: a pre-release moves it only while no
+# stable release exists (no git tag v<x.y.z>+mc<id>), a stable release always; a pre-release
+# never moves mc<id>. The tags of a whole channel (beta, latest) move only for the newest
+# Minecraft version of deploy/minecraft-versions.txt, so an update for an older Minecraft version
+# does not take them back.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 
@@ -38,7 +40,11 @@ if [[ "$version" == *-* ]]; then
     channel="${version#*-}"
     channel="${channel%%.*}"
     docker_tags="${version}-mc${mc},mc${mc}-${channel}"
-    [[ "$mc" == "$newest" ]] && docker_tags+=",${channel}"
+    if [[ "$mc" == "$newest" ]]; then
+        docker_tags+=",${channel}"
+        git -C "$root" tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+\+mc' >/dev/null \
+            || docker_tags+=",latest"
+    fi
 else
     prerelease=false
     docker_tags="${version}-mc${mc},mc${mc},mc${mc}-beta"

@@ -484,7 +484,10 @@ pub fn register_goals(m: &mut MobData) {
         );
         tg.add(
             3,
-            goals::Goal::Common(CommonGoal::nearest(10, true, iron_golem)),
+            goals::Goal::Common(
+                CommonGoal::nearest(10, true, iron_golem)
+                    .of_kinds(&crate::mob::common::IRON_GOLEMS),
+            ),
         );
     }
 }

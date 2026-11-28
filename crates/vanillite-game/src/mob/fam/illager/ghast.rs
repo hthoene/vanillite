@@ -37,6 +37,7 @@ pub fn register_goals(m: &mut MobData) {
                         .get(id)
                         .is_some_and(|e| (e.pos().y - t.pos().y).abs() <= 4.0)
             },
+            kinds: None,
             players_only: true,
             precheck: None,
         }),

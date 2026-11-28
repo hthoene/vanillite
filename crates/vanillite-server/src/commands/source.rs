@@ -117,6 +117,9 @@ pub(crate) struct CommandSource {
     pub(crate) silent: bool,
     /// Gets the result of the command (`execute store`, function results).
     pub(crate) callback: Callback,
+    /// Console sources of parity scenarios: the plain text of the messages, collected instead
+    /// of logged.
+    pub(crate) feedback: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
 impl vanillite_command::Source for CommandSource {
@@ -432,6 +435,7 @@ impl CommandSource {
             anchor: Anchor::Feet,
             silent: false,
             callback: Callback::Empty,
+            feedback: None,
         }
     }
 
@@ -519,7 +523,14 @@ impl CommandSource {
                     });
                 }
             }
-            SourceKind::Console => log::info!("{}", global.console_text(&message)),
+            // `MinecraftServer.sendSystemMessage`.
+            SourceKind::Console => match &self.feedback {
+                Some(feedback) => feedback
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(global.english(&message)),
+                None => log::info!("System chat: {}", global.console_text(&message)),
+            },
             // `RconConsoleSource.sendSystemMessage`: appended without a separator.
             SourceKind::Rcon(buffer) => buffer
                 .lock()
@@ -607,7 +618,7 @@ impl CommandSource {
             }
         }
         if log_admin && !matches!(self.kind, SourceKind::Console) {
-            log::info!("{}", global.console_text(&broadcast));
+            log::info!("System chat: {}", global.console_text(&broadcast));
         }
     }
 

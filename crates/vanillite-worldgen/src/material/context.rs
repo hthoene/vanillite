@@ -74,12 +74,6 @@ struct OreBuffers {
     absent: bool,
 }
 
-thread_local! {
-    /// The context the bounds of the ore vein densities are computed in.
-    static BOUNDS_CONTEXT: std::cell::RefCell<SamplerContext> =
-        std::cell::RefCell::new(SamplerContext::new(true));
-}
-
 /// What a vein's density reads as where it is proven not to be positive (any such value has
 /// the same effect: the vein places nothing).
 const ABSENT_DENSITY: f32 = -1.0;
@@ -110,9 +104,11 @@ impl<'a> MaterialRuleContext<'a> {
                 // read, so neither is sampled (nothing else reads their cache cells).
                 let absent = system.ore_cells_private
                     && volume.is_some_and(|volume| {
-                        BOUNDS_CONTEXT.with_borrow_mut(|scratch| {
-                            program.not_positive_in(scratch, fns.density, &volume)
-                        })
+                        let mut scratch =
+                            system.bounds_scratch.take_or(|| SamplerContext::new(true));
+                        let absent = program.not_positive_in(&mut scratch, fns.density, &volume);
+                        system.bounds_scratch.give(scratch);
+                        absent
                     });
                 let values = volume.filter(|_| !absent).map(|volume| {
                     let mut density = vec![0.0; volume.len()];

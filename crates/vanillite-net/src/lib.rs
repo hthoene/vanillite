@@ -23,7 +23,7 @@ pub mod velocity;
 pub use auth::{
     AuthResult, Authenticator, KeyPair, SessionServer, is_valid_player_name, server_hash,
 };
-pub use config::{NetConfig, RateLimit, ResourcePackInfo};
+pub use config::{IdleHook, NetConfig, RateLimit, ResourcePackInfo};
 pub use configuration::{ConfigurationData, json_to_nbt, network_tags};
 pub use conn::rand_bytes;
 pub use limits::{ConnectionGuard, ConnectionLimiter};
@@ -168,13 +168,17 @@ impl Network {
         configuration: ConfigurationData,
         authenticator: Option<Arc<dyn Authenticator>>,
     ) -> std::io::Result<(Self, Arrivals)> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
+        builder
             .worker_threads(config.io_threads.max(1))
             .max_blocking_threads(config.max_concurrent_auth.max(1))
             .thread_name("vanillite-net")
             .enable_io()
-            .enable_time()
-            .build()?;
+            .enable_time();
+        if let Some(hook) = config.on_idle.clone() {
+            builder.on_thread_park(move || (hook.0)());
+        }
+        let runtime = builder.build()?;
         let keys = if config.online_mode {
             Some(KeyPair::generate().map_err(std::io::Error::other)?)
         } else {
@@ -266,6 +270,17 @@ impl Network {
             runtime: self.runtime.handle().clone(),
             shared: Arc::clone(&self.shared),
         }
+    }
+
+    /// Wakes the I/O threads, so each runs [`NetConfig::on_idle`] when it parks again.
+    pub fn idle_waker(&self) -> Box<dyn Fn() + Send + Sync> {
+        let runtime = self.runtime.handle().clone();
+        let threads = self.shared.config.io_threads.max(1);
+        Box::new(move || {
+            for _ in 0..threads {
+                runtime.spawn(async {});
+            }
+        })
     }
 
     /// Stops accepting and closes all connections.

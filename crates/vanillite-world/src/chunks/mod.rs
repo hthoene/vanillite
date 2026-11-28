@@ -593,6 +593,10 @@ pub struct Chunks {
     /// Chunks parked on a neighbour.
     waiters: FxHashMap<ChunkPos, Vec<ChunkPos>>,
     in_flight: usize,
+    /// The last tick a job was in flight, and whether the slots' job buffers were trimmed
+    /// since ([`IDLE_TRIM_TICKS`]).
+    last_busy: u64,
+    trimmed: bool,
     done_tx: DoneSender,
     done_rx: Mutex<Receiver<Done>>,
     /// This world's inbox for store results.
@@ -631,10 +635,13 @@ pub struct Chunks {
     unload_candidates: FxHashSet<ChunkPos>,
     /// Changed blocks whose light is still to update, per chunk.
     relight: FxHashMap<ChunkPos, Vec<BlockPos>>,
-    /// A light update is in flight. The next one starts when it is applied, so every update
-    /// reads the light the one before left. Light updates do not count against the job budget
-    /// of loading and generation.
-    relighting: bool,
+    /// The chunks whose changes the light update in flight handles (none: no update in
+    /// flight). The next one starts when it is applied, so every update reads the light the one
+    /// before left. Light updates do not count against the job budget of loading and
+    /// generation.
+    relighting: FxHashSet<ChunkPos>,
+    /// A light step waits for a pending light update ([`Chunks::relight_near`]).
+    light_waits: bool,
     /// Sections whose sky and block light changed, per full chunk.
     light_changes: FxHashMap<ChunkPos, LightChange>,
     block_changes: Vec<BlockPos>,
@@ -754,6 +761,8 @@ impl Chunks {
             focus: Vec::new(),
             waiters: FxHashMap::default(),
             in_flight: 0,
+            last_busy: 0,
+            trimmed: true,
             done_tx: DoneSender { tx: done_tx, wake },
             done_rx: Mutex::new(done_rx),
             inbox_tx,
@@ -775,7 +784,8 @@ impl Chunks {
             due_next_tick: FxHashSet::default(),
             unload_candidates: FxHashSet::default(),
             relight: FxHashMap::default(),
-            relighting: false,
+            relighting: FxHashSet::default(),
+            light_waits: false,
             light_changes: FxHashMap::default(),
             block_changes: Vec::new(),
             tick: 0,
@@ -815,6 +825,9 @@ impl Chunks {
         for _ in 0..1024 {
             let progress = self.drain_done() | self.dispatch();
             if !progress {
+                if std::mem::take(&mut self.light_waits) {
+                    self.start_relights();
+                }
                 break;
             }
         }
@@ -1317,7 +1330,8 @@ impl Chunks {
                 break true;
             }
             progress |= self.dispatch();
-            if progress {
+            // A blocked check may add a generation ticket: its level changes come first.
+            if progress || !self.level_changes.is_empty() {
                 continue;
             }
             if self.in_flight == 0 && self.check.is_empty() {
@@ -1381,6 +1395,14 @@ impl Chunks {
             self.apply_level_changes();
             progress |= self.dispatch();
             if !progress {
+                // Light steps wait for the light updates of blocks features wrote: they start
+                // now rather than at the end of the tick.
+                if std::mem::take(&mut self.light_waits) {
+                    self.start_relights();
+                    if !self.relighting.is_empty() {
+                        continue;
+                    }
+                }
                 break;
             }
         }
@@ -1388,8 +1410,22 @@ impl Chunks {
         self.start_relights();
         self.unload();
         self.check_visibility();
+        self.trim_when_idle();
         // `ServerChunkCache.tick` ends with `clearCache`.
         self.chunk_cache.clear();
+    }
+
+    /// Frees the job buffers of the generator and the light engine once no job has been in
+    /// flight for [`IDLE_TRIM_TICKS`] (#291): idle memory stays as low as without them.
+    fn trim_when_idle(&mut self) {
+        if self.in_flight > 0 {
+            self.last_busy = self.tick;
+            self.trimmed = false;
+        } else if !self.trimmed && self.tick - self.last_busy >= IDLE_TRIM_TICKS {
+            self.trimmed = true;
+            self.slots.generator.trim_idle();
+            self.slots.light.release_memory();
+        }
     }
 
     /// The visibility of a chunk (`ChunkMap.onFullChunkStatusChange`): hidden unless it is
@@ -1703,8 +1739,11 @@ impl Chunks {
                     }
                     self.wake(pos);
                 }
-                for chunk in written {
+                for mut chunk in written {
                     let pos = chunk.pos;
+                    if chunk.status >= ChunkStatus::InitializeLight {
+                        self.relight_written(&mut chunk);
+                    }
                     self.put_back(pos, chunk);
                     if let Some(holder) = self.holders.map_mut().get_mut(&pos) {
                         holder.busy = false;
@@ -1723,7 +1762,20 @@ impl Chunks {
                         && let Some(current) = holder.chunk.as_mut()
                     {
                         let current = Arc::make_mut(current);
-                        current.chunk.light_mut().merge_max(target.chunk.light());
+                        let light = current.chunk.light_mut();
+                        light.merge_max(target.chunk.light());
+                        // The layers below and above the world the chunk keeps no light in,
+                        // which the step found from the whole area around it, go.
+                        let lit = target.chunk.light();
+                        let top = lit.block().len() - 1;
+                        for index in [0, top] {
+                            if lit.block()[index] == LightNibbles::Absent {
+                                light.block_mut()[index] = LightNibbles::Absent;
+                            }
+                        }
+                        if lit.sky().first() == Some(&LightNibbles::Absent) {
+                            light.sky_mut()[0] = LightNibbles::Absent;
+                        }
                         current.light_on = true;
                         current.status = ChunkStatus::Light;
                         holder.sync_full();
@@ -1753,8 +1805,13 @@ impl Chunks {
                 read,
                 light,
             } => {
-                self.relighting = false;
+                self.relighting.clear();
+                let centres: Vec<ChunkPos> = changes.iter().map(|(pos, _)| *pos).collect();
                 self.apply_relit(changes, &read, light);
+                // Light steps around them waited for them.
+                for pos in centres {
+                    self.wake(pos);
+                }
                 self.start_relights();
             }
             Done::Encoded {
@@ -1868,6 +1925,65 @@ impl Chunks {
         }
     }
 
+    /// A chunk at `InitializeLight` or later that a neighbour's features wrote blocks into:
+    /// keeps the light merged into it meanwhile, and the blocks whose change can change light
+    /// get their light updated like any block change (`ProtoChunk.setBlockState`:
+    /// `updateSectionStatus`, `checkBlock`).
+    fn relight_written(&mut self, chunk: &mut Arc<ProtoChunk>) {
+        let pos = chunk.pos;
+        let Some(old) = self
+            .holders
+            .get(&pos)
+            .and_then(|holder| holder.chunk.clone())
+        else {
+            return;
+        };
+        if old.chunk.light() != chunk.chunk.light() {
+            *Arc::make_mut(chunk).chunk.light_mut() = old.chunk.light().clone();
+        }
+        let min_y = old.chunk.min_y();
+        let mut changed = Vec::new();
+        for (index, (before, after)) in old
+            .chunk
+            .sections()
+            .iter()
+            .zip(chunk.chunk.sections())
+            .enumerate()
+        {
+            if Arc::ptr_eq(before, after) {
+                continue;
+            }
+            for y in 0..16 {
+                for z in 0..16 {
+                    for x in 0..16 {
+                        let (a, b) = (before.block(x, y, z), after.block(x, y, z));
+                        if a != b && self.slots.light.changes_light(a, b) {
+                            changed.push(BlockPos::new(
+                                pos.x * 16 + x as i32,
+                                min_y + index as i32 * 16 + y as i32,
+                                pos.z * 16 + z as i32,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if !changed.is_empty() {
+            self.relight.entry(pos).or_default().extend(changed);
+        }
+    }
+
+    /// A chunk within 2 of `pos` whose light update is pending or in flight: the light step of
+    /// `pos` writes the chunks within 1 of it and waits for it.
+    fn relight_near(&self, pos: ChunkPos) -> Option<ChunkPos> {
+        if self.relight.is_empty() && self.relighting.is_empty() {
+            return None;
+        }
+        (-2..=2)
+            .flat_map(|dz| (-2..=2).map(move |dx| ChunkPos::new(pos.x + dx, pos.z + dz)))
+            .find(|centre| self.relight.contains_key(centre) || self.relighting.contains(centre))
+    }
+
     fn dispatch(&mut self) -> bool {
         let mut progress = false;
         while let Some(&(job, urgency, level, rank, pos)) = self.check.first() {
@@ -1978,6 +2094,12 @@ impl Chunks {
         let blocked = blocked.map(|(_, other)| other);
         if let Some(other) = blocked {
             return Check::Blocked(other);
+        }
+        if next == ChunkStatus::Light
+            && let Some(centre) = self.relight_near(pos)
+        {
+            self.light_waits = true;
+            return Check::Blocked(centre);
         }
         let write = next.write_radius() as i32;
         for dz in -write..=write {
@@ -2145,6 +2267,7 @@ impl Chunks {
                 self.slots.executor.spawn(
                     priority,
                     Box::new(move || {
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         light.light_chunks(&mut targets, &mut Neighbours::new(&mut neighbours));
@@ -2171,6 +2294,7 @@ impl Chunks {
                             });
                             return;
                         }
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         generator.generate(
@@ -2713,6 +2837,8 @@ impl Chunks {
     /// ahead).
     pub fn release_memory(&mut self) {
         self.slots.generator.release_memory();
+        self.slots.store.release_memory();
+        self.slots.light.release_memory();
         self.levels.shrink_to_fit();
         self.generation.shrink_to_fit();
         self.block_ticks.shrink_to_fit();
@@ -2754,7 +2880,7 @@ impl Chunks {
             return;
         }
         // Jobs that write chunks finish first, so no changed chunk is busy.
-        self.wait_until(|chunks| chunks.in_flight == 0 && !chunks.relighting);
+        self.wait_until(|chunks| chunks.in_flight == 0 && chunks.relighting.is_empty());
         // Relights applied while waiting changed chunks too.
         self.start_save_round(None);
         let pending: Vec<ChunkPos> = self
@@ -3059,8 +3185,7 @@ impl Chunks {
                 ticks.extend(
                     self.block_ticks
                         .ticks_in(ChunkPos::new(cx, cz))
-                        .filter(|t| inside(t.pos))
-                        .copied(),
+                        .filter(|t| inside(t.pos)),
                 );
             }
         }
@@ -3245,7 +3370,7 @@ impl Chunks {
     /// `max_relights` chunks, the rest follows when it is applied. A chunk waits while a job
     /// writes one of the chunks its light can reach.
     fn start_relights(&mut self) {
-        if self.relighting || self.relight.is_empty() {
+        if !self.relighting.is_empty() || self.relight.is_empty() {
             return;
         }
         let max = self.settings.max_relights.max(1);
@@ -3256,9 +3381,15 @@ impl Chunks {
             if changes.len() >= max {
                 break;
             }
-            if self.holders.get(&center).and_then(Holder::status) != Some(ChunkStatus::Full) {
+            if self
+                .holders
+                .get(&center)
+                .and_then(Holder::status)
+                .is_none_or(|status| status < ChunkStatus::InitializeLight)
+            {
                 // Unloaded: its light was saved as it was.
                 self.relight.remove(&center);
+                self.wake(center);
                 continue;
             }
             let around = (-1..=1)
@@ -3267,7 +3398,14 @@ impl Chunks {
                 .filter_map(|pos| Some((pos, self.holders.get(&pos)?)))
                 .filter(|(_, holder)| holder.chunk.is_some())
                 .collect();
-            if around.iter().any(|(_, holder)| holder.busy) {
+            // A job writes the chunks around it: wait. Light steps write the chunks within 1
+            // of them, the results of the ones in flight would bring old light back.
+            if (-2..=2).any(|dz| {
+                (-2..=2).any(|dx| {
+                    let pos = ChunkPos::new(center.x + dx, center.z + dz);
+                    self.holders.get(&pos).is_some_and(|holder| holder.busy)
+                })
+            }) {
                 continue;
             }
             for (pos, holder) in around {
@@ -3284,7 +3422,8 @@ impl Chunks {
         if changes.is_empty() {
             return;
         }
-        self.relighting = true;
+        self.relighting
+            .extend(changes.iter().map(|(center, _)| *center));
         let light = Arc::clone(&self.slots.light);
         let tx = self.done_tx.clone();
         self.slots.executor.spawn(
@@ -3314,6 +3453,23 @@ impl Chunks {
 /// work for the chunks after them.
 fn urgency(level: u8, reach: u8) -> u8 {
     level.saturating_sub(reach)
+}
+
+/// Ticks without a chunk job after which the slots' job buffers are freed (30 s).
+const IDLE_TRIM_TICKS: u64 = 30 * 20;
+
+/// Restores Java's floating point environment on the calling worker before a generation or
+/// light job, in case a native library changed it (#291): logged once.
+fn ensure_fp_default() {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if let Some(found) = vanillite_base::fpenv::ensure_default()
+        && !LOGGED.swap(true, Ordering::Relaxed)
+    {
+        log::warn!(
+            "A native library changed the floating point mode of a worker thread \
+             (control register {found:#x}); restored it so world generation stays exact"
+        );
+    }
 }
 
 /// The compute-pool priority of a chunk job: by urgency ([`urgency`]), then by level, then by

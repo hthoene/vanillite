@@ -208,7 +208,7 @@ fn saves_an_area_to_generated_and_loads_it_back() {
     let bytes = std::fs::read(&file).expect("saved structure file");
     let template = StructureTemplate::from_gzip(&bytes).expect("valid file");
     assert_eq!(template.size(), BlockPos::new(2, 2, 2));
-    let blocks = template.palettes()[0].blocks();
+    let blocks: Vec<_> = template.palettes()[0].blocks().collect();
     // Every block of the area (air too), full blocks first, block entities last.
     assert_eq!(blocks.len(), 8);
     assert_eq!(blocks[0].state, ids::STONE.default_state());
