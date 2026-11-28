@@ -251,7 +251,7 @@ impl OutReceiver {
                 Err(mpsc::error::TryRecvError::Empty) => {}
                 Err(mpsc::error::TryRecvError::Disconnected) => return Next::Gone,
             }
-            waited += FLUSH_FALLBACK;
+            waited = waited.saturating_add(FLUSH_FALLBACK);
             if idle && waited >= IDLE_RELEASE {
                 return Next::Idle;
             }
