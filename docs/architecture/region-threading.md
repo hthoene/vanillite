@@ -23,10 +23,16 @@ ticks in Vanilla's serial order with the code path it always had.
 - **Tiles.** The world is cut into fixed squares of `tile-size × tile-size` chunks, aligned to
   the chunk grid. Tiles never merge or split, so many players cannot collapse them into one
   region. A tile is busy when it has chunks the phase works on; other tiles cost nothing.
-- **Propose, in parallel.** Every busy tile gets a job on the compute pool. The jobs share
+- **Propose, in parallel.** The busy tiles are worked out on the compute pool. The tiles share
   the level read-only (`&Level`; nothing writes meanwhile) and return what they want to
   change. Each has its own random stream, seeded from the world seed, the game time, the tile
   and the phase (`tiles::tile_seed`).
+- **Adaptive jobs.** Each round plans its jobs from the tiles' cost, a moving average of how
+  long each busy tile took in earlier rounds of the phase (`tiles::TileCosts`, kept only for busy
+  tiles). A hot tile (at least a quarter of one thread's share of the round) runs alone, and
+  the jobs start longest first; adjacent cold tiles of the same colour (tile x and z parity)
+  share one job. This is only a scheduling decision: no data moves between tiles, a tile
+  computes the same whichever job runs it, and the replies are applied in tile order.
 - **Commit, serially.** The world's owner applies the proposals tile by tile in tile order
   (x, then z) with the whole world writable.
 - No job writes shared state, so there are no locks, and the result depends only on the world

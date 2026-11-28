@@ -114,6 +114,8 @@ pub struct ServerWorld {
     /// Where the moving players' views head ([`Chunks::set_focus`]); reused per tick.
     focus: Vec<ChunkPos>,
     scratch: Vec<ChunkPos>,
+    /// `performance.region-threading`: the busy tiles' measured costs (empty while it is off).
+    tile_costs: vanillite_game::level::tiles::TileCosts,
     /// Weather, lightning and the players' survival.
     pub(crate) survival: crate::survival::WorldSurvival,
     /// Mobs: their tick, the players' attacks and spawning.
@@ -261,6 +263,7 @@ impl ServerWorld {
             effects: LevelEffects::default(),
             reported: RuleCounters::default(),
             scratch: Vec::new(),
+            tile_costs: Default::default(),
             survival,
             mobs,
             player_scratch: Vec::new(),
@@ -774,6 +777,8 @@ impl ServerWorld {
                 size: i32::from(region.tile_size),
                 min_chunks: vanillite_game::level::tiles::MIN_CHUNKS,
                 fork: &fork,
+                threads: compute.phase_threads(),
+                costs: Some(&self.tile_costs),
             });
             // `performance.threads.tick-phases`: the read-only parts of both in parallel.
             let phases = Phases {
