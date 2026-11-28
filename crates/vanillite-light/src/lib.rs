@@ -616,9 +616,22 @@ impl<'a> Grid<'a> {
                 }
             }
         }
-        // Every cell at or above its column's lowest source is 15, layer by layer.
+        // Every cell at or above its column's lowest source is 15, layer by layer: layers below
+        // every column's lowest source keep their levels, layers above all of them are 15.
+        let (min_low, max_low) = lowest
+            .iter()
+            .fold((usize::MAX, 0), |(lo, hi), &low| (lo.min(low), hi.max(low)));
         let lowest: Vec<u32> = lowest.iter().map(|&low| low as u32).collect();
-        for (y, layer) in self.sky.chunks_exact_mut(width * width).enumerate() {
+        for (y, layer) in self
+            .sky
+            .chunks_exact_mut(width * width)
+            .enumerate()
+            .skip(min_low)
+        {
+            if y >= max_low {
+                layer.fill(15);
+                continue;
+            }
             let y = y as u32;
             for (cell, &low) in layer.iter_mut().zip(&lowest) {
                 *cell = if y >= low { 15 } else { *cell };
@@ -628,6 +641,7 @@ impl<'a> Grid<'a> {
 
     /// Sets and queues the block light sources of the chunks `seed(i)` selects.
     fn seed_block_sources(&mut self, seed: impl Fn(usize) -> bool) {
+        let mut blocks = [0u16; 4096];
         for i in 0..self.chunks.len() {
             let Some(chunk) = self.chunks[i] else {
                 continue;
@@ -647,18 +661,17 @@ impl<'a> Grid<'a> {
                 {
                     continue;
                 }
-                for y in 0..16u32 {
-                    for z in 0..16u32 {
-                        for x in 0..16u32 {
-                            let emission = LightFacts::light(section.block(x, y, z)).0;
+                section.blocks().copy_to(&mut blocks);
+                for y in 0..16usize {
+                    for z in 0..16usize {
+                        for x in 0..16usize {
+                            // Entry `(y << 8) | (z << 4) | x`.
+                            let emission = LightFacts::light(blocks[(y << 8) | (z << 4) | x]).0;
                             if emission == 0 {
                                 continue;
                             }
-                            let cell = self.index(
-                                base_x + x as usize,
-                                self.bottom + index * 16 + y as usize,
-                                base_z + z as usize,
-                            );
+                            let cell =
+                                self.index(base_x + x, self.bottom + index * 16 + y, base_z + z);
                             if self.block[cell] < emission {
                                 self.block[cell] = emission;
                                 self.block_queue[usize::from(emission)].push(cell as u32);
