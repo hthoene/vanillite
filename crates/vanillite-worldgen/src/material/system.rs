@@ -132,6 +132,8 @@ pub struct MaterialSystem {
     pub(super) ore_cells_private: bool,
     /// The contexts the bounds of the ore vein densities are computed in, reused per chunk.
     pub(super) bounds_scratch: ScratchPool<SamplerContext>,
+    /// The ore vein prefill buffers, reused per chunk.
+    pub(super) ore_buffers: ScratchPool<Vec<f32>>,
     eroded_badlands: Option<BiomeId>,
     frozen_ocean: Option<BiomeId>,
     deep_frozen_ocean: Option<BiomeId>,
@@ -192,6 +194,7 @@ impl MaterialSystem {
         let noise = |id: &str| random_state.noise(id);
         Ok(Self {
             bounds_scratch: ScratchPool::default(),
+            ore_buffers: ScratchPool::new(64),
             default_block: settings.default_block,
             sea_level: settings.sea_level,
             generator_min_y: settings.min_y,
@@ -255,6 +258,14 @@ impl MaterialSystem {
     /// Drops the reused bounds contexts (made again by the next chunk).
     pub fn release_scratch(&self) {
         self.bounds_scratch.release();
+        self.ore_buffers.release();
+    }
+
+    /// A buffer of `len` values from the ore buffer pool (contents unspecified).
+    pub(super) fn ore_buffer(&self, len: usize) -> Vec<f32> {
+        let mut buffer = *self.ore_buffers.take_or(Vec::new);
+        buffer.resize(len, 0.0);
+        buffer
     }
 
     /// `buildSurface`: applies the material rule to every solid block of the chunk, top down per

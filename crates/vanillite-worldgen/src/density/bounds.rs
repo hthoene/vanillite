@@ -612,6 +612,51 @@ impl Program {
         lattice.block_y(proven)
     }
 
+    /// The smallest box of whole cells of `volume` outside of which `f` is proven to be
+    /// `<= 0`, as a volume: `Some(None)` when it is proven everywhere, `None` when nothing can
+    /// be proven (as [`Self::not_positive_in`], whose bounds it uses per cell).
+    ///
+    /// `scratch` is a context of the caller's other than the one `f` is sampled in.
+    pub fn positive_box(
+        &self,
+        scratch: &mut SamplerContext,
+        f: FnId,
+        volume: &DensityVolume,
+    ) -> Option<Option<DensityVolume>> {
+        let (lattice, bounds) = self.vein_bounds(scratch, f, volume)?;
+        let (mut lo, mut hi) = ([i32::MAX; 3], [i32::MIN; 3]);
+        for z in 0..lattice.size_z - 1 {
+            for x in 0..lattice.size_x - 1 {
+                for y in 0..lattice.size_y - 1 {
+                    // (A NaN bound proves nothing.)
+                    let bound = bounds.hi[lattice.index(x, y, z)];
+                    if bound > 0.0 || bound.is_nan() {
+                        for (axis, v) in [x, y, z].into_iter().enumerate() {
+                            lo[axis] = lo[axis].min(v);
+                            hi[axis] = hi[axis].max(v);
+                        }
+                    }
+                }
+            }
+        }
+        if lo[0] > hi[0] {
+            return Some(None);
+        }
+        let (min_x, min_y, min_z) = (
+            lattice.block_x(lo[0]),
+            lattice.block_y(lo[1]),
+            lattice.block_z(lo[2]),
+        );
+        Some(Some(DensityVolume::new(
+            lattice.block_x(hi[0] + 1) - min_x,
+            lattice.block_y(hi[1] + 1) - min_y,
+            lattice.block_z(hi[2] + 1) - min_z,
+            min_x,
+            min_y,
+            min_z,
+        )))
+    }
+
     /// Whether `f` is proven to be `<= 0` at every block of `volume`. For small functions
     /// (the ore veins): the first single noise the bounds meet is sampled exactly at the
     /// corners of the interpolation cells, which costs a fraction of sampling the volume. `false` if the
@@ -624,9 +669,25 @@ impl Program {
         f: FnId,
         volume: &DensityVolume,
     ) -> bool {
-        let Some((xz, cy)) = self.interpolation_lattice(f) else {
+        let Some((lattice, bounds)) = self.vein_bounds(scratch, f, volume) else {
             return false;
         };
+        (0..lattice.size_z - 1).all(|z| {
+            (0..lattice.size_x - 1)
+                .all(|x| (0..lattice.size_y - 1).all(|y| bounds.hi[lattice.index(x, y, z)] <= 0.0))
+        })
+    }
+
+    /// The interpolation lattice of `volume` for `f` and the bounds of `f` per cell (by the
+    /// cell's lowest corner), for the small functions of [`Self::not_positive_in`]; `None` if
+    /// the volume is not made of whole cells.
+    fn vein_bounds(
+        &self,
+        scratch: &mut SamplerContext,
+        f: FnId,
+        volume: &DensityVolume,
+    ) -> Option<(DensityVolume, Bounds)> {
+        let (xz, cy) = self.interpolation_lattice(f)?;
         let aligned =
             |min: i32, size: i32, cell: i32| min.rem_euclid(cell) == 0 && size % cell == 0;
         if (volume.step_x, volume.step_y, volume.step_z) != (1, 1, 1)
@@ -634,7 +695,7 @@ impl Program {
             || !aligned(volume.min_y, volume.size_y, cy)
             || !aligned(volume.min_z, volume.size_z, xz)
         {
-            return false;
+            return None;
         }
         let lattice = DensityVolume::with_step(
             volume.size_x / xz + 1,
@@ -659,10 +720,6 @@ impl Program {
             open_branches: true,
             points: vec![None; self.ops.len()],
         };
-        let bounds = evaluator.eval(f.0, Mode::Cells);
-        (0..lattice.size_z - 1).all(|z| {
-            (0..lattice.size_x - 1)
-                .all(|x| (0..lattice.size_y - 1).all(|y| bounds.hi[lattice.index(x, y, z)] <= 0.0))
-        })
+        Some((lattice, evaluator.eval(f.0, Mode::Cells)))
     }
 }
