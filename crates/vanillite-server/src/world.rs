@@ -917,6 +917,8 @@ impl ServerWorld {
         self.portal_requests = portals;
         self.post_player_game_events();
         lap!(self, PlayerTicks);
+        self.players
+            .set_waypoint_interval(self.rules.crowd.waypoint_interval);
         self.players.tick_connections(
             &mut self.level,
             ctx.tick,

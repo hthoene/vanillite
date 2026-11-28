@@ -8,6 +8,8 @@
 //! in its square and those it sees. No step iterates all pairs. The per-tick cost is one pass over the entities (Vanilla's
 //! `sendChanges`) plus work proportional to the section changes.
 
+mod crowd;
+
 use rustc_hash::FxHashMap;
 use vanillite_base::math::{java_round, pack_degrees};
 use vanillite_base::slot_map::SlotKey;
@@ -19,6 +21,7 @@ use super::{
     TrackerSettings, Viewer, ViewerSpan,
 };
 use crate::entity::{CoreColumns, EntityFlags, EntityId, EntityStore, NetworkId};
+use crowd::Crowd;
 
 /// `ServerEntity`: movements below this squared distance are not sent.
 const MIN_MOVE_SQR: f64 = 7.629_394_5e-6_f32 as f64;
@@ -199,6 +202,8 @@ pub struct ChunkTracker {
     nearby: FxHashMap<i64, Vec<u32>>,
     /// Number of the current update.
     stamp: u32,
+    /// Crowd mode (`performance.crowd`), `None` while it is off.
+    crowd: Option<Box<Crowd>>,
     // Scratch buffers, kept for their capacity.
     moved: Vec<u32>,
     candidates: Vec<u32>,
@@ -212,6 +217,7 @@ impl ChunkTracker {
     /// A tracker with the given ranges.
     pub fn new(settings: TrackerSettings) -> ChunkTracker {
         let radius = settings.max_range().div_euclid(16) + 2;
+        let crowd = Crowd::new(settings.crowd()).map(Box::new);
         ChunkTracker {
             settings,
             radius,
@@ -222,6 +228,7 @@ impl ChunkTracker {
             by_chunk: FxHashMap::default(),
             nearby: FxHashMap::default(),
             stamp: 0,
+            crowd,
             moved: Vec::new(),
             candidates: Vec::new(),
             near_set: SlotSet::default(),
@@ -247,6 +254,7 @@ impl ChunkTracker {
                 &mut self.by_chunk,
                 &self.viewer_slot,
                 &mut self.viewers,
+                self.crowd.as_deref_mut(),
                 out,
             );
         }
@@ -293,6 +301,9 @@ impl ChunkTracker {
                         self.viewer_slot.resize(i + 1, NONE);
                     }
                     self.viewer_slot[i] = slot;
+                    if let Some(crowd) = self.crowd.as_deref_mut() {
+                        crowd.new_viewer(slot);
+                    }
                     slot
                 }
             };
@@ -362,6 +373,7 @@ fn forget(
     by_chunk: &mut FxHashMap<i64, Vec<u32>>,
     viewer_slot: &[u32],
     viewers: &mut [Option<ViewerState>],
+    mut crowd: Option<&mut Crowd>,
     out: &mut TrackerOutput,
 ) {
     let i = index(tracked.id);
@@ -373,6 +385,9 @@ fn forget(
             && let Some(Some(state)) = viewers.get_mut(slot as usize)
         {
             state.viewing.remove(i);
+            if let Some(crowd) = crowd.as_deref_mut() {
+                crowd.pair_changed(i, slot, tracked.kind, false);
+            }
         }
     }
     let span = out.push_viewers(tracked.seen_by.iter().copied());
@@ -413,6 +428,7 @@ impl EntityTracker for ChunkTracker {
             by_chunk,
             nearby,
             stamp,
+            crowd,
             moved,
             candidates,
             near_set,
@@ -426,6 +442,7 @@ impl EntityTracker for ChunkTracker {
             input,
             settings,
             viewers,
+            crowd: crowd.as_deref_mut(),
             added,
             gone,
         };
@@ -441,7 +458,14 @@ impl EntityTracker for ChunkTracker {
             let slot = &mut tracked[i as usize];
             // An entity that left without a removal record: forget it like a removed one.
             if let Some(stale) = slot.take_if(|t| t.id != id) {
-                forget(stale, by_chunk, viewer_slot, pairing.viewers, out);
+                forget(
+                    stale,
+                    by_chunk,
+                    viewer_slot,
+                    pairing.viewers,
+                    pairing.crowd.as_deref_mut(),
+                    out,
+                );
             }
             let entry = slot.get_or_insert_with(|| Tracked {
                 id,
@@ -494,15 +518,30 @@ impl EntityTracker for ChunkTracker {
                     queue(moved, state, slot, stamp);
                 }
             }
-            send_changes(
-                entry,
-                core,
-                row,
-                id,
-                own_slot.is_some(),
-                input.update_scale,
-                out,
-            );
+            let is_viewer = own_slot.is_some();
+            let scale = input.update_scale;
+            match pairing.crowd.as_deref_mut().filter(|c| c.tiers(entry.kind)) {
+                None => send_changes(entry, None, core, row, is_viewer, scale, out),
+                Some(crowd) => {
+                    let far_due = crowd.far_due(entry.sync.tick_count, scale);
+                    if far_due || sends(entry, core, row, scale) {
+                        crowd.split(entry, core, row, pairing.viewers, far_due);
+                    } else {
+                        crowd.clear_tiers();
+                    }
+                    send_changes(entry, Some(&crowd.near), core, row, is_viewer, scale, out);
+                    crowd.send_far(entry, core, row, out);
+                }
+            }
+        }
+
+        // Viewers whose count of visible players left the band around the cap.
+        if let Some(crowd) = pairing.crowd.as_deref_mut() {
+            crowd.take_rechecks(|slot| {
+                if let Some(Some(state)) = pairing.viewers.get_mut(slot as usize) {
+                    queue(moved, state, slot, stamp);
+                }
+            });
         }
 
         // Viewers that moved to another section (or joined) re-check what they can see.
@@ -526,6 +565,9 @@ impl EntityTracker for ChunkTracker {
                     .and_then(|t| t.chunk)
                     .is_none_or(|chunk| !in_square(square, radius, chunk))
             }));
+            if let Some(crowd) = pairing.crowd.as_deref_mut() {
+                crowd.fit(viewer, state, candidates, tracked, core, stamp);
+            }
             for &i in candidates.iter() {
                 let Some(Some(entry)) = tracked.get_mut(i as usize) else {
                     continue;
@@ -545,6 +587,7 @@ struct Pairing<'a, 'i> {
     input: &'a TrackerInput<'i>,
     settings: &'a TrackerSettings,
     viewers: &'a mut Vec<Option<ViewerState>>,
+    crowd: Option<&'a mut Crowd>,
     added: &'a mut Vec<EntityId>,
     gone: &'a mut Vec<EntityId>,
 }
@@ -560,7 +603,12 @@ impl Pairing<'_, '_> {
             return;
         }
         let target = Target::new(self.input, self.settings, row);
-        if is_visible(self.input, &target, state) != state.viewing.contains(index(entry.id)) {
+        let visible = is_visible(self.input, &target, state)
+            && self
+                .crowd
+                .as_deref()
+                .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos));
+        if visible != state.viewing.contains(index(entry.id)) {
             self.update(entry, row, &[slot], out);
         }
     }
@@ -585,18 +633,28 @@ impl Pairing<'_, '_> {
             if state.entity == id {
                 continue;
             }
-            let visible = is_visible(self.input, &target, state);
+            let visible = is_visible(self.input, &target, state)
+                && self
+                    .crowd
+                    .as_deref()
+                    .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos));
             let seen = entry.seen_slots.contains(slot);
-            if visible && !seen {
+            if visible == seen {
+                continue;
+            }
+            if visible {
                 state.viewing.insert(i);
                 entry.seen_slots.insert(slot);
                 entry.seen_by.push(state.entity);
                 self.added.push(state.entity);
-            } else if !visible && seen {
+            } else {
                 state.viewing.remove(i);
                 entry.seen_slots.remove(slot);
                 remove_unordered(&mut entry.seen_by, state.entity);
                 self.gone.push(state.entity);
+            }
+            if let Some(crowd) = self.crowd.as_deref_mut() {
+                crowd.pair_changed(i, slot, entry.kind, visible);
             }
         }
         if !self.gone.is_empty() {
@@ -623,6 +681,7 @@ impl Pairing<'_, '_> {
 
 /// What the visibility checks of one entity read.
 struct Target {
+    kind: EntityTypeId,
     pos: Vec3,
     /// Tracking range in blocks.
     range: f64,
@@ -634,6 +693,7 @@ impl Target {
     fn new(input: &TrackerInput<'_>, settings: &TrackerSettings, row: usize) -> Target {
         let core = input.entities.columns();
         Target {
+            kind: core.kind[row],
             pos: core.pos[row],
             range: f64::from(settings.range(core.kind[row])),
             chunk: core.section[row].chunk(),
@@ -661,10 +721,26 @@ fn is_visible(input: &TrackerInput<'_>, target: &Target, viewer: &ViewerState) -
 #[derive(Default)]
 struct Spans {
     seen: Option<ViewerSpan>,
+    moves: Option<ViewerSpan>,
     with_self: Option<ViewerSpan>,
 }
 
 impl Spans {
+    /// The viewers of movement: all viewers, or in crowd mode the near tier (`movers`).
+    fn moves(
+        &mut self,
+        out: &mut TrackerOutput,
+        seen_by: &[EntityId],
+        movers: Option<&[EntityId]>,
+    ) -> ViewerSpan {
+        match movers {
+            None => self.seen(out, seen_by),
+            Some(movers) => *self
+                .moves
+                .get_or_insert_with(|| out.push_viewer_list(movers, None)),
+        }
+    }
+
     /// `broadcast`: the viewers.
     fn seen(&mut self, out: &mut TrackerOutput, seen_by: &[EntityId]) -> ViewerSpan {
         *self
@@ -689,35 +765,46 @@ impl Spans {
     }
 }
 
-/// `ServerEntity.sendChanges` (passengers' list and maps aside).
+/// Whether [`send_changes`] sends movement or data of the entity this tick.
+#[inline]
+fn sends(entry: &Tracked, core: &CoreColumns, row: usize, update_scale: i32) -> bool {
+    let flags = core.flags[row];
+    let interval = entry
+        .kind
+        .info()
+        .update_interval
+        .max(1)
+        .saturating_mul(update_scale.max(1));
+    entry.sync.tick_count.wrapping_rem(interval) == 0
+        || flags.contains(EntityFlags::HAS_IMPULSE)
+        || flags.contains(EntityFlags::DATA_DIRTY)
+}
+
+/// `ServerEntity.sendChanges` (passengers' list and maps aside). Movement goes to `movers`
+/// instead of all viewers if given (the near tier of crowd mode).
 fn send_changes(
     entry: &mut Tracked,
+    movers: Option<&[EntityId]>,
     core: &CoreColumns,
     row: usize,
-    id: EntityId,
     is_viewer: bool,
     update_scale: i32,
     out: &mut TrackerOutput,
 ) {
     let info = entry.kind.info();
     let flags = core.flags[row];
+    let sends = sends(entry, core, row, update_scale);
+    let id = entry.id;
     let network_id = entry.network_id;
     let seen_by = entry.seen_by.as_slice();
     let sync = &mut entry.sync;
     let mut spans = Spans::default();
     let mut broadcast = |out: &mut TrackerOutput, update: EntityUpdate| {
-        let span = spans.seen(out, seen_by);
+        let span = spans.moves(out, seen_by, movers);
         out.push(id, network_id, update, span);
     };
 
-    let interval = info
-        .update_interval
-        .max(1)
-        .saturating_mul(update_scale.max(1));
-    if sync.tick_count.wrapping_rem(interval) == 0
-        || flags.contains(EntityFlags::HAS_IMPULSE)
-        || flags.contains(EntityFlags::DATA_DIRTY)
-    {
+    if sends {
         let rot = core.rot[row];
         let pos = core.pos[row];
         let on_ground = flags.contains(EntityFlags::ON_GROUND);
@@ -842,7 +929,7 @@ fn send_changes(
 
         let y_head_rot = pack_degrees(rot.y_head_rot);
         if y_head_rot != sync.y_head_rot {
-            let span = spans.seen(out, seen_by);
+            let span = spans.moves(out, seen_by, movers);
             out.push(id, network_id, EntityUpdate::HeadRot(y_head_rot), span);
             sync.y_head_rot = y_head_rot;
         }

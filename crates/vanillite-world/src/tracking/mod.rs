@@ -13,7 +13,7 @@ mod chunk;
 use std::fmt;
 
 use vanillite_base::{ChunkPos, Vec3};
-use vanillite_config::{TrackingRules, VanillaOr};
+use vanillite_config::{CrowdRules, TrackingRules, VanillaOr};
 use vanillite_data::entity::{ENTITY_TYPES, EntityTypeId, ids};
 
 use crate::entity::{EntityId, EntityStore, NetworkId};
@@ -46,6 +46,34 @@ pub struct TrackerSettings {
     /// Effective range in blocks per entity type, already capped by the view distance.
     ranges: Box<[i32]>,
     max_range: i32,
+    crowd: CrowdSettings,
+}
+
+/// Crowd mode (`performance.crowd`) of one world's tracker.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CrowdSettings {
+    /// Blocks within which players get every movement update; `None` = no tiers.
+    pub near_radius: Option<u16>,
+    /// Ticks between two movement updates of a far player.
+    pub far_interval: u8,
+    /// Players each viewer sees at most; `None` = all within range.
+    pub max_visible_players: Option<u32>,
+}
+
+impl CrowdSettings {
+    /// The settings of the rules.
+    pub fn new(rules: &CrowdRules) -> CrowdSettings {
+        CrowdSettings {
+            near_radius: rules.near_radius.get(),
+            far_interval: rules.far_interval,
+            max_visible_players: rules.max_visible_players.get(),
+        }
+    }
+
+    /// Whether any crowd rule is on.
+    pub fn enabled(&self) -> bool {
+        self.near_radius.is_some() || self.max_visible_players.is_some()
+    }
 }
 
 impl TrackerSettings {
@@ -93,7 +121,19 @@ impl TrackerSettings {
             view_distance,
             ranges,
             max_range,
+            crowd: CrowdSettings::default(),
         }
+    }
+
+    /// These settings with crowd mode.
+    pub fn with_crowd(mut self, crowd: CrowdSettings) -> TrackerSettings {
+        self.crowd = crowd;
+        self
+    }
+
+    /// Crowd mode.
+    pub fn crowd(&self) -> &CrowdSettings {
+        &self.crowd
     }
 
     /// The server view distance in chunks.

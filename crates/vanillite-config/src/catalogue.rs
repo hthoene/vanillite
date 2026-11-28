@@ -464,6 +464,38 @@ rules! {
             overload_max_interval_scale: u32 = "overload-max-interval-scale", Performance,
                 range = [1, 20], vanilla = 4;
         }
+        /// Crowd mode: thousands of players in one place. Players far from a viewer are
+        /// updated less often, each player sees only the nearest players and the locator bar
+        /// updates less often, so the work and traffic of a crowd grow with players × the
+        /// visible ones instead of players². Off in every profile but `crowd`; while off it
+        /// costs nothing.
+        crowd: CrowdRules = "performance.crowd" {
+            /// Players farther than this many blocks (horizontally) from a viewer are in its
+            /// far tier: their movement, rotation and head reach that viewer every
+            /// `far-interval` ticks instead of with every Vanilla update. Coming nearer, the
+            /// viewer gets their exact position at once. Deviation: far players move less
+            /// smoothly (the client interpolates between the updates). "disabled" sends every
+            /// player's movement to everyone at Vanilla's rate.
+            near_radius: DisabledOr<u16> = "near-radius", Performance, range = [8, 512],
+                restart = true, vanilla = DisabledOr::Disabled,
+                crowd = DisabledOr::Value(24);
+            /// Ticks between two movement updates of a far player (`near-radius`).
+            far_interval: u8 = "far-interval", Performance, range = [2, 64], restart = true,
+                vanilla = 8;
+            /// Players each player sees at most: only the nearest ones are spawned for it
+            /// (with some slack, so the set does not change at every step); the others stay in
+            /// the tab list and on the locator bar. Deviation: players beyond the limit are
+            /// invisible. Bounds the traffic of a crowd to players × this value. "disabled"
+            /// shows every player within the tracking range.
+            max_visible_players: DisabledOr<u32> = "max-visible-players", Performance,
+                range = [8, 100_000], restart = true, vanilla = DisabledOr::Disabled,
+                crowd = DisabledOr::Value(256);
+            /// Ticks between two position updates of a player on the locator bar (changes of
+            /// visibility, team colour and view still apply at once). Deviation: with more than
+            /// 1, the locator bar follows moving players with a delay of up to this many ticks.
+            waypoint_interval: u8 = "waypoint-interval", Performance, range = [1, 100],
+                vanilla = 1, crowd = 10;
+        }
         /// Server-side checks of player movement (Vanilla's `ServerGamePacketListenerImpl`).
         movement: MovementRules = "movement" {
             /// Players that move faster than Vanilla allows are teleported back ("moved too
