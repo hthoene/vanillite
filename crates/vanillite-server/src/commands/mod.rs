@@ -218,7 +218,10 @@ pub(crate) fn load_game_systems(global: &Global, packs: &[vanillite_datapack::Op
     global
         .systems
         .load(&global.level.data, &|key| global.level.legacy(key));
-    global.systems.set_advancements(load_advancements(packs));
+    // Read when the first player logs in.
+    global
+        .systems
+        .set_advancement_roots(packs.iter().flat_map(|p| p.layers.clone()).collect());
 }
 
 /// The advancements of the packs (`ServerAdvancementManager.apply`).
@@ -226,7 +229,14 @@ pub(crate) fn load_advancements(
     packs: &[vanillite_datapack::OpenedPack],
 ) -> vanillite_game::advancements::Advancements {
     let roots: Vec<std::path::PathBuf> = packs.iter().flat_map(|p| p.layers.clone()).collect();
-    let files = functions::list(&roots, "advancement", ".json")
+    load_advancements_from(&roots)
+}
+
+/// The advancements of the pack directories `roots`, in load order.
+pub(crate) fn load_advancements_from(
+    roots: &[std::path::PathBuf],
+) -> vanillite_game::advancements::Advancements {
+    let files = functions::list(roots, "advancement", ".json")
         .into_iter()
         .filter_map(|(id, file)| match std::fs::read_to_string(&file) {
             Ok(text) => Some((id, text)),
