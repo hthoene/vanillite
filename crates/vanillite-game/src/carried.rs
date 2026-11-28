@@ -107,7 +107,7 @@ pub fn bind_lodestone(
 }
 
 /// One tick of the player's ticking items and its map updates.
-pub fn tick(level: &Level, owner: Owner<'_>, player: &mut PlayerData) {
+pub fn tick(level: &mut Level, owner: Owner<'_>, player: &mut PlayerData) {
     // The carrier is built at the first map (no allocation for players without maps).
     let mut carrier: Option<Carrier> = None;
     let game_time = level.game_time();
@@ -137,7 +137,7 @@ pub fn tick(level: &Level, owner: Owner<'_>, player: &mut PlayerData) {
         let Some(id) = map::map_id(stack) else {
             continue;
         };
-        let Some(maps) = level.maps() else {
+        let Some(maps) = level.maps_shared() else {
             continue;
         };
         let statics = map::static_decorations(stack);

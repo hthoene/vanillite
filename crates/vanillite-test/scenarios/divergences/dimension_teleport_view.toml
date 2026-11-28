@@ -1,3 +1,0 @@
-tick = 2
-cause = "the client of a player that just joined gets the pig next to it the tick after the pig's chunk was sent (the tracker re-checks a viewer's entities when chunks reach it); Vanilla's entity tracker adds it only when the player or the pig changes its section or the player sends a move (ChunkMap.tick, ChunkMap.move), here after the return from the Nether (tick 21); the level random also differs from tick 12 (client view #196)"
-owner = "network-developer #196"

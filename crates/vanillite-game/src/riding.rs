@@ -1079,6 +1079,9 @@ pub fn move_vehicle(
     if let Some(m) = ents.mob_mut(vehicle) {
         m.y_body_rot = y_rot;
     }
+    if let Some(p) = ents.player_mut(player) {
+        p.connection.movement.chunk_move = true;
+    }
     position_riders_of(ents, vehicle);
 }
 
