@@ -822,6 +822,8 @@ fn mob_experience(
         raining: false,
         thundering: false,
         location: None,
+        enchantment_active: None,
+        block_state: None,
     };
     let Some(m) = ents.mob_mut(killed) else {
         return amount;

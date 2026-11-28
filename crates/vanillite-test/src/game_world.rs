@@ -1049,6 +1049,14 @@ impl GameWorld {
                 hurt.aim(ents);
                 let mut source = match (hurt.source, hurt.indirect) {
                     _ if hurt.bad_respawn_point => DamageSource::of(env.types.bad_respawn_point),
+                    // An enchantment's `explode` with a damage type: from the user or the centre.
+                    _ if hurt.damage.is_some() => {
+                        let (kind, by_user) = hurt.damage.unwrap_or((env.types.explosion, false));
+                        match hurt.source.filter(|_| by_user) {
+                            Some(user) => combat::entity_source(ents, kind, user, user),
+                            None => DamageSource::of(kind),
+                        }
+                    }
                     (Some(direct), Some(cause)) => {
                         combat::entity_source(ents, env.types.player_explosion, cause, direct)
                     }

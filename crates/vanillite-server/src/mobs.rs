@@ -1201,6 +1201,11 @@ impl WorldMobs {
                     e.run(level, rules);
                     self.apply_explosion_hurts(level, survival, global, dimension);
                 }
+                // An enchantment's world effect; an `explode` hurts at once.
+                WorldAction::Enchant(a) => {
+                    vanillite_game::enchant::world::apply(level, &a);
+                    self.apply_explosion_hurts(level, survival, global, dimension);
+                }
                 WorldAction::Particles(p) => level.send_particles_packet(*p),
                 WorldAction::SetBlock(pos, block, flags) => {
                     level.set_block(pos, block, flags);
@@ -1230,6 +1235,7 @@ impl WorldMobs {
                                 vanillite_game::level::explosion::BlockResistance::WindCharge,
                             fire: false,
                             bad_respawn_point: false,
+                            damage: None,
                         },
                     );
                 }
@@ -1293,6 +1299,14 @@ impl WorldMobs {
             let mut source = match (hurt.source, hurt.indirect) {
                 // `badRespawnPointExplosion(center)`.
                 _ if hurt.bad_respawn_point => DamageSource::of(env.types.bad_respawn_point),
+                // An enchantment's `explode` with a damage type: from the user or the centre.
+                _ if hurt.damage.is_some() => {
+                    let (kind, by_user) = hurt.damage.unwrap_or((env.types.explosion, false));
+                    match hurt.source.filter(|_| by_user) {
+                        Some(user) => combat::entity_source(&ents, kind, user, user),
+                        None => DamageSource::of(kind),
+                    }
+                }
                 (Some(direct), Some(cause)) => {
                     combat::entity_source(&ents, env.types.player_explosion, cause, direct)
                 }

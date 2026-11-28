@@ -784,6 +784,56 @@ impl vanillite_game::block::technical::command_block::CommandRunner for BlockCom
             last_message: output.take(),
         }
     }
+
+    fn run_function(
+        &self,
+        level: &mut vanillite_game::level::Level,
+        id: &str,
+        entity: vanillite_world::entity::EntityId,
+        pos: vanillite_base::Vec3,
+        rot: (f32, f32),
+    ) -> bool {
+        let Some(global) = self.global.upgrade() else {
+            return false;
+        };
+        let Some(function) = global.systems.functions().get(id).cloned() else {
+            log::error!("Enchantment run_function effect failed for non-existent function {id}");
+            return false;
+        };
+        // `createCommandSourceStack().withPermission(GAMEMASTER).withSuppressedOutput()
+        // .withEntity(entity).withLevel(level).withPosition(pos).withRotation(rot)`.
+        let entity = select::local(&level.entities, self.world, entity).map(|t| t.source_entity());
+        let mut source = CommandSource::new(
+            Arc::clone(&global),
+            SourceKind::Server,
+            vanillite_game::commands::level::GAMEMASTERS,
+            self.world,
+            pos,
+            rot,
+            entity,
+        );
+        source.silent = true;
+        let lent = self.lent.hold();
+        let mut env = Env {
+            level,
+            global: &global,
+            world: self.world,
+            others: lent
+                .iter()
+                .flat_map(|slot| slot.iter())
+                .map(|l| {
+                    // SAFETY: as in `run`: the slot holds a level only inside
+                    // `LentLevels::with`, which has the exclusive borrow of it and empties the
+                    // slot under the lock before it returns; `env` is dropped before `lent`.
+                    l.as_ref().map(|l| unsafe { &mut *l.0.as_ptr() })
+                })
+                .collect(),
+        };
+        functions::run_function(&function, &source, &mut env);
+        drop(env);
+        drop(lent);
+        true
+    }
 }
 
 /// A command of the console or RCON with the owner permission level.

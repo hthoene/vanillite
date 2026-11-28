@@ -171,6 +171,9 @@ pub struct MobData {
     pub persistent: bool,
     pub no_ai: bool,
     pub silent: bool,
+    /// The location based enchantment effects (`activeLocationDependentEnchantments`), once
+    /// its equipment had any.
+    pub location: Option<Box<crate::enchant::location::LocationState>>,
     pub ambient_sound_time: i32,
     pub target: Option<EntityId>,
     pub aggressive: bool,
@@ -340,6 +343,7 @@ impl MobData {
             persistent: false,
             no_ai: false,
             silent: false,
+            location: None,
             ambient_sound_time: 0,
             target: None,
             aggressive: false,
@@ -904,12 +908,8 @@ pub enum WorldAction {
     /// `PiglinAi.angerNearbyPiglins(player, true)` of a chest vehicle the player opened or
     /// broke: queued like the block containers' ([`crate::level::LevelOutput::piglin_anger`]).
     PiglinAnger(EntityId),
-    /// Frost Walker's `replace_disk` around a player's position.
-    FrostWalker {
-        pos: Vec3,
-        radius: i32,
-        source: EntityId,
-    },
+    /// A world effect of an enchantment (`replace_block`, `run_function`, `explode`, ...).
+    Enchant(Box<crate::enchant::world::EnchantAction>),
 }
 
 impl WorldAction {
@@ -957,13 +957,7 @@ impl WorldAction {
             WorldAction::PiglinAnger(player) => {
                 level.output().piglin_anger.push((player, true));
             }
-            WorldAction::FrostWalker {
-                pos,
-                radius,
-                source,
-            } => {
-                crate::enchant::location::frost_walker(level, pos, radius, source);
-            }
+            WorldAction::Enchant(ref a) => crate::enchant::world::apply(level, a),
             WorldAction::ProjectileHitBlock(pos, at, id, speed) => {
                 crate::block::projectile_hit::projectile_hit_block(level, pos, at, id, speed);
             }
@@ -1046,6 +1040,7 @@ impl WorldAction {
                         resistance: crate::level::explosion::BlockResistance::WindCharge,
                         fire: false,
                         bad_respawn_point: false,
+                        damage: None,
                     },
                 );
             }

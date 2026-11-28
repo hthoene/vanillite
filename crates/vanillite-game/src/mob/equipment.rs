@@ -227,6 +227,12 @@ pub fn attribute(m: &crate::mob::MobData, name: &str, base: f64, min: f64, max: 
     for slot in (0..8).filter_map(EquipmentSlot::from_ordinal) {
         item::attribute_modifiers(m.equipment.get(slot), slot, name, &mut mods);
     }
+    // The active location based `attribute` effects (Soul Speed).
+    if let Some(location) = &m.location {
+        let mut list = Vec::new();
+        location.modifiers(name, &mut list);
+        mods.extend(list.into_iter().map(|(_, op, amount)| (op, amount)));
+    }
     if mods.is_empty() {
         return base;
     }

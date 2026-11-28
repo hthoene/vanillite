@@ -1623,6 +1623,8 @@ fn with_damage_context<R>(
         raining: false,
         thundering: false,
         location: None,
+        enchantment_active: None,
+        block_state: None,
     };
     Some(f(&data.enchants, &equipment, &cx, env.random))
 }

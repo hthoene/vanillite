@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "Vanillite parity test: enchantments with the world changing entity effects (replace_block, replace_disk, set_block_properties, run_function, spawn_particles, summon_entity, explode) in the tick, location_changed, post_attack and hit_block components",
+    "min_format": 121,
+    "max_format": 121
+  }
+}

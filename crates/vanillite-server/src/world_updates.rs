@@ -457,6 +457,39 @@ fn explode_packet(
         }
         None => body.push(0),
     }
+    if let Some(look) = &explosion.look {
+        // An enchantment's `explode`: its particles and sound.
+        let main = if explosion.small {
+            &look.small
+        } else {
+            &look.large
+        };
+        write_varint(&mut body, main.kind);
+        body.extend_from_slice(&main.options);
+        match SOUND_EVENT.id(&look.sound) {
+            Some(id) => write_varint(&mut body, i32::from(id) + 1),
+            None => {
+                // A direct `SoundEvent` without a fixed range.
+                write_varint(&mut body, 0);
+                write_varint(&mut body, i32::try_from(look.sound.len()).unwrap_or(0));
+                body.extend_from_slice(look.sound.as_bytes());
+                body.push(0);
+            }
+        }
+        write_varint(
+            &mut body,
+            i32::try_from(look.block_particles.len()).unwrap_or(0),
+        );
+        for (p, scaling, speed, weight) in &look.block_particles {
+            write_varint(&mut body, p.kind);
+            body.extend_from_slice(&p.options);
+            body.extend_from_slice(&scaling.to_be_bytes());
+            body.extend_from_slice(&speed.to_be_bytes());
+            write_varint(&mut body, *weight);
+        }
+        body.push(1);
+        return Arc::new(SharedPacket::new(body));
+    }
     // `isSmall() ? EXPLOSION : EXPLOSION_EMITTER` (simple particles without options).
     let main = match (explosion.wind_sound.is_some(), explosion.small) {
         (true, true) => "minecraft:gust_emitter_small",

@@ -1,0 +1,53 @@
+{
+  "anvil_cost": 4,
+  "description": "Pulse",
+  "max_cost": {"base": 25, "per_level_above_first": 10},
+  "max_level": 1,
+  "min_cost": {"base": 10, "per_level_above_first": 10},
+  "slots": ["head"],
+  "supported_items": "#minecraft:enchantable/head_armor",
+  "weight": 2,
+  "effects": {
+    "minecraft:tick": [
+      {
+        "effect": {
+          "type": "minecraft:spawn_particles",
+          "particle": {"type": "minecraft:dust", "color": [1.0, 0.0, 0.0], "scale": 1.0},
+          "horizontal_position": {"type": "in_bounding_box", "scale": 1.5},
+          "vertical_position": {"type": "entity_position", "offset": 0.5},
+          "horizontal_velocity": {"movement_scale": -0.1},
+          "vertical_velocity": {"base": {"type": "minecraft:uniform", "min_inclusive": 0.0, "max_exclusive": 0.2}},
+          "speed": {"type": "minecraft:trapezoid", "min": 0.0, "max": 1.0, "plateau": 0.5}
+        },
+        "requirements": {
+          "type": "minecraft:entity_properties",
+          "entity": "this",
+          "predicate": {"minecraft:periodic_tick": 5}
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:play_sound",
+          "sound": "minecraft:block.note_block.bell",
+          "volume": 0.5,
+          "pitch": {"type": "minecraft:uniform", "min_inclusive": 0.8, "max_exclusive": 1.2}
+        },
+        "requirements": {
+          "type": "minecraft:all_of",
+          "terms": [
+            {"type": "minecraft:random_chance", "chance": 0.5},
+            {"type": "minecraft:entity_properties", "entity": "this", "predicate": {"minecraft:periodic_tick": 3}}
+          ]
+        }
+      },
+      {
+        "effect": {"type": "minecraft:run_function", "function": "vanillite_test:pulse"},
+        "requirements": {
+          "type": "minecraft:entity_properties",
+          "entity": "this",
+          "predicate": {"minecraft:periodic_tick": 10}
+        }
+      }
+    ]
+  }
+}
