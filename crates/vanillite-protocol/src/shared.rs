@@ -262,6 +262,35 @@ impl Drop for InboundReceiver {
 mod tests {
     use super::*;
 
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn compacted_packet_keeps_frame_and_inflates_body() {
+        let body: Vec<u8> = std::iter::once(0x27)
+            .chain((0..4000u32).map(|i| i.to_le_bytes()[0]))
+            .collect();
+        for threshold in [None, Some(256)] {
+            let packet = SharedPacket::new(body.clone());
+            assert!(packet.compacted().is_none());
+            let mut codec = crate::compress::Codec::default();
+            let frame = packet
+                .frame(threshold, |b| {
+                    let mut f = Vec::new();
+                    crate::frame::encode_frame(b, threshold, &mut codec, &mut f).unwrap();
+                    f
+                })
+                .unwrap()
+                .to_vec();
+            let compacted = packet.compacted().unwrap();
+            assert!(compacted.compacted().is_none());
+            assert_eq!((compacted.id(), compacted.len()), (Some(0x27), body.len()));
+            assert_eq!(
+                compacted.frame(threshold, |_| unreachable!()),
+                Some(&frame[..])
+            );
+            assert_eq!(compacted.body(), &body[..]);
+        }
+    }
+
     fn packet(seq: u64) -> Inbound {
         Inbound {
             seq,
