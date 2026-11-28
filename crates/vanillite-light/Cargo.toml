@@ -18,6 +18,8 @@ vanillite-data.workspace = true
 serde_json.workspace = true
 vanillite-nbt.workspace = true
 vanillite-storage.workspace = true
+# The chunk runtime, for light across generation steps.
+vanillite-world.workspace = true
 
 [lints]
 workspace = true
