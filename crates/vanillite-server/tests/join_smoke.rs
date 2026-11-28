@@ -849,7 +849,8 @@ fn vanilla_player_data_round_trips() {
     let thread = std::thread::spawn(move || server.run());
 
     let mut p = connect(&opener, "bot00000");
-    join(&mut p);
+    // Riding, its moves only turn it, but each is a tracker check that pairs the pig.
+    p.idle = Some(join(&mut p));
     p.until("the pig", |packet| match packet {
         ClientboundPlay::AddEntity(a) if a.entity_type == i32::from(ids::PIG.0) => Some(()),
         _ => None,
