@@ -220,8 +220,10 @@ running anything). The static binary starts it in its place only when `plugins/`
 Linux x86_64 (image and release archive) ships two builds: `vanillite` for every x86-64 CPU and
 `vanillite-x86-64-v3` (AVX2/BMI2/FMA, bit-identical, fewer instructions). The baseline binary
 starts the v3 build in its place when the CPU supports it (`crates/vanillite/src/cpu.rs`) and the
-log says which one runs (`CPU build: ...`); `VANILLITE_CPU=baseline` keeps the baseline. The image
-sets `MIMALLOC_ARENA_EAGER_COMMIT=0` and `MIMALLOC_PURGE_DELAY=0` for lower RSS (#164).
+log says which one runs (`CPU build: ...`); `VANILLITE_CPU=baseline` keeps the baseline. The mimalloc
+builds commit arena memory only on use and return freed pages at once (`MIMALLOC_ARENA_EAGER_COMMIT=0`,
+`MIMALLOC_PURGE_DELAY=0` as built-in defaults, `crates/vanillite/src/main.rs`; the variables
+still override them) for lower RSS (#164, #313).
 
 Host tools for the cross build:
 

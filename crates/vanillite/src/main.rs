@@ -17,6 +17,31 @@ use vanillite_server::{ServerBuilder, StartError};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// mimalloc's defaults for this server, set before mimalloc reads its options (the program's
+/// first constructors run before mimalloc's own); `MIMALLOC_<OPTION>` variables still win.
+/// Committing arena memory only on use and returning freed pages at once keeps transparent
+/// huge pages from filling and stops freed memory from staying resident (#313: 20-60 MiB
+/// less RSS at idle and under load, at the tick time of the default, #164).
+#[cfg(all(target_os = "linux", any(target_env = "musl", feature = "mimalloc")))]
+#[used]
+#[unsafe(link_section = ".init_array.00100")]
+static MIMALLOC_DEFAULTS: extern "C" fn() = {
+    extern "C" fn set() {
+        unsafe extern "C" {
+            fn mi_option_set_default(option: core::ffi::c_int, value: core::ffi::c_long);
+        }
+        // mimalloc's `mi_option_t`: arena_eager_commit and purge_delay.
+        const ARENA_EAGER_COMMIT: core::ffi::c_int = 4;
+        const PURGE_DELAY: core::ffi::c_int = 15;
+        // SAFETY: only sets the default values of two options; allocates nothing.
+        unsafe {
+            mi_option_set_default(ARENA_EAGER_COMMIT, 0);
+            mi_option_set_default(PURGE_DELAY, 0);
+        }
+    }
+    set
+};
+
 /// Returns freed memory of the allocator to the system. mimalloc reaches only the calling
 /// thread's heap: the server runs it on every thread ([`ServerBuilder::thread_memory_release`]).
 fn release_memory() {
