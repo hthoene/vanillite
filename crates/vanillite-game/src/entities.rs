@@ -170,6 +170,10 @@ pub struct Entities {
     /// Mobs whose equipment a menu changed: the next tick sends it to the players tracking
     /// them (`LivingEntity.detectEquipmentUpdates`).
     pub equipment_updates: Vec<EntityId>,
+    /// Projectiles just shot whose ammo or weapon has `projectile_spawned` effects beyond an
+    /// unconditional `ignite`, with that stack (`Projectile.applyOnProjectileSpawned`; run by
+    /// [`crate::mob::projectile::run_projectile_spawned`]).
+    pub projectile_spawned: Vec<(EntityId, crate::item::ItemStack)>,
     /// Lightning bolt kind data.
     pub bolts: Dense<crate::lightning::LightningData>,
     /// Decoration kind data: item frames, paintings, cushions, markers, interactions and

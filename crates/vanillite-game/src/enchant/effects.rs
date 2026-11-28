@@ -291,6 +291,9 @@ pub enum Requirement {
     /// A predicate of the data packs by id (a `Holder<LootItemCondition>` reference), read
     /// when tested.
     Reference(String),
+    /// `table_bonus`: a roll against the chance for the tool's level of the enchantment
+    /// (level 0 without a tool, outside item contexts).
+    TableBonus(String, Vec<f32>),
     /// Never holds.
     Unsupported,
 }
@@ -450,6 +453,22 @@ impl Requirement {
                     _ => Requirement::Unsupported,
                 }
             }
+            "table_bonus" => {
+                let chances: Option<Vec<f32>> =
+                    o.get("chances").and_then(Value::as_array).map(|a| {
+                        #[allow(clippy::cast_possible_truncation)]
+                        a.iter()
+                            .filter_map(Value::as_f64)
+                            .map(|c| c as f32)
+                            .collect()
+                    });
+                match (o.get("enchantment").and_then(Value::as_str), chances) {
+                    (Some(e), Some(c)) if !c.is_empty() => {
+                        Requirement::TableBonus(super::world::qualify(e), c)
+                    }
+                    _ => Requirement::Unsupported,
+                }
+            }
             "match_tool" => {
                 let predicate = o.get("predicate").and_then(Value::as_object);
                 let items = predicate
@@ -528,8 +547,22 @@ impl Requirement {
             Requirement::Reference(id) => {
                 Self::referenced(id).is_some_and(|r| r.test(cx, level, random))
             }
-            Requirement::MatchTool(_) | Requirement::Unsupported => false,
+            // `table_bonus` and `match_tool` need the tool: item contexts only.
+            Requirement::TableBonus(..) | Requirement::MatchTool(_) | Requirement::Unsupported => {
+                false
+            }
         }
+    }
+
+    /// `BonusLevelTableCondition.test`: `nextFloat() < chances[min(level, last)]`.
+    fn table_bonus(chances: &[f32], level: i32, random: &mut dyn FloatRandom) -> bool {
+        let i = usize::try_from(level).unwrap_or(0);
+        let chance = chances
+            .get(i)
+            .or_else(|| chances.last())
+            .copied()
+            .unwrap_or(0.0);
+        random.next_float() < chance
     }
 
     /// The requirement of a data pack predicate (a list is `all_of`); `None` for an unknown
@@ -574,6 +607,13 @@ impl Requirement {
             Requirement::RandomChance(c) => random.next_float() < c.calculate(level),
             Requirement::Reference(id) => {
                 Self::referenced(id).is_some_and(|r| r.test_item(tool, level, random))
+            }
+            Requirement::TableBonus(enchantment, chances) => {
+                let tool_level = match (tool, crate::player::play::game_data()) {
+                    (Some(t), Some(d)) => d.enchantment_level(t, enchantment),
+                    _ => 0,
+                };
+                Self::table_bonus(chances, tool_level, random)
             }
             Requirement::Entity(..)
             | Requirement::DamageSource(_)
@@ -1226,6 +1266,9 @@ impl Enchantments {
         value: f32,
     ) -> f32 {
         let mut value = value;
+        // `itemContext(level, enchantmentLevel, stack)`: the tool is the item itself unless
+        // the effect names another one (the ammo).
+        let tool = tool.or(Some(stack));
         for (e, level) in self.of(stack) {
             for c in pick(e) {
                 if c.requirements
@@ -1628,6 +1671,8 @@ impl Enchantments {
     /// `Enchantment.onProjectileSpawned` of every enchantment of `weapon`: the
     /// `projectile_spawned` effects whose requirements hold (the projectile is `this`), with
     /// their level.
+    ///
+    /// Unconditional `ignite` effects are left out: they applied when the projectile was made.
     pub fn projectile_spawned_effects(
         &self,
         weapon: &ItemStack,
@@ -1637,9 +1682,11 @@ impl Enchantments {
         let mut out = Vec::new();
         for (e, level) in self.of(weapon) {
             for c in &e.projectile_spawned {
-                if c.requirements
-                    .as_ref()
-                    .is_none_or(|r| r.test(cx, level, random))
+                let early = c.requirements.is_none() && matches!(c.effect, EntityEffect::Ignite(_));
+                if !early
+                    && c.requirements
+                        .as_ref()
+                        .is_none_or(|r| r.test(cx, level, random))
                 {
                     out.push((c.effect.clone(), level));
                 }
@@ -1654,6 +1701,17 @@ impl Enchantments {
             && self
                 .of(stack)
                 .any(|(e, _)| !e.tick.is_empty() || !e.location_changed.is_empty())
+    }
+
+    /// Whether `onProjectileSpawned` of `stack` has more than unconditional `ignite` effects
+    /// (those apply at once through [`Enchantments::projectile_ignite`]).
+    pub fn has_general_projectile_spawned(&self, stack: &ItemStack) -> bool {
+        !stack.is_empty()
+            && self.of(stack).any(|(e, _)| {
+                e.projectile_spawned.iter().any(|c| {
+                    c.requirements.is_some() || !matches!(c.effect, EntityEffect::Ignite(_))
+                })
+            })
     }
 
     /// The seconds `onProjectileSpawned` sets a shot projectile on fire for (Flame).

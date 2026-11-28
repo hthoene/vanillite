@@ -1,0 +1,281 @@
+{
+  "anvil_cost": 4,
+  "description": "Prospect",
+  "max_cost": {
+    "base": 25,
+    "per_level_above_first": 10
+  },
+  "max_level": 1,
+  "min_cost": {
+    "base": 10,
+    "per_level_above_first": 10
+  },
+  "slots": [
+    "mainhand"
+  ],
+  "supported_items": "#minecraft:enchantable/mining",
+  "weight": 2,
+  "effects": {
+    "minecraft:hit_block": [
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            0,
+            1,
+            0
+          ],
+          "block_state": {
+            "id": "minecraft:gold_block"
+          }
+        },
+        "requirements": {
+          "type": "minecraft:match_block",
+          "blocks": "minecraft:stone"
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            1,
+            1,
+            0
+          ],
+          "block_state": {
+            "type": "minecraft:rotated",
+            "state": {
+              "id": "minecraft:oak_log"
+            }
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            -1,
+            1,
+            0
+          ],
+          "block_state": {
+            "type": "minecraft:randomized_int",
+            "source": {
+              "id": "minecraft:snow"
+            },
+            "property": "layers",
+            "values": {
+              "type": "minecraft:uniform",
+              "min_inclusive": 1,
+              "max_inclusive": 8
+            }
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            0,
+            1,
+            1
+          ],
+          "block_state": {
+            "type": "minecraft:noise_threshold",
+            "seed": 7,
+            "noise": {
+              "base_octave": 0,
+              "amplitudes": [
+                1.0
+              ]
+            },
+            "scale": 0.5,
+            "threshold": 0.0,
+            "high_chance": 0.5,
+            "default_state": {
+              "id": "minecraft:stone"
+            },
+            "low_states": [
+              {
+                "id": "minecraft:andesite"
+              }
+            ],
+            "high_states": [
+              {
+                "id": "minecraft:diorite"
+              },
+              {
+                "id": "minecraft:granite"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            0,
+            1,
+            -1
+          ],
+          "block_state": {
+            "type": "minecraft:noise",
+            "seed": 3,
+            "noise": {
+              "base_octave": -1,
+              "amplitudes": [
+                1.0,
+                1.0
+              ]
+            },
+            "scale": 1.0,
+            "states": [
+              {
+                "id": "minecraft:red_wool"
+              },
+              {
+                "id": "minecraft:blue_wool"
+              },
+              {
+                "id": "minecraft:lime_wool"
+              },
+              {
+                "id": "minecraft:white_wool"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            1,
+            1,
+            1
+          ],
+          "block_state": {
+            "type": "minecraft:dual_noise",
+            "seed": 11,
+            "noise": {
+              "base_octave": 0,
+              "amplitudes": [
+                1.0
+              ]
+            },
+            "scale": 0.7,
+            "variety": [
+              1,
+              3
+            ],
+            "slow_noise": {
+              "base_octave": -2,
+              "amplitudes": [
+                1.0
+              ]
+            },
+            "slow_scale": 0.25,
+            "states": [
+              {
+                "id": "minecraft:red_terracotta"
+              },
+              {
+                "id": "minecraft:blue_terracotta"
+              },
+              {
+                "id": "minecraft:lime_terracotta"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            -1,
+            1,
+            -1
+          ],
+          "block_state": {
+            "type": "minecraft:copy_properties",
+            "source": {
+              "id": "minecraft:blast_furnace"
+            }
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            1,
+            1,
+            -1
+          ],
+          "predicate": {
+            "type": "minecraft:height_range",
+            "min_inclusive": {
+              "absolute": -64
+            },
+            "max_inclusive": {
+              "above_bottom": 10
+            }
+          },
+          "block_state": {
+            "id": "minecraft:emerald_block"
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            -1,
+            1,
+            1
+          ],
+          "predicate": {
+            "type": "minecraft:matching_biomes",
+            "biomes": "minecraft:plains"
+          },
+          "block_state": {
+            "id": "minecraft:diamond_block"
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "offset": [
+            2,
+            1,
+            0
+          ],
+          "predicate": {
+            "type": "minecraft:any_of",
+            "predicates": [
+              {
+                "type": "minecraft:height_range",
+                "min_inclusive": {
+                  "below_top": 10
+                },
+                "max_inclusive": {
+                  "below_top": 0
+                }
+              },
+              {
+                "type": "minecraft:matching_biomes",
+                "biomes": "#minecraft:is_ocean"
+              }
+            ]
+          },
+          "block_state": {
+            "id": "minecraft:lapis_block"
+          }
+        }
+      }
+    ]
+  }
+}

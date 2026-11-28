@@ -12,6 +12,9 @@ use vanillite_base::random::{LegacyRandom, RandomSource};
 use vanillite_base::{BlockPos, Direction, Vec3};
 use vanillite_data::block::{BlockId, BlockState};
 use vanillite_world::entity::EntityId;
+use vanillite_worldgen::anchor::{VerticalAnchor, WorldGenerationContext};
+use vanillite_worldgen::carver::providers::IntProvider;
+use vanillite_worldgen::feature::state_provider::{self, BlockStateProvider as NoiseProvider};
 
 use super::{FloatRandom, LevelBased};
 use crate::level::Level;
@@ -185,7 +188,11 @@ pub enum BlockTest {
     Unobstructed,
     /// `volume_match`: the predicate at every offset of the box.
     VolumeMatch([i32; 3], [i32; 3], Box<BlockTest>),
-    /// `matching_biomes`, `height_range` and unknown types: never true.
+    /// `matching_biomes`: the biome holder set entries (`"ns:id"` or `"#tag"`).
+    MatchingBiomes(Vec<String>),
+    /// `height_range`: the Y lies within the anchors resolved against the level.
+    HeightRange(VerticalAnchor, VerticalAnchor),
+    /// Unknown types: never true.
     Unsupported,
 }
 
@@ -235,6 +242,11 @@ impl BlockTest {
                 vanillite_worldgen::blocks::parse_block_state(o.get("state")?).ok()?,
             ),
             "inside_world_bounds" => BlockTest::InsideWorldBounds(off()?),
+            "matching_biomes" => BlockTest::MatchingBiomes(holder_entries(o.get("biomes")?)?),
+            "height_range" => BlockTest::HeightRange(
+                VerticalAnchor::parse(o.get("min_inclusive")?).ok()?,
+                VerticalAnchor::parse(o.get("max_inclusive")?).ok()?,
+            ),
             "any_of" => BlockTest::AnyOf(list("predicates")?),
             "all_of" => BlockTest::AllOf(list("predicates")?),
             "not" => BlockTest::Not(Box::new(BlockTest::parse(o.get("predicate")?))),
@@ -283,8 +295,48 @@ impl BlockTest {
                 (min[2]..=max[2])
                     .all(|z| (min[1]..=max[1]).all(|y| t.test(level, pos.offset(x, y, z))))
             }),
+            BlockTest::MatchingBiomes(entries) => {
+                const BIOME: &str = "minecraft:worldgen/biome";
+                let Some(name) = level
+                    .climate()
+                    .map(|c| c.biomes.get(level.biome(pos)).name.clone())
+                else {
+                    return false;
+                };
+                let Some(d) = crate::player::play::game_data() else {
+                    return false;
+                };
+                use vanillite_protocol::components_nbt::RegistryNames;
+                let id = vanillite_protocol::item::InstalledRegistries
+                    .entry_id(BIOME, &name)
+                    .and_then(|id| u32::try_from(id).ok());
+                entries.iter().any(|e| match e.strip_prefix('#') {
+                    Some(_) => id.is_some_and(|id| d.holder_set(BIOME, e).contains(&id)),
+                    None => *e == name,
+                })
+            }
+            BlockTest::HeightRange(min, max) => {
+                // `WorldGenerationContext.of(level)` of a server level: its own range and sea
+                // level.
+                let context = WorldGenerationContext::new(
+                    level.min_y(),
+                    level.max_y() - level.min_y() + 1,
+                    crate::mob::sea_level(level),
+                );
+                pos.y >= min.resolve_y(&context) && pos.y <= max.resolve_y(&context)
+            }
             BlockTest::Unsupported => false,
         }
+    }
+}
+
+/// A noise based provider of worldgen, equal by identity (its noise is built once at load).
+#[derive(Clone, Debug)]
+pub struct NoiseState(pub Arc<NoiseProvider>);
+
+impl PartialEq for NoiseState {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -299,8 +351,17 @@ pub enum StateProvider {
     RandomBlock(Vec<BlockState>),
     /// `rule_based`: the first rule whose predicate holds, else the fallback.
     RuleBased(Option<Box<StateProvider>>, Vec<(BlockTest, StateProvider)>),
-    /// The noise based providers, `randomized_int`, `rotated`, `copy_properties` and unknown
-    /// types: the effect does nothing.
+    /// `noise`, `dual_noise` and `noise_threshold` (worldgen's providers: they read no
+    /// blocks).
+    Noise(NoiseState),
+    /// `randomized_int`: the source's state with an integer property set to a sample.
+    RandomizedInt(Box<StateProvider>, String, IntProvider),
+    /// `rotated`: the source's state turned towards a fixed or random direction.
+    Rotated(Box<StateProvider>, Option<Direction>),
+    /// `copy_properties`: the source's state with the properties of the block at the
+    /// position.
+    CopyProperties(Box<StateProvider>),
+    /// Registry references and unknown types: the effect does nothing.
     Unsupported,
 }
 
@@ -348,6 +409,34 @@ impl StateProvider {
                         .collect(),
                 )
             }),
+            kind @ ("noise" | "dual_noise" | "noise_threshold") => {
+                NoiseProvider::parse_noise_kind(kind, v)
+                    .ok()
+                    .map(|p| StateProvider::Noise(NoiseState(Arc::new(p))))
+            }
+            "randomized_int" => o
+                .get("source")
+                .zip(o.get("values"))
+                .and_then(|(src, values)| {
+                    Some(StateProvider::RandomizedInt(
+                        Box::new(StateProvider::parse(src)),
+                        o.get("property")?.as_str()?.to_owned(),
+                        IntProvider::from_json(values).ok()?,
+                    ))
+                }),
+            "rotated" => o.get("state").and_then(|state| {
+                let direction = match o.get("direction") {
+                    None => None,
+                    Some(d) => Some(direction(d.as_str()?)?),
+                };
+                Some(StateProvider::Rotated(
+                    Box::new(StateProvider::parse(state)),
+                    direction,
+                ))
+            }),
+            "copy_properties" => o
+                .get("source")
+                .map(|src| StateProvider::CopyProperties(Box::new(StateProvider::parse(src)))),
             _ => None,
         };
         parsed.unwrap_or(StateProvider::Unsupported)
@@ -361,6 +450,9 @@ impl StateProvider {
                 fallback.as_ref().is_none_or(|f| f.supported())
                     && rules.iter().all(|(_, then)| then.supported())
             }
+            StateProvider::RandomizedInt(source, ..)
+            | StateProvider::Rotated(source, _)
+            | StateProvider::CopyProperties(source) => source.supported(),
             _ => true,
         }
     }
@@ -412,6 +504,35 @@ impl StateProvider {
                     .as_ref()
                     .and_then(|f| f.get_optional_state(level, random, pos))
             }
+            StateProvider::Noise(p) => p.0.noise_state(random, pos),
+            // `RandomizedIntStateProvider.getState`: a value the property does not have keeps
+            // the state (Vanilla throws).
+            StateProvider::RandomizedInt(source, name, values) => {
+                let state = source.get_state(level, random, pos);
+                let Some(property) = state_provider::integer_property(state, name) else {
+                    return Some(state);
+                };
+                let value = values.sample(random).to_string();
+                Some(state.with(property.name, &value).unwrap_or(state))
+            }
+            StateProvider::Rotated(source, direction) => {
+                // `Direction.getRandom(random)` before the source's state.
+                let direction = match direction {
+                    Some(d) => *d,
+                    None => {
+                        let i = usize::try_from(random.next_int_bounded(6)).unwrap_or(0);
+                        Direction::ALL.get(i).copied().unwrap_or(Direction::Down)
+                    }
+                };
+                Some(state_provider::rotate(
+                    source.get_state(level, random, pos),
+                    direction,
+                ))
+            }
+            StateProvider::CopyProperties(source) => Some(state_provider::with_properties_of(
+                source.get_state(level, random, pos),
+                level.block(pos),
+            )),
             StateProvider::Unsupported => None,
         }
     }
@@ -838,7 +959,10 @@ fn replace_at(
 }
 
 /// `EnchantmentEntityEffect.apply` of a world effect.
-pub fn apply(level: &mut Level, a: &EnchantAction) {
+///
+/// Returns the entity a `summon_entity` effect with `join_team` made, which then joins the
+/// team of the affected entity (the caller has the scoreboard).
+pub fn apply(level: &mut Level, a: &EnchantAction) -> Option<EntityId> {
     let entity = a.entity;
     match &a.effect {
         WorldEffect::ReplaceBlock(change) => {
@@ -906,21 +1030,26 @@ pub fn apply(level: &mut Level, a: &EnchantAction) {
                 runner.run_function(level, id, entity, a.pos, rot);
             }
         }
-        WorldEffect::Summon(summon) => apply_summon(level, a, summon),
+        WorldEffect::Summon(summon) => {
+            return apply_summon(level, a, summon).filter(|_| summon.join_team);
+        }
         WorldEffect::Explode(e) => apply_explode(level, a, e),
     }
+    None
 }
 
 /// `SummonEntityEffect.apply`: in spawnable bounds, an entity type picked with the level
-/// random, made like `EntityType.spawn(level, pos, TRIGGERED)` (its yaw from the level
-/// random) and moved to the exact position; a lightning bolt's cause is a player owner.
-fn apply_summon(level: &mut Level, a: &EnchantAction, summon: &Summon) {
+/// random, made like `EntityType.spawn(level, pos, TRIGGERED)` (at the block's centre with its
+/// yaw from the level random; a mob is finalized there and plays its ambient sound) and then
+/// moved to the exact position; a lightning bolt's cause is a player owner. Returns the new
+/// entity.
+fn apply_summon(level: &mut Level, a: &EnchantAction, summon: &Summon) -> Option<EntityId> {
     let block = block_of(a.pos);
     let in_bounds = (-30_000_000..30_000_000).contains(&block.x)
         && (-30_000_000..30_000_000).contains(&block.z)
         && (-20_000_000..20_000_000).contains(&block.y);
     if !in_bounds {
-        return;
+        return None;
     }
     let types: Vec<String> = crate::player::play::game_data().map_or_else(Vec::new, |d| {
         summon
@@ -932,14 +1061,29 @@ fn apply_summon(level: &mut Level, a: &EnchantAction, summon: &Summon) {
             .map(str::to_owned)
             .collect()
     });
-    let Some(n) = i32::try_from(types.len()).ok().filter(|&n| n > 0) else {
-        return;
-    };
+    let n = i32::try_from(types.len()).ok().filter(|&n| n > 0)?;
     // `HolderSet.getRandomElement(level.getRandom())`.
     let pick = level.random().next_int_bounded(n);
-    let Some(kind) = usize::try_from(pick).ok().and_then(|i| types.get(i)) else {
-        return;
-    };
+    let kind = usize::try_from(pick).ok().and_then(|i| types.get(i))?;
+    if let Some(mob) =
+        crate::mob::kinds::Kind::by_name(kind).filter(|k| k.family() != crate::mob::Family::Decor)
+    {
+        let id = crate::mob::animal::spawn_from_item(
+            level,
+            mob,
+            &crate::item::ItemStack::EMPTY,
+            block,
+            crate::mob::fam::SpawnReason::Triggered,
+            false,
+            false,
+        )?;
+        // `snapTo(position, yRot, xRot)`.
+        if let Some(mut e) = level.entities.store.get_mut(id) {
+            e.set_pos(a.pos);
+            e.set_old_pos();
+        }
+        return Some(id);
+    }
     // `snapTo(..., wrapDegrees(level.getRandom().nextFloat() * 360), 0)`.
     let yaw =
         vanillite_base::math::wrap_degrees_f(RandomSource::next_float(level.random()) * 360.0);
@@ -949,33 +1093,7 @@ fn apply_summon(level: &mut Level, a: &EnchantAction, summon: &Summon) {
         if let Some(b) = level.entities.bolt_mut(bolt) {
             b.cause = cause;
         }
-        return;
-    }
-    if let Some(mob) =
-        crate::mob::kinds::Kind::by_name(kind).filter(|k| k.family() != crate::mob::Family::Decor)
-    {
-        let difficulty = level.settings.difficulty;
-        let id = crate::mob::spawn::summon(
-            level,
-            None,
-            mob,
-            a.pos,
-            difficulty,
-            vanillite_abi::spawn_reason::TRIGGERED,
-            true,
-        );
-        if let Some(mut e) = level.entities.store.get_mut(id) {
-            let mut rot = e.as_ref().rot();
-            rot.y_rot = yaw;
-            rot.x_rot = 0.0;
-            rot.y_head_rot = yaw;
-            e.set_rot(rot);
-            e.set_pos(a.pos);
-        }
-        if let Some(m) = level.entities.mob_mut(id) {
-            m.y_body_rot = yaw;
-        }
-        return;
+        return Some(bolt);
     }
     let mut nbt = vanillite_nbt::Compound::new();
     nbt.insert("id", kind.as_str());
@@ -997,7 +1115,10 @@ fn apply_summon(level: &mut Level, a: &EnchantAction, summon: &Summon) {
     // `EntityType.create`: the constructor takes its seed and UUID like `/summon`'s.
     let (uuid, seed) = level.new_uuid_and_seed();
     nbt.insert("UUID", crate::mob::nbt::uuid_tag(uuid));
-    level.load_entity_seeded(nbt, Some(seed));
+    level
+        .load_entity_seeded(nbt, Some(seed))
+        .then(|| level.entities.store.by_uuid(uuid))
+        .flatten()
 }
 
 /// `ExplodeEffect.apply`: `serverLevel.explode` at the position plus the offset with a

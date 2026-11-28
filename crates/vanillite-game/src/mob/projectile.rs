@@ -230,7 +230,88 @@ pub fn shoot_arrow(
     }
     let id = ents.spawn_arrow(new, data);
     ents.launched(id, owner);
+    queue_projectile_spawned(ents, id, ammo, weapon);
     id
+}
+
+/// `Projectile.applyOnProjectileSpawned(level, ammo)` of an arrow beyond Flame's unconditional
+/// `ignite`: the ammo's enchantments, then the weapon's if it is another item; queued for
+/// [`run_projectile_spawned`].
+fn queue_projectile_spawned(
+    ents: &mut Entities,
+    arrow: EntityId,
+    ammo: &crate::item::ItemStack,
+    weapon: Option<&crate::item::ItemStack>,
+) {
+    let Some(d) = crate::player::play::game_data() else {
+        return;
+    };
+    if d.enchants.has_general_projectile_spawned(ammo) {
+        ents.projectile_spawned.push((arrow, ammo.clone()));
+    }
+    if let Some(w) = weapon
+        && w.item != ammo.item
+        && d.enchants.has_general_projectile_spawned(w)
+    {
+        ents.projectile_spawned.push((arrow, w.clone()));
+    }
+}
+
+/// `EnchantmentHelper.onProjectileSpawned` of the queued projectiles: the `projectile_spawned`
+/// effects whose requirements hold for the projectile (`entityContext`: `this` and its
+/// position), applied to it with its living owner as the item's owner.
+pub fn run_projectile_spawned(
+    level: &Level,
+    ents: &mut Entities,
+    env: &mut Env<'_>,
+    cx: &mut MobContext,
+) {
+    if ents.projectile_spawned.is_empty() {
+        return;
+    }
+    let combat = super::attack::combat_data();
+    for (projectile, stack) in std::mem::take(&mut ents.projectile_spawned) {
+        let Some(pos) = ents.store.get(projectile).map(|e| e.pos()) else {
+            continue;
+        };
+        let block = vanillite_base::BlockPos::containing(pos.x, pos.y, pos.z);
+        let mut this = super::attack::facts(ents, projectile);
+        if let Some(f) = this.as_mut() {
+            f.can_see_sky = super::can_see_sky(level, block);
+        }
+        let effects = {
+            let ecx = crate::enchant::EnchantContext {
+                types: env.types,
+                tags: &*combat,
+                this,
+                attacker: None,
+                direct_attacker: None,
+                attacking_player: None,
+                source: None,
+                raining: level.is_raining(),
+                thundering: level.is_thundering(),
+                location: Some((level.block(block), super::can_see_sky(level, block))),
+                enchantment_active: None,
+                block_state: None,
+            };
+            combat
+                .enchants
+                .projectile_spawned_effects(&stack, &ecx, env.random)
+        };
+        // `EnchantedItemInUse(weapon, null, owner)`: a living owner.
+        let owner = ents
+            .arrow(projectile)
+            .and_then(|a| a.owner)
+            .filter(|&o| ents.mob(o).is_some() || ents.player(o).is_some());
+        for (effect, ench_level) in effects {
+            let Some(at) = ents.store.get(projectile).map(|e| e.pos()) else {
+                break;
+            };
+            super::attack::run_entity_effect_at(
+                level, ents, env, cx, &effect, ench_level, projectile, at, owner, None,
+            );
+        }
+    }
 }
 
 /// `AbstractSkeleton.performRangedAttack`.
@@ -318,6 +399,7 @@ pub fn skeleton_shoot(t: &mut Tick<'_, '_>, target: EntityId, power: f32) {
         uncertainty,
     );
     let uuid = crate::mob::new_uuid();
+    let ammo = item.clone();
     let mut data = ArrowData::shot(Some(id), base_damage, 0, own.state(), item);
     data.crit = false;
     // `igniteForSeconds(100)` of the wither skeleton's arrow.
@@ -344,6 +426,9 @@ pub fn skeleton_shoot(t: &mut Tick<'_, '_>, target: EntityId, power: f32) {
     }
     let arrow = t.ents.spawn_arrow(new, data);
     t.ents.launched(arrow, Some(id));
+    let weapon = t.ents.arrow(arrow).and_then(|a| a.weapon.clone());
+    queue_projectile_spawned(t.ents, arrow, &ammo, weapon.as_ref());
+    run_projectile_spawned(t.level, t.ents, t.env, t.cx);
     let m = t.mob();
     let pitch = 1.0 / (m.random.next_float() * 0.4 + 0.8);
     super::kinds::play_sound(t, "minecraft:entity.skeleton.shoot", 1.0, pitch);
@@ -920,7 +1005,17 @@ pub fn tick_arrow(
             super::missile::hit_block(level, cx, id, hit_pos, at);
             if let Some(weapon) = &a.weapon {
                 super::attack::hit_block_effects(
-                    level, ents, env, cx, weapon, id, a.owner, hit_pos, at,
+                    level,
+                    ents,
+                    env,
+                    cx,
+                    weapon,
+                    id,
+                    a.owner,
+                    None,
+                    hit_pos,
+                    level.block(hit_pos),
+                    at,
                 );
             }
             let pitch = 1.2 / (random.next_float() * 0.2 + 0.9);
