@@ -851,7 +851,7 @@ impl ServerWorld {
         }
         self.updates.broadcast(&mut self.level, ctx.global, self.id);
         lap!(self, Chunks);
-        self.track_entities();
+        self.track_entities(ctx.compute);
         WorldPlayers::send_entity_updates(
             &self.level.entities,
             &self.entity_updates,
@@ -1169,7 +1169,7 @@ impl ServerWorld {
     }
 
     /// Runs the entity tracker over this tick's state and resets the per-tick sync state.
-    fn track_entities(&mut self) {
+    fn track_entities(&mut self, compute: &Compute) {
         self.viewers.clear();
         self.entity_updates.clear();
         self.moved_viewers.clear();
@@ -1192,6 +1192,8 @@ impl ServerWorld {
             chunk_pending: &|player, chunk| WorldPlayers::chunk_pending(entities, player, chunk),
             moved_viewers: &self.moved_viewers,
             update_scale: self.overload.scale,
+            threads: compute.phase_threads(),
+            fork: &|n, job| compute.for_each(n, job),
         };
         self.tracker.update(&input, &mut self.entity_updates);
         self.level.entities.store.clear_removed();

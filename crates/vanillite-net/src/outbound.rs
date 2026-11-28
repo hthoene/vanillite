@@ -466,7 +466,7 @@ impl Wire {
                     Ok(true)
                 })
                 .is_ok(),
-                None => encoder.batch(&frames, threshold, buf).is_ok(),
+                None => encoder.batch_owned(frames, threshold, buf).is_ok(),
             },
             Out::Compression(t) => {
                 encoder.set_compression(t);

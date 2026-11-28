@@ -36,7 +36,8 @@ rules! {
             compute_nice: u8 = "compute-nice", Setting, range = [0, 19], restart = true,
                 vanilla = 10;
             /// I/O threads of the network (connections, encryption, compression of outgoing
-            /// packets). 0 = 2, or 1 with less than two cores, so the tick keeps the only core.
+            /// packets). 0 = one per two cores, at least 2; 1 with less than two cores, so the
+            /// tick keeps the only core.
             network: u16 = "network", Setting, range = [0, 64], restart = true, vanilla = 0;
             /// Threads that share a parallel phase of a world's tick (in crowds: the entity
             /// packets, the delivery of sounds and particles, the advancement checks; with players
