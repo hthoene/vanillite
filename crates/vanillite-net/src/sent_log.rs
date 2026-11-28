@@ -19,7 +19,7 @@ const VALID: u64 = 1 << 63;
 const MS_MASK: u64 = 0x7F_FFFF;
 const SIZE_MASK: u64 = 0xFF_FFFF;
 /// Frames recorded per batch.
-const BATCH_FRAMES: usize = 32;
+const BATCH_FRAMES: usize = 8;
 /// Packet id that is unknown (compressed inside a batch) or above 254.
 const UNKNOWN_ID: u8 = 0xFF;
 

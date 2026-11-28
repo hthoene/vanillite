@@ -78,9 +78,15 @@ impl Limits {
         }
     }
 
-    /// Network I/O threads for `performance.threads.network = 0`: 2, or 1 below two cores.
+    /// Network I/O threads for `performance.threads.network = 0`: one per two cores, at
+    /// least 2; 1 below two cores. Connections write independently, so a crowd's traffic
+    /// spreads over the cores, and the other half stays with the tick and its phases.
     pub fn default_network_threads(&self) -> usize {
-        if self.cpu < SCARCE_CORES { 1 } else { 2 }
+        if self.cpu < SCARCE_CORES {
+            1
+        } else {
+            ((self.cpu / 2.0).floor() as usize).max(2)
+        }
     }
 
     /// Compute workers for `performance.threads.compute = 0`: one per core, at least one. The
