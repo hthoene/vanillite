@@ -289,6 +289,23 @@ impl CoreColumns {
         self.pose.swap_remove(row);
         self.section.swap_remove(row);
     }
+
+    fn shrink_to_fit(&mut self) {
+        self.id.shrink_to_fit();
+        self.network_id.shrink_to_fit();
+        self.uuid.shrink_to_fit();
+        self.kind.shrink_to_fit();
+        self.kind_row.shrink_to_fit();
+        self.pos.shrink_to_fit();
+        self.old_pos.shrink_to_fit();
+        self.velocity.shrink_to_fit();
+        self.rot.shrink_to_fit();
+        self.dims.shrink_to_fit();
+        self.aabb.shrink_to_fit();
+        self.flags.shrink_to_fit();
+        self.pose.shrink_to_fit();
+        self.section.shrink_to_fit();
+    }
 }
 
 /// What a new entity starts with.
@@ -361,6 +378,17 @@ impl EntityStore {
     /// An empty store.
     pub fn new() -> EntityStore {
         EntityStore::default()
+    }
+
+    /// Gives back the room of removed entities (for a world nobody plays in).
+    pub fn shrink_to_fit(&mut self) {
+        self.core.shrink_to_fit();
+        self.order_slot.shrink_to_fit();
+        self.tick_order.shrink_to_fit();
+        self.sections.shrink_to_fit();
+        self.removed.shrink_to_fit();
+        self.ticking_chunks.shrink_to_fit();
+        self.by_uuid.shrink_to_fit();
     }
 
     /// Number of entities.

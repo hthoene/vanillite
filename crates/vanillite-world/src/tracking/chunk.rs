@@ -391,6 +391,26 @@ fn forget(
 }
 
 impl EntityTracker for ChunkTracker {
+    fn release_memory(&mut self) {
+        while matches!(self.tracked.last(), Some(None)) {
+            self.tracked.pop();
+        }
+        self.tracked.shrink_to_fit();
+        while self.viewer_slot.last() == Some(&NONE) {
+            self.viewer_slot.pop();
+        }
+        self.viewer_slot.shrink_to_fit();
+        self.viewers.shrink_to_fit();
+        self.free_viewers.shrink_to_fit();
+        self.by_chunk.shrink_to_fit();
+        self.nearby.shrink_to_fit();
+        self.moved = Vec::new();
+        self.candidates = Vec::new();
+        self.added = Vec::new();
+        self.gone = Vec::new();
+        self.gone_slots = Vec::new();
+    }
+
     fn seen_by(&self, entity: EntityId) -> &[EntityId] {
         self.tracked
             .get(index(entity) as usize)

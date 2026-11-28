@@ -31,6 +31,10 @@ pub trait EntityTracker: Send {
         let _ = entity;
         &[]
     }
+
+    /// Gives back what the tracker keeps for its capacity (the world has been empty for a
+    /// while); the next update must work as before.
+    fn release_memory(&mut self) {}
 }
 
 /// Creates the tracker of each world.
@@ -284,6 +288,12 @@ pub struct TrackerOutput {
 }
 
 impl TrackerOutput {
+    /// Empties the output and gives back its capacity.
+    pub fn release_memory(&mut self) {
+        self.messages = Vec::new();
+        self.viewers = Vec::new();
+    }
+
     /// Empties the output, keeping its capacity.
     pub fn clear(&mut self) {
         self.messages.clear();
