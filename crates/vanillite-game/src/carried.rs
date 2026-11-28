@@ -125,7 +125,10 @@ pub fn tick(level: &Level, owner: Owner<'_>, player: &mut PlayerData) {
         if stack.is_empty() {
             continue;
         }
-        if stack.component(ids::LODESTONE_TRACKER).is_some() {
+        // `CompassItem.inventoryTick`: only compasses tick their tracker.
+        if stack.item == vanillite_data::item::ids::COMPASS.0
+            && stack.component(ids::LODESTONE_TRACKER).is_some()
+        {
             tick_lodestone(level, owner.dimension, stack);
         }
         if !map::is_map_item(stack.item) {

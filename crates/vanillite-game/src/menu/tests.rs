@@ -928,6 +928,31 @@ fn enchanting_table_enchants_with_lapis_and_levels() {
                 "clues {:?}",
                 view.menu.data
             );
+            // `slotsChanged` (I4-09 of #272): each clue is the next draw of the menu random
+            // after `getEnchantmentList` reseeded it with seed + slot and selected from it.
+            let d = crate::player::play::game_data().expect("game data");
+            let seed = view.menu.data[3];
+            let item = view.item(0).clone();
+            for slot in 0..3usize {
+                let mut r =
+                    vanillite_base::random::LegacyRandom::new(i64::from(seed) + slot as i64);
+                let cost = view.menu.data[slot];
+                let list = crate::enchant::select_enchantment(
+                    &d.enchanting,
+                    &mut r,
+                    &item,
+                    cost,
+                    &d.enchanting.table,
+                );
+                let len = i32::try_from(list.len()).unwrap_or(1);
+                let pick = vanillite_base::random::RandomSource::next_int_bounded(&mut r, len);
+                let (id, level) = list[usize::try_from(pick).unwrap_or(0)];
+                assert_eq!(
+                    (view.menu.data[4 + slot], view.menu.data[7 + slot]),
+                    (i32::try_from(id).unwrap_or(-1), level),
+                    "clue of option {slot}"
+                );
+            }
             assert!(view.button(2, &mut Vec::new()));
             assert!(!super::workstation::crafting_enchantments(view.item(0)).is_empty());
             assert_eq!(view.item(1).count, 2);

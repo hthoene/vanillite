@@ -136,46 +136,26 @@ pub(crate) fn hurt_slot(
         EquipmentSlot::Body | EquipmentSlot::Saddle => return,
     };
     let stack = player.inventory.get(index).clone();
-    if !item::is_damageable(&stack) {
+    let change = crate::durability::change(&stack, 1, false, env.random);
+    if change == 0 {
         return;
-    }
-    let data = crate::player::play::game_data();
-    let unbreaking = data
-        .as_ref()
-        .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-    if unbreaking > 0 {
-        let armor = data.is_some_and(|d| d.item_in_tag(stack.item, "minecraft:enchantable/armor"));
-        #[allow(clippy::cast_precision_loss)]
-        let level = unbreaking as f32;
-        let chance = if armor {
-            2.0 * level / (5.0 * level + 5.0)
-        } else {
-            level / (level + 1.0)
-        };
-        if env.random.next_float() < chance {
-            return;
-        }
     }
     let Some(s) = player.inventory.get_mut(index) else {
         return;
     };
-    let d = item::damage(s).saturating_add(1);
+    let d = item::damage(s).saturating_add(change);
     if crate::advancements::view::apply_damage(
         Some(&mut player.advancements),
         Some(&mut player.stats),
         s,
         d,
     ) {
-        play_sound(
-            env.out,
-            None,
-            entity.as_ref().pos(),
-            "minecraft:entity.item.break",
-            SoundSource::Players,
-            0.8,
-            0.8 + env.random.next_float() * 0.4,
-            crate::survival::sound_seed(),
-        );
+        let e = entity.as_ref();
+        env.out.push(crate::survival::Effect::Tracking {
+            entity: e.id(),
+            with_self: true,
+            packet: crate::durability::break_packet(e.network_id().0, slot),
+        });
     }
 }
 

@@ -56,16 +56,46 @@ pub fn protecting_hand(
 }
 
 /// `DeathProtection.applyEffects` on an effect host (`random` rolls the probabilities): the
-/// effects that touch the status effects.
+/// effects that touch the status effects, and `play_sound` through `sound`
+/// (`PlaySoundConsumeEffect`). `teleport_randomly` is not applied here.
 pub fn apply_effects(
     effects: &[ConsumeEffect],
     kind: vanillite_data::entity::EntityTypeId,
     host: &mut dyn EffectHost,
     random: &mut dyn FnMut() -> f32,
+    sound: &mut dyn FnMut(&str),
 ) {
     for effect in effects {
-        crate::effect::consume::apply_status(effect, kind, host, random);
+        if let ConsumeEffect::PlaySound(name) = effect {
+            sound(name);
+        } else {
+            crate::effect::consume::apply_status(effect, kind, host, random);
+        }
     }
+}
+
+/// `PlaySoundConsumeEffect.apply`: `playSound(null, entity.blockPosition(), sound,
+/// entity.getSoundSource(), 1, 1)`.
+pub fn play_consume_sound(
+    out: &mut Vec<Effect>,
+    pos: vanillite_base::Vec3,
+    sound: &str,
+    source: vanillite_protocol::packets::play::clientbound::SoundSource,
+) {
+    crate::survival::play_sound(
+        out,
+        None,
+        vanillite_base::Vec3::new(
+            pos.x.floor() + 0.5,
+            pos.y.floor() + 0.5,
+            pos.z.floor() + 0.5,
+        ),
+        sound,
+        source,
+        1.0,
+        1.0,
+        crate::survival::sound_seed(),
+    );
 }
 
 /// The totem animation (entity event 35) for the entity and the players tracking it.

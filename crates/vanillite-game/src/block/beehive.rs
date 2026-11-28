@@ -688,7 +688,7 @@ fn use_item_on(
                 1.0,
                 1.0,
             );
-            super::hurt_item(level, stack, 1, ctx.player);
+            super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
             emptied = true;
             level.game_event_at(Some(ctx.player), events().shear, pos);
         } else if item == items::GLASS_BOTTLE {

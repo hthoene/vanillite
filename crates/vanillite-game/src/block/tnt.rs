@@ -79,7 +79,7 @@ fn use_item_on(
         level.set_block(pos, BlockState::AIR, crate::level::update::ALL_IMMEDIATE);
         if id == items::FLINT_AND_STEEL {
             if !ctx.infinite {
-                super::hurt_item(level, stack, 1, ctx.player);
+                super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
             }
         } else {
             stack.shrink(1);

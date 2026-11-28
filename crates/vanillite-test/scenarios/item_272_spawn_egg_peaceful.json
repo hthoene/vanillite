@@ -1,0 +1,71 @@
+{
+  "description": "Spawn eggs (#272, I1-09): in Peaceful a zombie spawn egg used on a block fails (EntityType.canSpawn) and is kept; a pig spawn egg spawns its pig and posts ENTITY_PLACE, which a sculk sensor nearby hears at once.",
+  "tier": "fast",
+  "difficulty": "peaceful",
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 20,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        4.5,
+        -60.0,
+        4.5
+      ],
+      "rot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "place",
+      "pos": [
+        11,
+        -60,
+        4
+      ],
+      "block": "minecraft:sculk_sensor"
+    },
+    {
+      "tick": 3,
+      "op": "use",
+      "entity": "p",
+      "pos": [
+        7,
+        -61,
+        4
+      ],
+      "item": "minecraft:zombie_spawn_egg"
+    },
+    {
+      "tick": 6,
+      "op": "use",
+      "entity": "p",
+      "pos": [
+        7,
+        -61,
+        4
+      ],
+      "item": "minecraft:pig_spawn_egg"
+    }
+  ]
+}

@@ -246,7 +246,7 @@ fn pumpkin_use_item_on(
         .set_direction("facing", direction);
     level.set_block(pos, carved, update::ALL_IMMEDIATE);
     if !ctx.infinite {
-        super::hurt_item(level, stack, 1, ctx.player);
+        super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
     }
     level.game_event_at(Some(ctx.player), events().shear, pos);
     level.award_stat(ctx.player, Stat::of(StatType::Used, items::SHEARS.0), 1);
@@ -402,7 +402,7 @@ fn statue_use_item_on(
     if is_axe {
         if weathering && state.is(ids::COPPER_GOLEM_STATUE) {
             revive_statue(level, state, pos);
-            super::hurt_item(level, stack, 1, ctx.player);
+            super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
             level.remove_block(pos, false);
             return ItemInteraction::Done(Interaction::Success);
         }

@@ -1,0 +1,89 @@
+{
+  "description": "Attack packets (#272, I3-15/I6-13): handleAttack ignores the attack of a client holding a spear (piercing_weapon); a client with an empty hand hits its pig.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 20,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "client": true,
+      "pos": [
+        4.5,
+        -60.0,
+        4.5
+      ],
+      "inventory": [
+        [
+          0,
+          "minecraft:iron_spear",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "alex",
+      "type": "minecraft:player",
+      "client": true,
+      "pos": [
+        4.5,
+        -60.0,
+        10.5
+      ]
+    },
+    {
+      "name": "pig",
+      "type": "minecraft:pig",
+      "pos": [
+        6.0,
+        -60.0,
+        4.5
+      ],
+      "seed": 3,
+      "finalize": false
+    },
+    {
+      "name": "pig2",
+      "type": "minecraft:pig",
+      "pos": [
+        6.0,
+        -60.0,
+        10.5
+      ],
+      "seed": 4,
+      "finalize": false
+    }
+  ],
+  "actions": [
+    {
+      "tick": 5,
+      "op": "packet",
+      "entity": "steve",
+      "packet": "attack",
+      "data": "00",
+      "target": "pig"
+    },
+    {
+      "tick": 5,
+      "op": "packet",
+      "entity": "alex",
+      "packet": "attack",
+      "data": "00",
+      "target": "pig2"
+    }
+  ]
+}

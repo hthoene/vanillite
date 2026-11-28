@@ -74,6 +74,8 @@ pub(crate) struct WorldSurvival {
     /// The world's biomes for `isRainingAt`, shared with the level.
     climate: Option<Arc<Climate>>,
     pub(crate) min_y: i32,
+    /// `logicalHeight` of the dimension type.
+    logical_height: i32,
     /// Tracking range of players in blocks.
     player_range: i32,
     /// Player rows by chunk, rebuilt when effects are delivered.
@@ -336,6 +338,7 @@ impl WorldSurvival {
         dimension: &str,
         level: &LevelState,
         (min_y, _height): (i32, u32),
+        logical_height: i32,
         player_range: i32,
         climate: Option<Climate>,
     ) -> WorldSurvival {
@@ -353,6 +356,7 @@ impl WorldSurvival {
             weather_out: Vec::new(),
             climate: climate.map(Arc::new),
             min_y,
+            logical_height,
             player_range: player_range.max(0),
             grid: FxHashMap::default(),
             receivers: Vec::new(),
@@ -436,6 +440,7 @@ impl WorldSurvival {
             difficulty: level.difficulty(),
             game_time: level.game_time(),
             min_y: self.min_y,
+            logical_height: self.logical_height,
             dimension,
             raining_at,
             border: None,
@@ -787,6 +792,7 @@ impl WorldSurvival {
                 difficulty: level.settings.difficulty,
                 game_time: state.game_time(),
                 min_y: level.min_y(),
+                logical_height: global.dimensions.logical_height_of(dimension),
                 dimension,
                 raining_at: &raining,
                 border: None,
@@ -878,6 +884,7 @@ impl WorldSurvival {
             difficulty: level.difficulty(),
             game_time: level.game_time(),
             min_y: 0,
+            logical_height: global.dimensions.logical_height_of(dimension),
             dimension,
             raining_at: &raining,
             border: None,

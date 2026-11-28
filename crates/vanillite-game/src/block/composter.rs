@@ -203,6 +203,24 @@ pub(super) fn compostable(stack: &ItemStack) -> Option<IntProvider> {
     if stack.is_empty() {
         return None;
     }
+    // The stack's own `compostable` (patched or removed): a number or a provider id.
+    use vanillite_protocol::components::ids::COMPOSTABLE;
+    if let Some(p) = stack.patch() {
+        if let Some(v) = p.get(COMPOSTABLE) {
+            let mut r = vanillite_protocol::codec::Reader::new(v);
+            return match crate::recipe::read_resolvable(&mut r, false)? {
+                Value::String(id) => {
+                    crate::player::play::game_data().and_then(|d| d.compostables.get(&id).cloned())
+                }
+                n => Some(IntProvider::Constant(
+                    n.as_i64().and_then(|n| i32::try_from(n).ok())?,
+                )),
+            };
+        }
+        if p.is_removed(COMPOSTABLE) {
+            return None;
+        }
+    }
     let name = item::item_id(stack).info().compostable;
     if name.is_empty() {
         return None;

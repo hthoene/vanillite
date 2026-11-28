@@ -264,8 +264,9 @@ pub struct PlayContext<'a> {
     pub spawn_protected: &'a dyn Fn(BlockPos) -> bool,
     /// Stacks the player drops this tick.
     pub drops: &'a mut Vec<Drop>,
-    /// Hand swings other players must see.
-    pub swings: &'a mut Vec<Hand>,
+    /// Hand swings with whether they use the main hand's `attack_animation` (a punch; else
+    /// `SwingAnimation.DEFAULT`).
+    pub swings: &'a mut Vec<(Hand, bool)>,
     /// Plugin hooks (block breaking and placing).
     pub hooks: &'a dyn crate::hooks::GameHooks,
     /// The player's statistics (`None` in tests).
@@ -1050,25 +1051,17 @@ impl Digging {
             }
             ctx.data.tools.damage_per_block(tool)
         };
-        if damage == 0 || !item::is_damageable(ctx.inventory.selected_item()) {
-            return;
-        }
-        let unbreaking = ctx
-            .data
-            .enchantment_level(ctx.inventory.selected_item(), "minecraft:unbreaking");
-        let mut amount: i32 = 0;
-        for _ in 0..damage {
-            #[allow(clippy::as_conversions)]
-            let level = unbreaking.max(0) as f32;
-            // `remove_binomial`: the draw removes the point below level / (level + 1).
-            if unbreaking <= 0 || ctx.level.random_float() >= level / (level + 1.0) {
-                amount = amount.saturating_add(1);
-            }
-        }
+        let infinite = ctx.actor.creative();
+        let amount = crate::durability::change(
+            ctx.inventory.selected_item(),
+            i32::try_from(damage).unwrap_or(i32::MAX),
+            infinite,
+            &mut LevelRandom(&mut *ctx.level),
+        );
         let Some(tool) = ctx.inventory.selected_item_mut() else {
             return;
         };
-        if amount == 0 || !item::is_damageable(tool) {
+        if amount == 0 {
             return;
         }
         let new_damage = item::damage(tool).saturating_add(amount);
@@ -1150,8 +1143,8 @@ impl Digging {
             } else if self.use_item_on_block(ctx, p.hand, pos, face, hit, p.inside, sink) {
                 // Vanilla 26.3 swings twice for a successful use (two branches of
                 // `handleUseItemOn` both call `swingAndResetAttackStrength`).
-                ctx.swings.push(p.hand);
-                ctx.swings.push(p.hand);
+                ctx.swings.push((p.hand, false));
+                ctx.swings.push((p.hand, false));
             }
             block_update(sink, ctx.level, pos);
             block_update(sink, ctx.level, relative(pos, face));
@@ -1353,12 +1346,16 @@ impl Digging {
             return false;
         }
         let used = item::item_id(&stack);
+        // `ItemStack.useOn`: adventure players use items only on blocks `can_place_on`
+        // allows (map on a banner, compass on a lodestone, decorations).
+        let may_build =
+            ctx.actor.game_mode != GameMode::Adventure || item_use::can_place_on(ctx, &stack, pos);
         if crate::map::is_map_item(used.0)
+            && may_build
             && let Some(level) = ctx.level.level_mut()
             && let Some(ok) = crate::map::use_on_banner(level, &stack, pos)
         {
-            // `MapItem.useOn` on a banner (any game mode: it runs before `useOn`'s build check
-            // in Vanilla's `ItemStack.useOn` only for the item itself).
+            // `MapItem.useOn` on a banner.
             if ok {
                 ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
                 ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
@@ -1367,7 +1364,7 @@ impl Digging {
             return ok;
         }
         if used == vanillite_data::item::ids::COMPASS
-            && ctx.actor.game_mode != GameMode::Adventure
+            && may_build
             && ctx.level.block(pos).block() == vanillite_data::block::ids::LODESTONE
         {
             // `CompassItem.useOn`.
@@ -1580,18 +1577,26 @@ impl Digging {
         } else {
             return None;
         };
-        // `ItemStack.useOn`: adventure players cannot build.
-        if ctx.actor.game_mode == GameMode::Adventure {
+        // `ItemStack.useOn`: adventure players only where `can_place_on` allows.
+        if ctx.actor.game_mode == GameMode::Adventure && !item_use::can_place_on(ctx, stack, pos) {
             return Some(false);
         }
         let creative = ctx.actor.creative();
         let player = ctx.actor.entity;
         let y_rot = ctx.actor.y_rot;
+        let spectators = ctx.level.spectators();
         let level = ctx.level.level_mut()?;
         let mut held = stack.clone();
         let result = if kind == vanillite_data::entity::ids::ARMOR_STAND {
             if crate::decoration::stand::use_on(
-                level, pos, face, y_rot, &mut held, player, creative,
+                level,
+                pos,
+                face,
+                y_rot,
+                &mut held,
+                player,
+                creative,
+                &spectators,
             ) {
                 Placed::Success
             } else {
@@ -1828,7 +1833,11 @@ impl Digging {
         if !ctx.level.set_block(target, state, update::ALL_IMMEDIATE) {
             return false;
         }
-        ctx.trigger(Event::PlacedBlock(target, stack.clone()));
+        // `PLACED_BLOCK` only while the placed block is still there (`placedState.is(block)`:
+        // not for concrete powder that hardened or TNT that primed at once).
+        if ctx.level.block(target).block() == state.block() {
+            ctx.trigger(Event::PlacedBlock(target, stack.clone()));
+        }
         if ctx.level.block(target).block() == state.block() {
             if let Some(updated) = apply_block_state_component(stack, state) {
                 ctx.level.set_block(target, updated, update::CLIENTS);
@@ -1917,11 +1926,13 @@ impl Digging {
                 let sound = crate::block::sound_id(sound);
                 level.play_block_sound(None, target, sound, crate::level::SOUND_BLOCKS, 1.0, 1.0);
             }
-            // `SignItem.updateCustomBlockEntityTag`: the editor of the front opens.
+            // `SignBlock.setPlacedBy`: the editor of the front opens unless the sign is waxed
+            // or its front has text that is not plain.
             if crate::block::sign::is_sign(placed.block())
-                && stack.component(ids::BLOCK_ENTITY_DATA).is_none()
                 && let Some(player) = ctx.actor.entity
                 && let Some(crate::level::BlockEntity::Sign(sign)) = level.block_entity_mut(target)
+                && !sign.waxed
+                && sign.front.has_editable_text()
             {
                 sign.editor = Some(ctx.actor.uuid);
                 level.request_sign_editor(player, target, true);
@@ -2070,7 +2081,7 @@ impl Digging {
             None => false,
             Some(item_use::UseAir::Done(result)) => {
                 if result == item_use::Used::Success {
-                    ctx.swings.push(hand);
+                    ctx.swings.push((hand, false));
                 }
                 true
             }
@@ -2092,7 +2103,7 @@ impl Digging {
                     place::update_placement_context(&place_ctx, &LevelReader(&*ctx.level))
                     && self.place_block(ctx, hand, &stack, &place_ctx)
                 {
-                    ctx.swings.push(hand);
+                    ctx.swings.push((hand, false));
                 }
                 true
             }
@@ -2293,26 +2304,16 @@ fn use_ender_eye(ctx: &mut PlayContext<'_>, hand: Hand, pos: BlockPos) -> bool {
 /// `ItemStack.hurtAndBreak(amount, player, hand)`: the item in `hand` loses durability (the
 /// unbreaking enchantment may save each point); creative players' items do not.
 fn hurt_and_break(ctx: &mut PlayContext<'_>, hand: Hand, amount: i32) {
-    if ctx.actor.creative() {
-        return;
-    }
     let stack = match hand {
         Hand::MainHand => ctx.inventory.selected_item().clone(),
         Hand::OffHand => ctx.inventory.offhand.clone(),
     };
-    if stack.is_empty() || !item::is_damageable(&stack) {
-        return;
-    }
-    let unbreaking = ctx.data.enchantment_level(&stack, "minecraft:unbreaking");
-    let mut damage: i32 = 0;
-    for _ in 0..amount {
-        #[allow(clippy::as_conversions)]
-        let level = unbreaking.max(0) as f32;
-        // `remove_binomial`: the draw removes the point below level / (level + 1).
-        if unbreaking <= 0 || ctx.level.random_float() >= level / (level + 1.0) {
-            damage = damage.saturating_add(1);
-        }
-    }
+    let damage = crate::durability::change(
+        &stack,
+        amount,
+        ctx.actor.creative(),
+        &mut LevelRandom(&mut *ctx.level),
+    );
     let slot = match hand {
         Hand::MainHand => ctx.inventory.selected_item_mut(),
         Hand::OffHand => Some(&mut ctx.inventory.offhand),
@@ -2335,21 +2336,26 @@ fn hurt_and_break(ctx: &mut PlayContext<'_>, hand: Hand, amount: i32) {
     }
 }
 
+/// The world's random source as the enchantment effects draw from it.
+impl crate::enchant::FloatRandom for LevelRandom<'_> {
+    fn next_float(&mut self) -> f32 {
+        self.0.random_float()
+    }
+    fn next_gaussian(&mut self) -> f64 {
+        self.0.random_gaussian()
+    }
+}
+
 /// `LivingEntity.onEquippedItemBroken`: entity event 47 (main hand) or 48 (off hand), the
 /// break sound and particles for the player and everyone tracking it.
 fn equipment_broken(ctx: &mut PlayContext<'_>, hand: Hand) {
-    let event = match hand {
-        Hand::MainHand => 47,
-        Hand::OffHand => 48,
+    let slot = match hand {
+        Hand::MainHand => crate::item::EquipmentSlot::MainHand,
+        Hand::OffHand => crate::item::EquipmentSlot::OffHand,
     };
     let (network_id, pos) = (ctx.actor.network_id, ctx.actor.pos);
     if let Some(level) = ctx.level.level_mut() {
-        let packet = vanillite_protocol::SharedPacket::of(
-            &vanillite_protocol::packets::play::clientbound::EntityEvent {
-                entity_id: network_id,
-                event,
-            },
-        );
+        let packet = crate::durability::break_packet(network_id, slot);
         level.output().nearby_packets.push((pos, 128.0, packet));
     }
 }

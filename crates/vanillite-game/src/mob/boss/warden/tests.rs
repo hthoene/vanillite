@@ -65,6 +65,7 @@ fn with_tick<R>(level: &mut Level, id: EntityId, f: impl FnOnce(&mut Tick<'_, '_
             difficulty: Difficulty::Normal,
             game_time: level_ref.game_time(),
             min_y: level_ref.min_y(),
+            logical_height: 384,
             dimension: "minecraft:overworld",
             raining_at: &raining,
             border: None,

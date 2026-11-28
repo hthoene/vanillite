@@ -1,0 +1,98 @@
+{
+  "description": "ItemStack.useOn in adventure mode (#272, I5-06): an item frame with can_place_on stone is placed on a stone wall by an adventure player, one without the component is not.",
+  "tier": "fast",
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 10,
+  "setup": [
+    {
+      "op": "set",
+      "pos": [
+        8,
+        -60,
+        6
+      ],
+      "block": "minecraft:stone"
+    },
+    {
+      "op": "set",
+      "pos": [
+        8,
+        -60,
+        10
+      ],
+      "block": "minecraft:stone"
+    }
+  ],
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        6.5,
+        -60.0,
+        6.5
+      ],
+      "rot": [
+        -90,
+        0
+      ],
+      "game_mode": "adventure"
+    },
+    {
+      "name": "q",
+      "type": "minecraft:player",
+      "pos": [
+        6.5,
+        -60.0,
+        10.5
+      ],
+      "rot": [
+        -90,
+        0
+      ],
+      "game_mode": "adventure"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 3,
+      "op": "use",
+      "entity": "p",
+      "pos": [
+        8,
+        -60,
+        6
+      ],
+      "face": "west",
+      "item": "minecraft:item_frame",
+      "components": "{\"minecraft:can_place_on\":{blocks:\"minecraft:stone\"}}"
+    },
+    {
+      "tick": 5,
+      "op": "use",
+      "entity": "q",
+      "pos": [
+        8,
+        -60,
+        10
+      ],
+      "face": "west",
+      "item": "minecraft:item_frame"
+    }
+  ]
+}

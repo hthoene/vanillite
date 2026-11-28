@@ -21,6 +21,7 @@ pub mod commands;
 pub mod consumable;
 pub mod crossbow;
 pub mod decoration;
+pub mod durability;
 pub mod effect;
 pub mod elytra;
 pub mod enchant;

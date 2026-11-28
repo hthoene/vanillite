@@ -1263,6 +1263,12 @@ impl ServerWorld {
             if let Some(border) = self.level.border.take_dirty() {
                 self.data.write(crate::border::SAVED_DATA, border.to_nbt());
             }
+            if self.level.structure_refs().take_dirty() {
+                self.data.write(
+                    vanillite_game::level::structure_refs::SAVED_DATA,
+                    self.level.structure_refs().to_nbt(),
+                );
+            }
             if self.level.forced.take_dirty() | std::mem::take(&mut self.tickets_dirty) {
                 crate::chunk_tickets::save(&self.data, &self.level, &self.saved_tickets());
             }

@@ -936,21 +936,21 @@ fn tick_ridden(t: &mut Tick<'_, '_>, rider: EntityId) {
     t.mob().y_body_rot = y_rot;
 }
 
-/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment (without Unbreaking).
+/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment: the `item_damage` effects
+/// (Unbreaking) from the level random, and the slot's break event when it breaks.
 pub fn hurt_equipment(t: &mut Tick<'_, '_>, slot: crate::item::EquipmentSlot, amount: i32) {
     let mut s = t.mob_ref().equipment.get(slot).clone();
-    if amount <= 0 || !crate::item::is_damageable(&s) {
+    let change = crate::durability::change(&s, amount, false, &mut *t.env.random);
+    if change == 0 {
         return;
     }
-    let d = crate::item::damage(&s) + amount;
-    if d >= crate::item::max_damage(&s) {
-        s = crate::item::ItemStack::default();
-        let sound = "minecraft:entity.item.break";
-        super::kinds::play_sound(t, sound, 0.8, 0.8);
-    } else {
-        crate::item::set_damage(&mut s, d);
-    }
+    let d = crate::item::damage(&s) + change;
+    let broke = crate::durability::apply(&mut s, d);
     t.mob().equipment.set(slot, s);
+    if broke {
+        let id = t.id;
+        entity_event(t, id, crate::durability::break_event(slot));
+    }
     super::equipment::broadcast(t);
 }
 

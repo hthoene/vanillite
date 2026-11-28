@@ -1,0 +1,55 @@
+{
+  "description": "Durability through the item_damage effects (#272: I2-10, I2-12, I4-10, I6-08): Unbreaking III wolf armour takes a hit of 30 point by point (remove_binomial from the level random), and its crack sound draws nothing from the wolf's random; a zombie keeps its Unbreaking III helmet in the sun.",
+  "tier": "fast",
+  "level_rng": true,
+  "time": 6000,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 40,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        12.5,
+        -60.0,
+        12.5
+      ],
+      "rot": [
+        0,
+        0
+      ],
+      "seed": 3
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:zombie 4.5 -60 4.5 {NoAI:1b,PersistenceRequired:1b,equipment:{head:{id:\"minecraft:iron_helmet\",count:1,components:{\"minecraft:damage\":158,\"minecraft:enchantments\":{\"minecraft:unbreaking\":3}}}}}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:wolf 10.5 -60 4.5 {NoAI:1b,PersistenceRequired:1b,equipment:{body:{id:\"minecraft:wolf_armor\",count:1,components:{\"minecraft:enchantments\":{\"minecraft:unbreaking\":3}}}}}"
+    },
+    {
+      "tick": 5,
+      "op": "command",
+      "command": "damage @e[type=minecraft:wolf,limit=1] 30 minecraft:cactus"
+    }
+  ]
+}
