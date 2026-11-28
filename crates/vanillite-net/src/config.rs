@@ -94,6 +94,19 @@ pub struct NetConfig {
     pub code_of_conduct: std::collections::BTreeMap<String, String>,
     /// The packet tap: where plugins listen on packets. Default: no listeners.
     pub tap: std::sync::Arc<vanillite_protocol::tap::PacketTap>,
+    /// Runs on an I/O thread each time it runs out of work (the server hands back what the
+    /// thread's allocator heap keeps). Default none.
+    pub on_idle: Option<IdleHook>,
+}
+
+/// See [`NetConfig::on_idle`].
+#[derive(Clone)]
+pub struct IdleHook(pub std::sync::Arc<dyn Fn() + Send + Sync>);
+
+impl std::fmt::Debug for IdleHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("IdleHook")
+    }
 }
 
 impl Default for NetConfig {
@@ -141,6 +154,7 @@ impl Default for NetConfig {
             server_links: Vec::new(),
             code_of_conduct: std::collections::BTreeMap::new(),
             tap: std::sync::Arc::default(),
+            on_idle: None,
         }
     }
 }

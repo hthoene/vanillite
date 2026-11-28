@@ -141,6 +141,7 @@ fn attach_world(
     routes: &Routes,
     mut world: ServerWorld,
     compute: &Compute,
+    budget: &Arc<Budget>,
     global: &Arc<Global>,
     sender: &Sender<ServerMsg>,
     watch: &WatchState,
@@ -150,7 +151,8 @@ fn attach_world(
         Worlds::Parallel(threads) => {
             let heartbeat = Arc::new(Heartbeat::new(format!("World {}", world.dimension())));
             watch.register(Arc::clone(&heartbeat));
-            let thread = spawn_world_thread(world, compute, global, sender.clone(), heartbeat)?;
+            let thread =
+                spawn_world_thread(world, compute, budget, global, sender.clone(), heartbeat)?;
             let route = Route::World(thread.sender.clone());
             put(threads, id, thread);
             route
@@ -203,6 +205,7 @@ pub struct ServerBuilder {
     /// Wraps whatever fills the `chunk-generator` slot (`test-support`).
     wrap_generator: Option<GeneratorWrap>,
     memory_release: Option<fn()>,
+    thread_memory_release: Option<fn()>,
 }
 
 /// A wrapper around the provider that fills the `chunk-generator` slot.
@@ -231,6 +234,7 @@ impl ServerBuilder {
             harness: false,
             wrap_generator: None,
             memory_release: None,
+            thread_memory_release: None,
             version: format!(
                 "Vanillite {} (Minecraft {})",
                 env!("CARGO_PKG_VERSION"),
@@ -243,6 +247,14 @@ impl ServerBuilder {
     /// the server calls it after bursts of work ([`crate::budget::Budget::release_memory`]).
     pub fn memory_release(&mut self, release: fn()) -> &mut Self {
         self.memory_release = Some(release);
+        self
+    }
+
+    /// The allocator's way to return what the calling thread keeps, for allocators whose
+    /// [`ServerBuilder::memory_release`] reaches only the calling thread (`mi_collect`): each
+    /// long-lived thread then runs it at its next idle point after every memory release.
+    pub fn thread_memory_release(&mut self, release: fn()) -> &mut Self {
+        self.thread_memory_release = Some(release);
         self
     }
 
@@ -332,6 +344,9 @@ impl ServerBuilder {
         ));
         if let Some(release) = self.memory_release {
             budget.set_memory_release(release);
+        }
+        if let Some(release) = self.thread_memory_release {
+            budget.set_thread_memory_release(release);
         }
         log::info!("Hardware budget: {}", budget.describe());
         let workers = match config.server.threads.compute {
@@ -464,6 +479,16 @@ impl ServerBuilder {
         let storage_rules = &config.server.storage;
         let io = IoPool::new(usize::from(storage_rules.io_threads))
             .map_err(|e| StartError::Io(format!("cannot start the storage IO threads: {e}")))?;
+        if budget.thread_release().is_some() {
+            let hook = Arc::clone(&budget);
+            io.set_idle_hook(Box::new(move || hook.release_thread_memory()));
+            let wake = io.clone();
+            budget.add_idle_waker(Box::new(move || wake.wake_idle()));
+            if let Some(release) = budget.thread_release() {
+                let writer = writer.clone();
+                budget.add_idle_waker(Box::new(move || writer.submit(release)));
+            }
+        }
         let store_settings = StoreSettings {
             sync: config.properties.sync_chunk_writes,
             read_ahead: storage_rules.read_ahead,
@@ -706,7 +731,7 @@ impl ServerBuilder {
         let routes = Arc::new(std::sync::RwLock::new(Vec::with_capacity(worlds.len())));
         for world in worlds {
             attach_world(
-                &mut owned, &routes, world, &compute, &global, &sender, &watch,
+                &mut owned, &routes, world, &compute, &budget, &global, &sender, &watch,
             )?;
         }
         let worlds = owned;
@@ -723,7 +748,14 @@ impl ServerBuilder {
                 0 => budget.limits().default_network_threads(),
                 n => usize::from(n),
             },
+            budget.thread_release().is_some().then(|| {
+                let budget = Arc::clone(&budget);
+                vanillite_net::IdleHook(Arc::new(move || budget.release_thread_memory()))
+            }),
         )?;
+        if budget.thread_release().is_some() {
+            budget.add_idle_waker(net.network.idle_waker());
+        }
         if !config.properties.online_mode {
             log::warn!("**** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!");
         }
@@ -799,6 +831,8 @@ impl ServerBuilder {
             "Done ({:.3}s)! For help, type \"help\"",
             started.elapsed().as_secs_f64()
         );
+        // Loading the data packs and worlds peaks well above what stays.
+        server.release_memory_soon();
         Ok(server)
     }
 }
@@ -882,6 +916,7 @@ pub(crate) fn lock_world(level_dir: &Path) -> Result<File, StartError> {
 fn spawn_world_thread(
     mut world: ServerWorld,
     compute: &Compute,
+    budget: &Arc<Budget>,
     global: &Arc<Global>,
     server: Sender<ServerMsg>,
     heartbeat: Arc<Heartbeat>,
@@ -891,10 +926,16 @@ fn spawn_world_thread(
     world.set_chunk_waker(Arc::new(move || {
         let _ = wake.send(WorldMsg::Task(Box::new(ServerWorld::pump_chunks)));
     }));
+    // A paused world gets no ticks: a no-op task lets its thread hand back memory.
+    let idle = sender.clone();
+    budget.add_idle_waker(Box::new(move || {
+        let _ = idle.send(WorldMsg::Task(Box::new(|_| {})));
+    }));
     let name = format!("World {}", world.dimension());
     let id = world.id();
     let thread_compute = compute.clone();
     let global = Arc::clone(global);
+    let budget = Arc::clone(budget);
     let body = move || {
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
             world_loop(
@@ -902,6 +943,7 @@ fn spawn_world_thread(
                 &receiver,
                 &server,
                 &thread_compute,
+                &budget,
                 &global,
                 &heartbeat,
             );
@@ -923,6 +965,7 @@ fn world_loop(
     receiver: &Receiver<WorldMsg>,
     server: &Sender<ServerMsg>,
     compute: &Compute,
+    budget: &Budget,
     global: &Global,
     heartbeat: &Heartbeat,
 ) {
@@ -955,6 +998,7 @@ fn world_loop(
             }
         }
         heartbeat.leave();
+        budget.release_thread_memory();
     }
 }
 
@@ -1213,6 +1257,7 @@ impl Server {
             self.empty_ticks = 0;
         }
         self.release_memory_when_empty();
+        self.budget.release_thread_memory();
         let pause_seconds =
             u64::try_from(self.config.properties.pause_when_empty_seconds).unwrap_or(0);
         if pause_seconds > 0 {
@@ -1290,6 +1335,14 @@ impl Server {
                 .spawn_background(u32::MAX, move || budget.release_memory());
         }
         self.watch.progress.store(clock.now(), Ordering::Relaxed);
+    }
+
+    /// Hands freed memory back to the system on a background thread, after work that peaks
+    /// well above what it keeps (the start, `/reload`).
+    pub(crate) fn release_memory_soon(&self) {
+        let budget = Arc::clone(&self.budget);
+        self.compute
+            .spawn_background(u32::MAX, move || budget.release_memory());
     }
 
     /// `performance.memory.release-when-empty`: after that time without players (and again
@@ -2147,6 +2200,7 @@ impl Server {
             &self.routes,
             world,
             &self.compute,
+            &self.budget,
             &self.global,
             &self.sender,
             &self.watch,
