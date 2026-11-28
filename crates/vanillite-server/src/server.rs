@@ -136,6 +136,7 @@ enum Worlds {
 
 /// Puts a built world into the slot of its index: on its own thread in parallel mode, with a
 /// chunk waker through the server thread in sequential mode.
+#[allow(clippy::too_many_arguments)]
 fn attach_world(
     worlds: &mut Worlds,
     routes: &Routes,
