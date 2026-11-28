@@ -159,8 +159,8 @@ impl IntProvider {
     }
 }
 
-/// Loads the `minecraft:context_int_provider` entries the compostable items refer to (later
-/// packs override). The registry's other entries (cooking, brewing) are read elsewhere.
+/// Loads the `minecraft:context_int_provider` entries (later packs override) of the kinds
+/// [`IntProvider`] covers.
 pub fn load_providers(roots: &[PathBuf]) -> HashMap<String, IntProvider> {
     let mut files = BTreeMap::new();
     for root in roots {
@@ -176,15 +176,18 @@ pub fn load_providers(roots: &[PathBuf]) -> HashMap<String, IntProvider> {
             );
         }
     }
+    // Every entry: patched `compostable` and `brewing_fuel` components may name any of them.
     let used: HashSet<&str> = ITEMS.iter().map(|i| i.compostable).collect();
-    files.retain(|id, _| used.contains(id.as_str()));
     let mut out = HashMap::new();
     for (id, json) in crate::loot::read_files(&files) {
         match json.ok().and_then(|v| IntProvider::parse(&v)) {
             Some(p) => {
                 out.insert(id, p);
             }
-            None => log::warn!("Unsupported context_int_provider {id}"),
+            None if used.contains(id.as_str()) => {
+                log::warn!("Unsupported context_int_provider {id}");
+            }
+            None => {}
         }
     }
     out

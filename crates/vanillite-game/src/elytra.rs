@@ -260,8 +260,7 @@ pub fn swap_with_equipment(
     };
     let creative = p.game_mode == GameMode::Creative;
     let worn = p.inventory.equipment(slot).clone();
-    let binding = crate::player::play::game_data()
-        .is_some_and(|d| d.enchantment_level(&worn, "minecraft:binding_curse") > 0);
+    let binding = crate::player::play::game_data().is_some_and(|d| d.prevents_armor_change(&worn));
     if (binding && !creative) || worn.same_item_same_components(stack) {
         return Used::Pass;
     }

@@ -45,6 +45,7 @@ pub mod player;
 pub mod poi;
 pub mod portal;
 pub mod predicate;
+pub mod presence;
 pub mod raid;
 pub mod random_sequences;
 pub mod recipe;

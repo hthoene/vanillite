@@ -754,6 +754,13 @@ impl World for WithProgress<'_> {
     fn looking_at(&self) -> Option<&EntityView<'static>> {
         self.world.looking_at()
     }
+    fn loot_condition(
+        &self,
+        condition: &serde_json::Value,
+        origin: Option<vanillite_base::Vec3>,
+    ) -> bool {
+        self.world.loot_condition(condition, origin)
+    }
 }
 
 impl std::fmt::Debug for TriggerContext<'_> {

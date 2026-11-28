@@ -123,7 +123,7 @@ pub(crate) fn online_players(entities: &Entities, global: &Global, world: WorldI
             Some((e.uuid(), id, e.pos(), e.rot().y_rot, e.rot().x_rot))
         })
         .collect();
-    global
+    let mut all: Vec<Target> = global
         .players
         .snapshot()
         .into_iter()
@@ -142,7 +142,16 @@ pub(crate) fn online_players(entities: &Entities, global: &Global, world: WorldI
                 kind: ids::PLAYER,
             }
         })
-        .collect()
+        .collect();
+    // Players of this world without a player list entry (the parity harness's players).
+    for &(uuid, id, ..) in &local {
+        if !all.iter().any(|t| t.uuid == uuid)
+            && let Some(t) = self::local(entities, world, id)
+        {
+            all.push(t);
+        }
+    }
+    all
 }
 
 /// `Mth.wrapDegrees`.

@@ -20,6 +20,9 @@ use crate::survival::Effect;
 use crate::survival::damage::DamageSource;
 use crate::survival::player::Env;
 
+/// `Cushion.DEFAULT_COLOR`: white.
+const DEFAULT_COLOR: u8 = 0;
+
 /// The dye colours in `DyeColor` order.
 pub const COLORS: [&str; 16] = [
     "white",
@@ -64,6 +67,24 @@ pub fn color_of_item(stack: &ItemStack) -> Option<u8> {
         .iter()
         .position(|c| *c == color)
         .and_then(|i| u8::try_from(i).ok())
+}
+
+/// The colour a cushion item gives the cushion it places (`Cushion.applyImplicitComponent`):
+/// the stack's `cushion/color` (patched, or the item's own); a removed one leaves the
+/// entity's default colour. `None` for other items.
+pub fn placed_color(stack: &ItemStack) -> Option<u8> {
+    use vanillite_protocol::components::ids::CUSHION_COLOR;
+    let own = color_of_item(stack)?;
+    Some(match crate::item::patched(stack, CUSHION_COLOR) {
+        crate::item::Patched::Value(v) => vanillite_protocol::codec::Reader::new(v)
+            .varint()
+            .ok()
+            .and_then(|c| u8::try_from(c).ok())
+            .filter(|&c| usize::from(c) < COLORS.len())
+            .unwrap_or(own),
+        crate::item::Patched::Removed => DEFAULT_COLOR,
+        crate::item::Patched::Default => own,
+    })
 }
 
 /// `BlockState.isSuffocating` without the world's block facts: `#causes_suffocation` blocks
@@ -226,7 +247,7 @@ pub fn use_on(
     player: Option<EntityId>,
     infinite: bool,
 ) -> Placed {
-    let Some(color) = color_of_item(stack) else {
+    let Some(color) = placed_color(stack) else {
         return Placed::Fail;
     };
     let state = level.block(pos);

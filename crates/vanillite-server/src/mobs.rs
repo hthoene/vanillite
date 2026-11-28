@@ -1104,7 +1104,6 @@ impl WorldMobs {
             let state = level.block(pos);
             vanillite_game::block::portal::trigger_gateway_cooldown(level, pos, state);
         }
-        vanillite_game::player::using::tick_brushes(level);
         survival.deliver(level, global);
     }
 

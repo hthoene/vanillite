@@ -557,8 +557,8 @@ fn shear_equipment(
                 .filter(|e| e.can_be_sheared)?
                 .shearing_sound;
             // `PREVENT_ARMOR_CHANGE` (Curse of Binding) keeps it, unless creative.
-            let bound = crate::player::play::game_data()
-                .is_some_and(|d| d.enchantment_level(s, "minecraft:binding_curse") > 0);
+            let bound =
+                crate::player::play::game_data().is_some_and(|d| d.prevents_armor_change(s));
             (!s.is_empty() && (!bound || creative)).then(|| (slot, s.clone(), sound))
         });
     let Some((slot, stack, sound)) = found else {

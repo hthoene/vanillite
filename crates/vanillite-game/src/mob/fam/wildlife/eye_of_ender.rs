@@ -30,6 +30,7 @@ pub fn use_item(
     env: &mut Env<'_>,
     network_ids: &NetworkIds,
     player: EntityId,
+    hand: vanillite_protocol::packets::play::serverbound::Hand,
     stack: &mut ItemStack,
 ) -> Used {
     let Some(e) = ents.store.get(player) else {
@@ -54,6 +55,9 @@ pub fn use_item(
     {
         return Used::Pass;
     }
+    // `player.startUsingItem(hand)`: the eye's use duration is 0, so it stays in use until the
+    // client releases it or the hand changes.
+    crate::player::using::start_using(ents, env, player, hand, stack, 0);
     let Some(target) = nearest_stronghold(level, pos) else {
         return Used::Started;
     };
@@ -122,6 +126,9 @@ pub fn use_item(
     });
     if !creative {
         stack.shrink(1);
+        if stack.is_empty() {
+            crate::player::using::mark_emptied(ents, player);
+        }
     }
     if let Some(p) = ents.player_mut(player) {
         p.stats.award(

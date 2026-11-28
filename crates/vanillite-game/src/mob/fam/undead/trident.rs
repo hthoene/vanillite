@@ -101,16 +101,30 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
     // Loyalty: return to the owner once it hit something.
     let loyalty = d.ints[3];
     let owner = d.owner.filter(|&o| t.ents.store.contains(o));
+    // `getOwner()`: the owner here, else a player owner in another world
+    // (`getPlayerInAnyDimension`).
+    let returns_to = match owner {
+        Some(o) => t.ents.store.get(o).map(|oe| {
+            // `isAcceptibleReturnOwner`: alive, and no spectator.
+            let alive = t.ents.mob(o).is_some_and(crate::mob::MobData::is_alive)
+                || t.ents.player(o).is_some_and(|p| {
+                    !p.survival.is_dead_or_dying()
+                        && p.game_mode != vanillite_config::GameMode::Spectator
+                });
+            let eye_height = crate::mob::missile::eye_height(t.ents, o);
+            let eye = Vec3::new(oe.pos().x, oe.pos().y + eye_height, oe.pos().z);
+            let player = t.ents.player(o).is_some();
+            (alive, eye, f64::from(oe.dims().width), player)
+        }),
+        None => d
+            .owner_uuid
+            .and_then(|u| t.ents.elsewhere.find(u))
+            .map(|r| (r.alive && !r.spectator, r.eye, 0.0, true)),
+    };
     if loyalty > 0
         && d.ints[2] & (DEALT | RETURNING) != 0
-        && let Some(o) = owner
+        && let Some((alive, eye, width, player)) = returns_to
     {
-        // `isAcceptibleReturnOwner`: alive, and no spectator.
-        let alive = t.ents.mob(o).is_some_and(crate::mob::MobData::is_alive)
-            || t.ents.player(o).is_some_and(|p| {
-                !p.survival.is_dead_or_dying()
-                    && p.game_mode != vanillite_config::GameMode::Spectator
-            });
         if !alive {
             if d.pickup == 1 {
                 // `spawnAtLocation(getPickupItem(), 0.1)`.
@@ -126,21 +140,16 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
                 });
             }
             d.removed = true;
-        } else if let Some(oe) = t.ents.store.get(o) {
-            let eye_height = crate::mob::missile::eye_height(t.ents, o);
-            let eye = Vec3::new(oe.pos().x, oe.pos().y + eye_height, oe.pos().z);
-            let width = f64::from(oe.dims().width);
-            if t.ents.player(o).is_none() && pos.distance_to_sqr(eye).sqrt() < width + 1.0 {
-                d.removed = true;
-            } else {
-                if d.ints[2] & RETURNING == 0 {
-                    sound(t, pos, "minecraft:item.trident.return", 10.0, 1.0);
-                }
-                d.ints[2] |= RETURNING;
-                let v = eye - pos;
-                pos.y += v.y * 0.015 * f64::from(loyalty);
-                velocity = velocity * 0.95 + v.normalize() * (0.05 * f64::from(loyalty));
+        } else if !player && pos.distance_to_sqr(eye).sqrt() < width + 1.0 {
+            d.removed = true;
+        } else {
+            if d.ints[2] & RETURNING == 0 {
+                sound(t, pos, "minecraft:item.trident.return", 10.0, 1.0);
             }
+            d.ints[2] |= RETURNING;
+            let v = eye - pos;
+            pos.y += v.y * 0.015 * f64::from(loyalty);
+            velocity = velocity * 0.95 + v.normalize() * (0.05 * f64::from(loyalty));
         }
         if d.removed {
             if let Some(m) = t.ents.missile_mut(id) {
@@ -527,7 +536,9 @@ pub fn try_pickup(
     // `ownedBy` compares the UUID; `getOwner() == null` for an owner that is not here.
     let player_uuid = ents.store.get(player_id).map(|e| e.uuid());
     let owned = d.owner_uuid.is_some() && d.owner_uuid == player_uuid;
-    let ownerless = crate::mob::missile::resolve_owner(ents, d.owner, d.owner_uuid).is_none();
+    let ownerless = crate::mob::missile::resolve_owner(ents, d.owner, d.owner_uuid).is_none()
+        && d.owner_uuid
+            .is_none_or(|u| ents.elsewhere.find(u).is_none());
     if !(owned || ownerless) {
         return false;
     }
@@ -630,6 +641,53 @@ pub fn encode(w: &mut DataWriter<'_>, d: &MissileData) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `ThrownTrident.playerTouch`: while its owner is online in another world
+    /// (`getPlayerInAnyDimension`), nobody else takes the trident; once the owner is gone,
+    /// anyone may (#286, I3-19).
+    #[test]
+    fn owner_in_another_world_keeps_the_trident() {
+        const OWNER: u128 = 0x0123;
+        struct Away;
+        impl crate::presence::PlayersElsewhere for Away {
+            fn find(&self, uuid: u128) -> Option<crate::presence::RemotePlayer> {
+                (uuid == OWNER).then_some(crate::presence::RemotePlayer {
+                    eye: Vec3::new(100.0, 70.0, 100.0),
+                    alive: true,
+                    spectator: false,
+                })
+            }
+        }
+        let mut level = crate::level::tests::flat_level();
+        let at = Vec3::new(0.5, -60.0, 0.5);
+        let player = crate::block::spawner_tests::add_player(
+            &mut level,
+            at,
+            vanillite_config::GameMode::Survival,
+        );
+        let mut d = MissileData::new(MissileKind::Trident);
+        d.owner_uuid = Some(OWNER);
+        d.in_ground = true;
+        d.pickup = 1;
+        d.item = ItemStack::new(vanillite_data::item::ids::TRIDENT.0, 1);
+        let network_ids = std::sync::Arc::clone(level.network_ids_arc());
+        let trident = crate::mob::missile::spawn(
+            &mut level.entities,
+            &network_ids,
+            7,
+            at,
+            Vec3::ZERO,
+            Rotation::default(),
+            d,
+        );
+        let row = level.entities.store.get(player).map(|e| e.kind_row());
+        let mut players = std::mem::take(&mut level.entities.players);
+        let data = row.and_then(|r| players.get_mut(r)).expect("player data");
+        level.entities.elsewhere = crate::presence::Elsewhere(Some(std::sync::Arc::new(Away)));
+        assert!(!try_pickup(&mut level.entities, trident, data, player));
+        level.entities.elsewhere = crate::presence::Elsewhere(None);
+        assert!(try_pickup(&mut level.entities, trident, data, player));
+    }
 
     /// `AbstractArrow.addAdditionalSaveData` of a trident: base damage 2, the shake, the hit
     /// ground sound after its first landing and the block it is in; read back the same

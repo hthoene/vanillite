@@ -453,6 +453,12 @@ pub(crate) struct WorldPlayers {
     pub(crate) recording: crate::session_recording::SessionRecording,
     /// The locator bar.
     waypoints: crate::waypoints::Waypoints,
+    /// The attribute updates of equipment changes, sent with the next tick's entity tracking
+    /// (`ServerEntity.sendDirtyEntityData`).
+    dirty_attributes: Vec<(
+        EntityId,
+        vanillite_protocol::packets::play::clientbound::UpdateAttributes,
+    )>,
 }
 
 fn chunk_of(pos: Vec3) -> ChunkPos {
@@ -472,6 +478,7 @@ impl WorldPlayers {
             left: Vec::new(),
             chatting: Vec::new(),
             respawns: Vec::new(),
+            dirty_attributes: Vec::new(),
             recording: crate::session_recording::SessionRecording::default(),
             waypoints: crate::waypoints::Waypoints::default(),
         }
@@ -582,7 +589,7 @@ impl WorldPlayers {
         if let Some(icon) = icon {
             global.systems.waypoints().insert(arrival.uuid, icon);
         }
-        let data = PlayerData {
+        let mut data = PlayerData {
             stats,
             advancements,
             recipe_book,
@@ -608,6 +615,10 @@ impl WorldPlayers {
             survival,
             post_effects,
         };
+        // Published for the other worlds through the player list entry.
+        if let Some((_, presence)) = global.players.presence(Uuid(arrival.uuid)) {
+            data.connection.presence = presence;
+        }
         let id = entities.spawn_player(
             &global.network_ids,
             arrival.uuid,
@@ -868,6 +879,7 @@ impl WorldPlayers {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 let handled = player.connection.handle_packets(
                     &mut state,
@@ -1121,6 +1133,26 @@ impl WorldPlayers {
 
     /// Sends the tracker's updates: each encoded once, then copied into one batch per viewer
     /// and tick, which is queued as a single entry ([`FanOut`]).
+    /// The attribute updates of the last tick's equipment changes to the players and those
+    /// tracking them.
+    pub(crate) fn send_dirty_attributes(
+        &mut self,
+        entities: &Entities,
+        tracker: &dyn vanillite_world::tracking::EntityTracker,
+    ) {
+        for (id, packet) in self.dirty_attributes.drain(..) {
+            let packet = SharedPacket::of(&packet);
+            if let Some(p) = entities.player(id) {
+                p.connection.sink.send_shared(&packet);
+            }
+            for viewer in tracker.seen_by(id) {
+                if let Some(p) = entities.player(*viewer) {
+                    p.connection.sink.send_shared(&packet);
+                }
+            }
+        }
+    }
+
     pub(crate) fn send_entity_updates(
         entities: &Entities,
         updates: &TrackerOutput,
@@ -1257,6 +1289,7 @@ impl WorldPlayers {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 player.connection.play.tick(&mut play, sink.as_ref());
             }
@@ -1473,17 +1506,9 @@ impl WorldPlayers {
         for (picker, thrower, stack) in thrown {
             vanillite_game::mob::animal::item_picked_up(entities, picker, thrower, &stack);
         }
-        for (id, packet) in attributes {
-            let packet = SharedPacket::of(&packet);
-            if let Some(p) = entities.player(id) {
-                p.connection.sink.send_shared(&packet);
-            }
-            for viewer in blocks.tracker.seen_by(id) {
-                if let Some(p) = entities.player(*viewer) {
-                    p.connection.sink.send_shared(&packet);
-                }
-            }
-        }
+        // `detectEquipmentUpdates` changed the attributes in the player's tick; the tracking
+        // of the next tick sends them.
+        self.dirty_attributes.extend(attributes);
         for (id, packet) in equipment {
             let packet = SharedPacket::of(&packet);
             for viewer in blocks.tracker.seen_by(id) {

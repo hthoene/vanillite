@@ -263,13 +263,8 @@ pub fn can_replace_current_item(
         return true;
     }
     if slot.is_armor() {
-        let curse = crate::player::play::game_data().is_some_and(|d| {
-            item::enchantments(current).iter().any(|&(id, _)| {
-                d.enchanting
-                    .get(id)
-                    .is_some_and(|e| e.name == "minecraft:binding_curse")
-            })
-        });
+        let curse =
+            crate::player::play::game_data().is_some_and(|d| d.prevents_armor_change(current));
         if curse {
             return false;
         }
@@ -533,8 +528,7 @@ pub fn take(t: &mut Tick<'_, '_>, item: EntityId, amount: i32) {
 
 /// `EnchantmentHelper.has(stack, PREVENT_EQUIPMENT_DROP)`: Curse of Vanishing.
 pub fn prevents_drop(stack: &ItemStack) -> bool {
-    crate::player::play::game_data()
-        .is_some_and(|d| d.enchantment_level(stack, "minecraft:vanishing_curse") > 0)
+    crate::player::play::game_data().is_some_and(|d| d.prevents_equipment_drop(stack))
 }
 
 /// `Mob.dropCustomDeathLoot`'s equipment part: each slot drops with its chance when a player

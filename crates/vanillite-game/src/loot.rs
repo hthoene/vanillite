@@ -302,6 +302,8 @@ pub struct LootTables {
     /// Predicate and item modifier indices by id.
     predicate_ids: HashMap<String, u32>,
     modifier_ids: HashMap<String, u32>,
+    /// The JSON of the named predicates (advancement predicates refer to them by id).
+    predicate_json: HashMap<String, Value>,
     /// Files that failed to parse, with the reason.
     broken: Vec<String>,
     /// Unsupported features met while parsing, with the first file using each.
@@ -619,6 +621,11 @@ impl LootTables {
         self.modifier_ids.contains_key(id)
     }
 
+    /// The JSON of the named predicate `id` (`data/<ns>/predicate/`).
+    pub fn predicate_json(&self, id: &str) -> Option<&Value> {
+        self.predicate_json.get(id)
+    }
+
     /// `LootItemCondition.test` of a named predicate (`None`: unknown) or, with `inline`, of
     /// an inline predicate (a list is `all_of`).
     pub fn test_predicate(
@@ -909,6 +916,10 @@ impl LootTables {
             })
             .collect();
 
+        let predicate_json = predicates
+            .into_iter()
+            .filter_map(|(id, json)| Some((id, json.ok()?)))
+            .collect();
         LootTables {
             tables: parsed_tables,
             by_name,
@@ -917,6 +928,7 @@ impl LootTables {
             modifiers: parsed_modifiers,
             predicate_ids,
             modifier_ids,
+            predicate_json,
             broken,
             unsupported,
             block_tags: None,

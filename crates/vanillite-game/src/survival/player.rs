@@ -273,6 +273,10 @@ pub struct Survival {
     pub attributes: crate::mob::entity_nbt::NbtAttributes,
     /// The location-based modifiers changed: the attributes are synced again.
     pub equipment_dirty: bool,
+    /// `teleport_randomly` effects (diameter, directional particles) of a death protection
+    /// used in a hurt, applied with the entities next ([`crate::player::chorus::
+    /// apply_pending_teleports`]).
+    pub pending_teleports: Vec<(f32, bool)>,
     /// `getTicksFrozen` and `isInPowderSnow`.
     pub ticks_frozen: i32,
     pub in_powder_snow: bool,
@@ -411,6 +415,7 @@ impl Default for Survival {
             equipment_modifiers: crate::effect::attribute::Modifiers::default(),
             attributes: crate::mob::entity_nbt::NbtAttributes::default(),
             equipment_dirty: false,
+            pending_teleports: Vec::new(),
             ticks_frozen: 0,
             in_powder_snow: false,
             last_hurt_mob: None,
@@ -949,6 +954,7 @@ fn check_totem(
         .map(|_| player.survival.random.next_float())
         .collect();
     let mut sounds = Vec::new();
+    let mut teleports = Vec::new();
     {
         let mut host = crate::effect::living::PlayerHost {
             entity: &mut *entity,
@@ -965,8 +971,12 @@ fn check_totem(
             &mut host,
             &mut roll,
             &mut |s| sounds.push(s.to_owned()),
+            &mut |diameter, particles| teleports.push((diameter, particles)),
         );
     }
+    // `teleport_randomly` needs the entities: right after the hurt
+    // (`chorus::apply_pending_teleports`).
+    player.survival.pending_teleports.extend(teleports);
     let at = entity.as_ref().pos();
     for s in sounds {
         crate::totem::play_consume_sound(
@@ -1966,8 +1976,7 @@ pub fn die(
 /// inventory, in drop order.
 fn take_drops(inventory: &mut crate::inventory::PlayerInventory) -> Vec<crate::item::ItemStack> {
     let vanishing = |stack: &crate::item::ItemStack| {
-        crate::player::play::game_data()
-            .is_some_and(|d| d.enchantment_level(stack, "minecraft:vanishing_curse") > 0)
+        crate::player::play::game_data().is_some_and(|d| d.prevents_equipment_drop(stack))
     };
     let inv = inventory;
     // The main inventory, then the equipment in `EquipmentSlot` order.

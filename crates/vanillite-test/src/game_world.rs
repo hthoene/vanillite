@@ -287,6 +287,10 @@ pub(crate) fn install() {
 /// The server of [`command_server`], once a scenario ran a command.
 static COMMAND_SERVER: OnceLock<Arc<vanillite_server::Global>> = OnceLock::new();
 
+/// Held while a scenario's scoreboard is lent to the shared [`command_server`]: scenarios run
+/// side by side, each with its own teams and scores.
+static BOARD_LENDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The server whose command tree, scoreboard and storage `command` actions use: started once
 /// without network in a temporary directory, with the Vanilla data pack of [`install`], and
 /// never run (the commands run on the scenario's level).
@@ -347,6 +351,10 @@ pub struct GameWorld {
     clients: Vec<Client>,
     /// Network ids of the scenario entities (they stay valid after an entity is gone).
     network_names: Vec<(String, i32)>,
+    /// The scenario's own teams and scores; the command server has them while
+    /// [`GameWorld::board_lent`].
+    scoreboard: vanillite_game::scoreboard::Scoreboard,
+    board_lent: bool,
 }
 
 /// A packet-level scenario player: its packets go into its connection's queue.
@@ -519,6 +527,7 @@ impl GameWorld {
                 hooks: &hooks,
                 stats: Some(&mut player.stats),
                 advancements: Some(&mut player.advancements),
+                cooldowns: Some(&mut player.survival.cooldowns),
             };
             let at = click.pos;
             let wire = vanillite_protocol::types::BlockPos {
@@ -709,6 +718,8 @@ impl GameWorld {
             item_scratch: vanillite_server::ItemScratch::default(),
             clients: Vec::new(),
             network_names: Vec::new(),
+            scoreboard: vanillite_game::scoreboard::Scoreboard::new(),
+            board_lent: false,
         };
         world
             .set_forced(&spec.forced, true)
@@ -753,6 +764,7 @@ impl GameWorld {
         let mut random = std::mem::replace(self.level.random(), LegacyRandom::new(0));
         let mut ents = std::mem::take(&mut self.level.entities);
         let (types, facts) = PACK.get().expect("installed");
+        let (board, board_lent) = (&self.scoreboard, self.board_lent);
         let r = {
             let level = &self.level;
             let blocks = ChunkBlocks(&level.chunks, &level.block_entities);
@@ -777,11 +789,18 @@ impl GameWorld {
                 hooks: &vanillite_game::hooks::NoHooks,
                 hook_world: vanillite_game::hooks::HookWorld::NONE,
                 display_name: &names,
-                // Teams come from `team` commands, so only once the command server runs.
+                // Teams come from `team` commands: the scenario's own scoreboard, or the
+                // command server's while it has it.
                 entity_team: &|holder| {
-                    COMMAND_SERVER
-                        .get()
-                        .and_then(|g| vanillite_server::entity_team(g, holder))
+                    if board_lent {
+                        COMMAND_SERVER
+                            .get()
+                            .and_then(|g| vanillite_server::entity_team(g, holder))
+                    } else {
+                        board
+                            .team_of(holder)
+                            .map(vanillite_game::scoreboard::Team::facts)
+                    }
                 },
             };
             f(level, &mut ents, &mut env, &mut self.mobs)
@@ -1210,6 +1229,7 @@ impl GameWorld {
                     continue;
                 };
                 survival_player::do_tick_end(&mut entity, data, env, result);
+                vanillite_game::player::chorus::apply_pending_teleports(ents, env, id);
             }
             vanillite_game::spear::tick_players(level, ents, env, cx);
             vanillite_game::trident::tick_spin_attacks(level, ents, env, cx);
@@ -2027,6 +2047,23 @@ fn apply_rules(
     Ok(())
 }
 
+impl GameWorld {
+    /// Runs `f` with the scenario's scoreboard lent to the command server (other scenarios
+    /// wait meanwhile).
+    fn with_board<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let global = command_server();
+        let _lending = BOARD_LENDING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        vanillite_server::swap_scoreboard(global, &mut self.scoreboard);
+        self.board_lent = true;
+        let r = f(self);
+        self.board_lent = false;
+        vanillite_server::swap_scoreboard(global, &mut self.scoreboard);
+        r
+    }
+}
+
 impl ScenarioWorld for GameWorld {
     /// Like the recorder's `getChunkNow`, which puts the chunk into the chunk cache.
     fn is_loaded(&self, pos: BlockPos) -> bool {
@@ -2137,6 +2174,11 @@ impl ScenarioWorld for GameWorld {
     /// ticks, the chunk source (post-processing, random ticks), block events, entities, block
     /// entities, entity management (pending entity loads).
     fn step(&mut self) {
+        // Command blocks run commands during the tick: on the scenario's scoreboard.
+        if self.level.command_runner().is_some() && !self.board_lent {
+            self.with_board(Self::step);
+            return;
+        }
         // `MinecraftServer.tickChildren`: the clocks advance before the levels tick.
         if self.rules.bool(Rule::ADVANCE_TIME) {
             self.clock_time += 1;
@@ -2188,6 +2230,8 @@ impl ScenarioWorld for GameWorld {
         let mut light = Vec::new();
         level.chunks.take_light_changes(&mut light);
         self.tick_players();
+        // `BrushItem.onUseTick` in the players' `updateUsingItem` (as the server's world tick).
+        vanillite_game::player::using::tick_brushes(&mut self.level);
         self.tick_client_connections();
     }
 
@@ -2346,12 +2390,9 @@ impl ScenarioWorld for GameWorld {
         if self.level.command_runner().is_none() {
             vanillite_server::install_command_runner(command_server(), &mut self.level);
         }
-        vanillite_server::run_command_on_level(
-            command_server(),
-            &mut self.level,
-            Vec3::ZERO,
-            line,
-        )?;
+        self.with_board(|w| {
+            vanillite_server::run_command_on_level(command_server(), &mut w.level, Vec3::ZERO, line)
+        })?;
         self.finish_removals();
         self.spawn_drops();
         Ok(())
@@ -2900,6 +2941,7 @@ impl GameWorld {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 let handled = player.connection.handle_packets(
                     &mut state,
@@ -3117,6 +3159,7 @@ impl GameWorld {
                     hooks: &hooks,
                     stats: Some(&mut player.stats),
                     advancements: Some(&mut player.advancements),
+                    cooldowns: Some(&mut player.survival.cooldowns),
                 };
                 player.connection.play.tick(&mut play, &NoSink);
             }

@@ -806,6 +806,12 @@ pub struct Enchantment {
     /// `minecraft:post_piercing_attack` (Lunge).
     pub post_piercing_attack: Vec<Conditional<EntityEffect>>,
     pub block_experience: Vec<Conditional<ValueEffect>>,
+    /// `minecraft:mob_experience` (no Vanilla enchantment has it; data packs can add it).
+    pub mob_experience: Vec<Conditional<ValueEffect>>,
+    /// `minecraft:prevent_armor_change` (Curse of Binding).
+    pub prevent_armor_change: bool,
+    /// `minecraft:prevent_equipment_drop` (Curse of Vanishing).
+    pub prevent_equipment_drop: bool,
 }
 
 /// `EquipmentSlotGroup` names in ordinal order.
@@ -940,6 +946,9 @@ impl Enchantment {
                 Some(EntityEffect::parse(e))
             }),
             block_experience: values("minecraft:block_experience"),
+            mob_experience: values("minecraft:mob_experience"),
+            prevent_armor_change: get("minecraft:prevent_armor_change").is_some(),
+            prevent_equipment_drop: get("minecraft:prevent_equipment_drop").is_some(),
         }
     }
 
@@ -1197,6 +1206,44 @@ impl Enchantments {
     ) -> i32 {
         #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
         let v = self.run_item(tool, |e| &e.block_experience, None, random, amount as f32) as i32;
+        v
+    }
+
+    /// Whether any enchantment has a `mob_experience` effect (skips the killer's equipment
+    /// walk when none does).
+    pub fn has_mob_experience(&self) -> bool {
+        self.list.iter().any(|e| !e.mob_experience.is_empty())
+    }
+
+    /// `EnchantmentHelper.processMobExperience`: the killer's equipment, in the slots its
+    /// enchantments work in, changes the experience of a killed mob (`cx.this` is the killed
+    /// mob, `random` its random; `MutableFloat.intValue`).
+    pub fn mob_experience(
+        &self,
+        equipment: &[(EquipmentSlot, &ItemStack)],
+        cx: &EnchantContext<'_>,
+        random: &mut dyn FloatRandom,
+        amount: i32,
+    ) -> i32 {
+        #[allow(clippy::cast_precision_loss)]
+        let mut value = amount as f32;
+        for &(slot, stack) in equipment {
+            for (e, level) in self.of(stack) {
+                if !e.works_in(slot) {
+                    continue;
+                }
+                for c in &e.mob_experience {
+                    if c.requirements
+                        .as_ref()
+                        .is_none_or(|r| r.test(cx, level, random))
+                    {
+                        value = c.effect.process(level, random, value);
+                    }
+                }
+            }
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let v = value as i32;
         v
     }
 

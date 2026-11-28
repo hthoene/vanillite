@@ -44,7 +44,12 @@ pub(crate) fn map_invisible(inventory: &crate::inventory::PlayerInventory) -> bo
 
 /// `LodestoneTracker.tick`: a tracked lodestone in this dimension that is gone (outside the
 /// world, or another block in a loaded chunk) leaves an empty target.
-fn tick_lodestone(level: &Level, dimension: &str, stack: &mut ItemStack) {
+fn tick_lodestone(
+    level: &Level,
+    poi: &crate::poi::PoiManager,
+    dimension: &str,
+    stack: &mut ItemStack,
+) {
     let Some(value) = stack.component(ids::LODESTONE_TRACKER) else {
         return;
     };
@@ -70,12 +75,34 @@ fn tick_lodestone(level: &Level, dimension: &str, stack: &mut ItemStack) {
         && pos.y < level.max_y()
         && (-30_000_000..30_000_000).contains(&pos.x)
         && (-30_000_000..30_000_000).contains(&pos.z);
-    // Without a point-of-interest store, a lodestone is checked where its chunk is loaded.
+    // `getPoiManager().existsAtPosition(LODESTONE, pos)`: the block where its chunk is
+    // loaded, else whether the lodestone was removed.
     let gone = !in_world
-        || (level.is_loaded(pos)
-            && level.block(pos).block() != vanillite_data::block::ids::LODESTONE);
+        || if level.is_loaded(pos) {
+            level.block(pos).block() != vanillite_data::block::ids::LODESTONE
+        } else {
+            poi.lodestone_removed(pos)
+        };
     if gone {
         stack.set_component(ids::LODESTONE_TRACKER, Box::new([0, 1]));
+    }
+}
+
+/// `EntityEquipment.tick` of a mob: `CompassItem.inventoryTick` of the lodestone compasses
+/// it holds or wears.
+pub fn tick_mob_compasses(
+    level: &Level,
+    poi: &crate::poi::PoiManager,
+    dimension: &str,
+    m: &mut crate::mob::MobData,
+) {
+    for stack in &mut m.equipment.items {
+        if stack.item == vanillite_data::item::ids::COMPASS.0
+            && !stack.is_empty()
+            && stack.component(ids::LODESTONE_TRACKER).is_some()
+        {
+            tick_lodestone(level, poi, dimension, stack);
+        }
     }
 }
 
@@ -129,7 +156,7 @@ pub fn tick(level: &Level, owner: Owner<'_>, player: &mut PlayerData) {
         if stack.item == vanillite_data::item::ids::COMPASS.0
             && stack.component(ids::LODESTONE_TRACKER).is_some()
         {
-            tick_lodestone(level, owner.dimension, stack);
+            tick_lodestone(level, &level.entities.poi, owner.dimension, stack);
         }
         if !map::is_map_item(stack.item) {
             continue;

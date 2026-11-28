@@ -388,8 +388,7 @@ pub(crate) fn merge(into: &mut Compound, from: &Compound) {
 
 /// `PREVENT_EQUIPMENT_DROP` (Curse of Vanishing).
 fn prevents_drop(stack: &ItemStack) -> bool {
-    crate::player::play::game_data()
-        .is_some_and(|d| d.enchantment_level(stack, "minecraft:vanishing_curse") > 0)
+    crate::player::play::game_data().is_some_and(|d| d.prevents_equipment_drop(stack))
 }
 
 /// The stored data of a decoration or decor family mob (for merging).

@@ -59,7 +59,7 @@ pub use mobs::{player_entity_action, player_vehicle_input};
 pub use net::VanillaPack;
 pub use player_list::{PlayerEntry, PlayerList, Uuid};
 pub use players::player_actor;
-pub use scoreboard::entity_team;
+pub use scoreboard::{entity_team, swap_scoreboard};
 pub use server::{GlobalTask, Server, ServerBuilder, ServerHandle, StartError, VANILLA_DIMENSIONS};
 pub use slot::{Origin, Slot, SlotError};
 pub use tick_rate::TickRateManager;

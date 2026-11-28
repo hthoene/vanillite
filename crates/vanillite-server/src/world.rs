@@ -592,6 +592,7 @@ impl ServerWorld {
         if self.survival.compute.is_none() {
             self.survival.compute = Some(ctx.compute.clone());
         }
+        self.level.entities.elsewhere.set_tick(ctx.tick);
         self.place_ready_spawns(ctx.global);
         if self.memory_released && self.level.entities.players.iter().next().is_some() {
             // Players are back: the generator is built ahead, off the tick.
@@ -850,6 +851,8 @@ impl ServerWorld {
             &mut self.fan_out,
             ctx.global.plugins.packet_tap(),
         );
+        self.players
+            .send_dirty_attributes(&self.level.entities, &*self.tracker);
         lap!(self, Tracking);
         // `sendNextChunks` runs after `ChunkMap.tick`: entities in the chunks sent now are
         // still pending for this tick's tracking and become visible from the next one.
@@ -879,12 +882,16 @@ impl ServerWorld {
             &self.dimension,
             &mut portals,
         );
+        // `BrushItem.onUseTick` in the players' `updateUsingItem`, after this tick's use tick.
+        vanillite_game::player::using::tick_brushes(&mut self.level);
         self.mobs.after_player_ticks(
             &mut self.level,
             &mut self.survival,
             ctx.global,
             &self.dimension,
         );
+        // Where the players are, for the projectiles of the other worlds' next tick.
+        vanillite_game::presence::publish(&self.level.entities, ctx.tick);
         self.mobs.tick_player_items(
             &mut self.level,
             &mut self.survival,

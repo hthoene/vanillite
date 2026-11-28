@@ -186,6 +186,20 @@ pub fn teleport_randomly(
     true
 }
 
+/// The `teleport_randomly` effects of a death protection the player used up in a hurt that
+/// had no access to the entities ([`crate::survival::player::Survival::pending_teleports`]).
+pub fn apply_pending_teleports(ents: &mut Entities, env: &mut Env<'_>, player: EntityId) {
+    let pending = match ents.player_mut(player) {
+        Some(p) if !p.survival.pending_teleports.is_empty() => {
+            std::mem::take(&mut p.survival.pending_teleports)
+        }
+        _ => return,
+    };
+    for (diameter, particles) in pending {
+        teleport_randomly(ents, env, player, f64::from(diameter), particles);
+    }
+}
+
 /// Rotation and motion stay (`teleportTo(x, y, z)`: `Relative.union(DELTA, ROTATION)`).
 const ROTATION: i32 = {
     use vanillite_protocol::packets::play::clientbound::relative::*;

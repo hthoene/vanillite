@@ -109,6 +109,18 @@ impl GameData {
             .map_or(0, |(_, level)| level)
     }
 
+    /// `EnchantmentHelper.has(stack, PREVENT_ARMOR_CHANGE)` (Curse of Binding).
+    pub fn prevents_armor_change(&self, stack: &ItemStack) -> bool {
+        self.enchants.of(stack).any(|(e, _)| e.prevent_armor_change)
+    }
+
+    /// `EnchantmentHelper.has(stack, PREVENT_EQUIPMENT_DROP)` (Curse of Vanishing).
+    pub fn prevents_equipment_drop(&self, stack: &ItemStack) -> bool {
+        self.enchants
+            .of(stack)
+            .any(|(e, _)| e.prevent_equipment_drop)
+    }
+
     /// Whether a block (by block id) is in a block tag.
     pub fn block_in_tag(&self, block: u16, tag: &str) -> bool {
         self.block_tags
@@ -273,6 +285,8 @@ pub struct PlayContext<'a> {
     pub stats: Option<&'a mut crate::stats::StatsCounter>,
     /// The player's advancements (`None` in tests).
     pub advancements: Option<&'a mut crate::advancements::PlayerAdvancements>,
+    /// The player's item cooldowns (`None` in tests).
+    pub cooldowns: Option<&'a mut crate::player::cooldowns::ItemCooldowns>,
 }
 
 impl PlayContext<'_> {
@@ -485,6 +499,10 @@ pub struct Digging {
     /// `BlockItem.useOn` fell back to `Item.use` of a consumable block item (carrots, berries)
     /// that could not be placed: the world starts using it with this hand next.
     pub start_using: Option<Hand>,
+    /// The use on a block was an item interaction (`ItemStack.useOn` succeeded).
+    item_used: bool,
+    /// The item of the stack in the hand when the use on a block started.
+    use_before: u16,
 }
 
 /// `getDestroyProgress` of `state` for the actor.
@@ -1140,11 +1158,23 @@ impl Digging {
                 )),
             ) {
                 // A plugin cancelled the use: the block updates below correct the client.
-            } else if self.use_item_on_block(ctx, p.hand, pos, face, hit, p.inside, sink) {
-                // Vanilla 26.3 swings twice for a successful use (two branches of
-                // `handleUseItemOn` both call `swingAndResetAttackStrength`).
-                ctx.swings.push((p.hand, false));
-                ctx.swings.push((p.hand, false));
+            } else {
+                let before = match p.hand {
+                    Hand::MainHand => ctx.inventory.selected_item().clone(),
+                    Hand::OffHand => ctx.inventory.offhand.clone(),
+                };
+                self.use_before = before.item;
+                self.item_used = false;
+                let swings = self.use_item_on_block(ctx, p.hand, pos, face, hit, p.inside, sink);
+                if self.item_used {
+                    after_item_use(ctx, p.hand, &before, sink);
+                }
+                if swings {
+                    // Vanilla 26.3 swings twice for a successful use (two branches of
+                    // `handleUseItemOn` both call `swingAndResetAttackStrength`).
+                    ctx.swings.push((p.hand, false));
+                    ctx.swings.push((p.hand, false));
+                }
             }
             block_update(sink, ctx.level, pos);
             block_update(sink, ctx.level, relative(pos, face));
@@ -1195,7 +1225,7 @@ impl Digging {
                     && crate::block::technical::use_without_item(level, pos, &editor)
                 {
                     ctx.trigger(Event::DefaultBlockUse(pos));
-                    any_block_use(ctx, hand, pos);
+                    any_block_use(ctx, hand, pos, self.use_before);
                     return true;
                 }
             } else if hand == Hand::MainHand && crate::block::shelf::is_shelf(state.block()) {
@@ -1218,7 +1248,7 @@ impl Digging {
                 };
                 if let Some(result) = result {
                     ctx.trigger(Event::ItemUsedOnBlock(pos, before));
-                    any_block_use(ctx, hand, pos);
+                    any_block_use(ctx, hand, pos, self.use_before);
                     return result == crate::block::Interaction::Success;
                 }
             } else if hand == Hand::MainHand
@@ -1229,7 +1259,7 @@ impl Digging {
                 // player's leashed mobs to the fence next.
                 self.bind_fence = Some(pos);
                 ctx.trigger(Event::DefaultBlockUse(pos));
-                any_block_use(ctx, hand, pos);
+                any_block_use(ctx, hand, pos, self.use_before);
                 return true;
             } else {
                 // `state.useItemOn(stack, …)`, then `useWithoutItem` for the main hand when it
@@ -1301,7 +1331,7 @@ impl Digging {
                         } else {
                             Event::DefaultBlockUse(pos)
                         });
-                        any_block_use(ctx, hand, pos);
+                        any_block_use(ctx, hand, pos, self.use_before);
                         return result == crate::block::Interaction::Success;
                     }
                 } else if has_use_action(state) {
@@ -1339,10 +1369,18 @@ impl Digging {
                 }
             }
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-            any_block_use(ctx, hand, pos);
+            any_block_use(ctx, hand, pos, self.use_before);
             return true;
         }
         if stack.is_empty() {
+            return false;
+        }
+        // `useItemOn`: an item on cooldown is not used on the block.
+        if ctx
+            .cooldowns
+            .as_deref()
+            .is_some_and(|c| c.is_on_cooldown(&stack))
+        {
             return false;
         }
         let used = item::item_id(&stack);
@@ -1358,8 +1396,9 @@ impl Digging {
             // `MapItem.useOn` on a banner.
             if ok {
                 ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+                self.item_used = true;
                 ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-                any_block_use(ctx, hand, pos);
+                any_block_use(ctx, hand, pos, self.use_before);
             }
             return ok;
         }
@@ -1400,8 +1439,9 @@ impl Digging {
                 });
             }
             ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+            self.item_used = true;
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-            any_block_use(ctx, hand, pos);
+            any_block_use(ctx, hand, pos, self.use_before);
             return true;
         }
         if used == vanillite_data::item::ids::FLINT_AND_STEEL
@@ -1422,8 +1462,9 @@ impl Digging {
                 // `ItemStack.useOn` of a successful item interaction, then
                 // `ITEM_USED_ON_BLOCK` and `ANY_BLOCK_USE`.
                 ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+                self.item_used = true;
                 ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-                any_block_use(ctx, hand, pos);
+                any_block_use(ctx, hand, pos, self.use_before);
             }
             return done;
         }
@@ -1441,8 +1482,9 @@ impl Digging {
                 }
             }
             ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+            self.item_used = true;
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-            any_block_use(ctx, hand, pos);
+            any_block_use(ctx, hand, pos, self.use_before);
             return true;
         }
         // `BrushItem.useOn`: the click's ray hit this block, brushing starts (`CONSUME`: no
@@ -1455,15 +1497,17 @@ impl Digging {
             }
             self.start_using = Some(hand);
             ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+            self.item_used = true;
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-            any_block_use(ctx, hand, pos);
+            any_block_use(ctx, hand, pos, self.use_before);
             return false;
         }
         let click = item_use::Click { hand, pos, face };
         if let Some(result) = item_use::use_on(ctx, click, sink) {
             if result == item_use::Used::Success {
+                self.item_used = true;
                 ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-                any_block_use(ctx, hand, pos);
+                any_block_use(ctx, hand, pos, self.use_before);
                 return true;
             }
             return false;
@@ -1512,8 +1556,9 @@ impl Digging {
         if placed {
             // `ItemStack.useOn` of a successful item interaction.
             ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+            self.item_used = true;
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack));
-            any_block_use(ctx, hand, pos);
+            any_block_use(ctx, hand, pos, self.use_before);
         } else {
             self.consumable_fallback(ctx, hand, &stack, pos);
         }
@@ -1547,8 +1592,9 @@ impl Digging {
         }
         self.start_using = Some(hand);
         ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+        self.item_used = true;
         ctx.trigger(Event::ItemUsedOnBlock(pos, stack.clone()));
-        any_block_use(ctx, hand, pos);
+        any_block_use(ctx, hand, pos, self.use_before);
     }
 
     /// `useOn` of the items that place decorations: armor stands, item frames, paintings and
@@ -1620,6 +1666,7 @@ impl Digging {
                 *slot = held;
             }
             ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+            self.item_used = true;
             ctx.trigger(Event::ItemUsedOnBlock(pos, stack.clone()));
         }
         Some(result == Placed::Success)
@@ -2044,8 +2091,9 @@ impl Digging {
             item_use::set_held(ctx, hand, held);
         }
         ctx.award_stat(Stat::of(StatType::Used, stack.item), 1);
+        self.item_used = true;
         ctx.trigger(Event::ItemUsedOnBlock(pos, stack.clone()));
-        any_block_use(ctx, hand, pos);
+        any_block_use(ctx, hand, pos, self.use_before);
         Some(true)
     }
 
@@ -2157,12 +2205,63 @@ impl Digging {
 }
 
 /// `ANY_BLOCK_USE` after a use that consumed the click, with the stack now in the hand.
-fn any_block_use(ctx: &mut PlayContext<'_>, hand: Hand, pos: BlockPos) {
+/// `ANY_BLOCK_USE` with the stack object the use started with (`before`: its item): what the
+/// use left of it in the hand, or an empty stack when the hand holds another item now (the
+/// used stack was used up and replaced, e.g. a filled bottle).
+fn any_block_use(ctx: &mut PlayContext<'_>, hand: Hand, pos: BlockPos, before: u16) {
     let held = match hand {
         Hand::MainHand => ctx.inventory.selected_item().clone(),
         Hand::OffHand => ctx.inventory.offhand.clone(),
     };
+    let held = if !held.is_empty() && held.item == before {
+        held
+    } else {
+        ItemStack::EMPTY
+    };
     ctx.trigger(Event::AnyBlockUse(pos, held));
+}
+
+/// `ItemStack.applyAfterUseComponentSideEffects` of a successful item interaction on a block:
+/// the `use_remainder` of a stack the use shrank (it replaces an emptied stack, else goes to
+/// the inventory or is dropped) and the `use_cooldown`.
+fn after_item_use(
+    ctx: &mut PlayContext<'_>,
+    hand: Hand,
+    before: &ItemStack,
+    sink: &dyn PacketSink,
+) {
+    if !ctx.actor.creative()
+        && let Some(remainder) = crate::consumable::use_remainder(before)
+    {
+        let slot = match hand {
+            Hand::MainHand => ctx.inventory.selected_item_mut(),
+            Hand::OffHand => Some(&mut ctx.inventory.offhand),
+        };
+        let mut extra = None;
+        if let Some(slot) = slot {
+            // `usedStack.getCount() < stackCountBeforeUsing`.
+            if slot.is_empty() || slot.count < before.count {
+                if slot.is_empty() {
+                    *slot = remainder;
+                } else {
+                    extra = Some(remainder);
+                }
+            }
+        }
+        // `handleExtraItemsCreatedOnUse`: `inventory.add`, else `drop(extra, false)`.
+        if let Some(mut rest) = extra
+            && !ctx.inventory.add(None, &mut rest, false)
+            && !rest.is_empty()
+        {
+            ctx.drops.push(Drop {
+                stack: rest,
+                thrown: false,
+            });
+        }
+    }
+    if let Some(c) = ctx.cooldowns.as_deref_mut() {
+        c.apply_use_cooldown(before, sink);
+    }
 }
 
 /// Applies what blocks did to the player during a use ([`crate::block::PlayerEffect`]).

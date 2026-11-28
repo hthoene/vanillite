@@ -181,6 +181,8 @@ pub struct Entities {
     /// The plugin hooks of the world (a copy of the level's), so the code that only holds the
     /// entities (mob ticks, spawning) reaches them; `None` without plugins.
     hooks: EntityHooks,
+    /// The players of the other worlds (projectile owners that went through a portal).
+    pub elsewhere: crate::presence::Elsewhere,
 }
 
 /// The plugin hooks [`Entities`] keeps ([`Entities::hooks_for`]).

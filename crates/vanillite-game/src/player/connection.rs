@@ -286,6 +286,9 @@ pub struct Connection {
     /// The packets handled since the session recording (`debug.session-recording`) last took
     /// them; `None` while the player is not recorded.
     pub recorded: Option<Vec<ServerboundPlay>>,
+    /// Where the player is as the other worlds see it (the server shares it through the player
+    /// list).
+    pub presence: Arc<crate::presence::Presence>,
 }
 
 impl std::fmt::Debug for Connection {
@@ -348,6 +351,7 @@ impl Connection {
             last_action: std::time::Instant::now(),
             is_virtual,
             recorded: None,
+            presence: Arc::default(),
         }
     }
 

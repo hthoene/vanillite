@@ -189,6 +189,7 @@ pub fn hurt(
             create_wither_rose(level, ents, env, cx, pos, credit);
         }
     }
+    crate::player::chorus::apply_pending_teleports(ents, env, target);
     view::resolve_combat(ents, env.types, target);
     // `blockUsingItem` → the attacker's own `blockedByItem`.
     if blocked_by_item.is_some()
@@ -776,6 +777,60 @@ fn mob_protection(
         .damage_protection(&equipment, &cx, env.random)
 }
 
+/// `EnchantmentHelper.processMobExperience`: the `mob_experience` effects of a living
+/// killer's equipment change the experience of the killed mob.
+fn mob_experience(
+    ents: &mut Entities,
+    types: &crate::survival::damage::DamageTypes,
+    killed: EntityId,
+    killer: Option<EntityId>,
+    amount: i32,
+) -> i32 {
+    use crate::item::{EquipmentSlot, ItemStack};
+    let combat = super::attack::combat_data();
+    let Some(killer) = killer.filter(|_| combat.enchants.has_mob_experience()) else {
+        return amount;
+    };
+    let equipment: Vec<(EquipmentSlot, ItemStack)> = if let Some(p) = ents.player(killer) {
+        crate::player::encode::EQUIPMENT_SLOTS
+            .iter()
+            .map(|&s| (s, p.inventory.equipment(s).clone()))
+            .collect()
+    } else if let Some(m) = ents.mob(killer) {
+        (0..8)
+            .filter_map(EquipmentSlot::from_ordinal)
+            .map(|s| (s, m.equipment.get(s).clone()))
+            .collect()
+    } else {
+        return amount;
+    };
+    let equipment: Vec<(EquipmentSlot, &ItemStack)> = equipment
+        .iter()
+        .filter(|(_, s)| !s.is_empty())
+        .map(|(slot, s)| (*slot, s))
+        .collect();
+    let tags: &dyn crate::predicate::EntityTags = &*combat;
+    // `Enchantment.entityContext`: only the killed mob and its position.
+    let cx = crate::enchant::EnchantContext {
+        types,
+        tags,
+        this: super::attack::facts(ents, killed),
+        attacker: None,
+        direct_attacker: None,
+        attacking_player: None,
+        source: None,
+        raining: false,
+        thundering: false,
+        location: None,
+    };
+    let Some(m) = ents.mob_mut(killed) else {
+        return amount;
+    };
+    combat
+        .enchants
+        .mob_experience(&equipment, &cx, &mut m.random, amount)
+}
+
 /// `EnchantmentHelper.isImmuneToDamage` of a mob's equipment (Frost Walker on magma).
 fn immune_to_damage(
     ents: &Entities,
@@ -970,9 +1025,16 @@ fn mob_totem(
         crate::effect::living::with_host(level, ents, env, cx, target, |host| {
             let mut rolls = rolls.into_iter();
             let mut roll = || rolls.next().unwrap_or(0.0);
-            crate::totem::apply_effects(&effects, mob_kind, host, &mut roll, &mut |s| {
-                sounds.push(s.to_owned());
-            });
+            // `teleport_randomly` of a mob's death protection is not applied (no mob random
+            // teleport of `TeleportRandomlyConsumeEffect` yet).
+            crate::totem::apply_effects(
+                &effects,
+                mob_kind,
+                host,
+                &mut roll,
+                &mut |s| sounds.push(s.to_owned()),
+                &mut |_, _| {},
+            );
         });
         if let Some(at) = ents.store.get(target).map(|e| e.pos()) {
             for s in sounds {
@@ -1099,9 +1161,15 @@ fn die(
     let baby = m.baby && !monster;
     // `getExperienceReward` (it draws from the mob's random) only where Vanilla asks for it:
     // a sculk catalyst at the death, else `dropExperience` after the loot.
+    let types = env.types;
+    let killer = source.cause;
     let reward_of = |ents: &mut Entities| {
         let reward = ents.mob_mut(target).map_or(0, kinds::experience_reward);
-        if baby { 0 } else { reward }
+        if baby {
+            0
+        } else {
+            mob_experience(ents, types, target, killer, reward)
+        }
     };
     if let Some(cause) = source.cause
         && let Some(p) = ents.player_mut(cause)
