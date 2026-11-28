@@ -944,9 +944,8 @@ impl ScenarioWorld for ServerWorld {
     }
 
     /// As the server at the origin of the overworld, before the tick.
-    fn command(&mut self, line: &str) -> Result<(), String> {
-        self.server.command_at(line, vanillite_base::Vec3::ZERO);
-        Ok(())
+    fn command(&mut self, line: &str) -> Result<Vec<String>, String> {
+        Ok(self.server.command_at(line, vanillite_base::Vec3::ZERO))
     }
 
     /// The packet a client sends for the action: `use_item` (or `interact` on `target`,

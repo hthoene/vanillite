@@ -35,6 +35,8 @@
 //!   fade in); with `advance_weather` off it stays.
 //! - `block_entities`: frames also hold the block entities of the region (their full saved
 //!   data, see [`crate::trace`]). Default `false`.
+//! - `feedback`: frames also hold the plain text of the messages the `command` actions of
+//!   their tick sent to the server (its `System chat` lines), in order. Default `false`.
 //! - `level_rng`: frames also hold the state of the level random (always with entities).
 //!   Scenarios with random ticks set it: the random draws must match call by call.
 //!
@@ -284,6 +286,8 @@ pub struct WorldSpec {
     pub normal_end: bool,
     /// Whether frames hold the region's block entities (`"block_entities": true`, #244).
     pub block_entities: bool,
+    /// Whether frames hold the command feedback of their tick (`"feedback": true`, #304).
+    pub feedback: bool,
 }
 
 /// The overworld's dimension id.
@@ -820,6 +824,7 @@ impl Scenario {
                     .get("block_entities")
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
+                feedback: v.get("feedback").and_then(Value::as_bool).unwrap_or(false),
                 client_tick_end: v
                     .get("client_tick_end")
                     .and_then(Value::as_bool)

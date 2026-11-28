@@ -293,10 +293,39 @@ fn push_scalar_arg(arg: &Arg, out: &mut String) {
         Arg::Short(v) => out.push_str(&v.to_string()),
         Arg::Int(v) => out.push_str(&v.to_string()),
         Arg::Long(v) => out.push_str(&v.to_string()),
-        Arg::Float(v) => out.push_str(&format!("{v:?}")),
-        Arg::Double(v) => out.push_str(&format!("{v:?}")),
+        Arg::Float(v) => out.push_str(&java_float(*v)),
+        Arg::Double(v) => out.push_str(&java_double(*v)),
         Arg::Bool(v) => out.push_str(&v.to_string()),
     }
+}
+
+/// `Double.toString` / `Float.toString`: plain decimals in `[1e-3, 1e7)`, otherwise Java's
+/// scientific form (`1.0E7`).
+fn java_decimal(abs: f64, plain: String, scientific: &str) -> String {
+    if plain == "NaN" {
+        return plain;
+    }
+    if plain.ends_with("inf") {
+        return plain.replace("inf", "Infinity");
+    }
+    if abs == 0.0 || (1.0e-3..1.0e7).contains(&abs) {
+        return plain;
+    }
+    match scientific.split_once('e') {
+        Some((mantissa, exponent)) if mantissa.contains('.') => format!("{mantissa}E{exponent}"),
+        Some((mantissa, exponent)) => format!("{mantissa}.0E{exponent}"),
+        None => plain,
+    }
+}
+
+/// `Double.toString`.
+pub fn java_double(v: f64) -> String {
+    java_decimal(v.abs(), format!("{v:?}"), &format!("{v:e}"))
+}
+
+/// `Float.toString`.
+pub fn java_float(v: f32) -> String {
+    java_decimal(f64::from(v).abs(), format!("{v:?}"), &format!("{v:e}"))
 }
 
 /// The resolved colour and formats of a part, for [`Component::to_legacy_in`].

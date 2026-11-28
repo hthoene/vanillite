@@ -156,6 +156,8 @@ pub struct Frame {
     pub view: Vec<String>,
     /// `x,y,z <nbt>` of the region's block entities, sorted (`"block_entities"` scenarios).
     pub block_entities: Vec<String>,
+    /// The plain text of the command feedback of the tick, in order (`"feedback"` scenarios).
+    pub feedback: Vec<String>,
 }
 
 /// A recorded scenario run.
@@ -324,6 +326,16 @@ impl Trace {
                 list.sort_unstable();
                 list
             },
+            feedback: f
+                .get("feedback")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .map(|e| e.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()
+                })
+                .unwrap_or(Some(Vec::new()))
+                .ok_or("feedback lines are strings")?,
         })
     }
 
@@ -430,6 +442,12 @@ impl Trace {
         if !frame.block_entities.is_empty() {
             h.add(frame.block_entities.len() as u64);
             for e in &frame.block_entities {
+                h.add(fnv(e.as_bytes()));
+            }
+        }
+        if !frame.feedback.is_empty() {
+            h.add(frame.feedback.len() as u64);
+            for e in &frame.feedback {
                 h.add(fnv(e.as_bytes()));
             }
         }
@@ -550,6 +568,9 @@ impl Trace {
                     Value::from(f.block_entities.clone())
                 );
             }
+            if !f.feedback.is_empty() {
+                let _ = write!(s, ",\"feedback\":{}", Value::from(f.feedback.clone()));
+            }
             s.push('}');
         }
         s.push_str("]}\n");
@@ -619,6 +640,12 @@ impl Trace {
             }
             if e.block_entities != a.block_entities {
                 block_entity_diff(t, &e.block_entities, &a.block_entities, &mut out);
+            }
+            if e.feedback != a.feedback {
+                out.push(format!(
+                    "tick {t} feedback {:?}, expected {:?}",
+                    a.feedback, e.feedback
+                ));
             }
             if e.level_rng != a.level_rng {
                 out.push(format!(

@@ -1,8 +1,9 @@
 {
-  "description": "The /time command of 26.3 on world clocks: query gametime/time/<timeline> [repetition] (the removed 'daytime' fails with argument.resource.not_found as in Vanilla), set <time>/<marker>, add, pause, resume, rate, 'of <clock>' and the default clock per dimension (none in the Nether); results stored into a probe chest.",
+  "description": "The /time command of 26.3 on world clocks: query gametime/time/<timeline> [repetition] (the removed 'daytime' fails with argument.resource.not_found as in Vanilla), set <time>/<marker>, add, pause, resume, rate, 'of <clock>' and the default clock per dimension (none in the Nether); results stored into a probe chest and the feedback texts compared.",
   "tier": "fast",
   "dimensions": true,
   "block_entities": true,
+  "feedback": true,
   "region": [[-8, -61, -8], [7, -59, 7]],
   "ticks": 19,
   "entities": [
