@@ -1315,6 +1315,7 @@ impl Server {
         }
         log::debug!("Server empty: releasing memory");
         self.global.templates.trim();
+        self.global.systems.release_advancements();
         self.compute.release_memory();
         for id in self.loaded_worlds() {
             self.run_in_world(id, Box::new(ServerWorld::release_memory));
@@ -1464,6 +1465,7 @@ impl Server {
     /// `ServerLoginPacketListenerImpl.verifyLoginAndFinishConnectionSetup`: refuses the login
     /// (a login disconnect) or lets it finish; `PLAYER_LOGIN` plugins may change the result.
     fn verify_login(&self, check: vanillite_net::LoginCheck) {
+        crate::systems::GameSystems::prefetch_advancements(&self.global, &self.compute);
         let uuid = check.profile.id.0;
         let ip = check.address.ip().to_string();
         let (reason, refusal) = self.can_player_login(uuid, &ip, check.memory);
