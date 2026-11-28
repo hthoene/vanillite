@@ -331,6 +331,39 @@ fn axis_max(b: &Aabb, axis: usize) -> f64 {
     }
 }
 
+/// `Shapes.findBits(min, max)` of a box along one axis, in the block it starts in: the
+/// cells per block (2, 4 or 8) of the `CubeVoxelShape` Vanilla stores it in, `None` for a
+/// full-block span or an `ArrayVoxelShape` (not on a 1/8 grid or reaching past its block).
+fn grid_cells(lo: f64, hi: f64) -> Option<(f64, f64)> {
+    let origin = (lo + EPSILON).floor();
+    let (min, max) = (lo - origin, hi - origin);
+    if max > 1.000_000_1 {
+        return None;
+    }
+    (0..=3)
+        .find_map(|bits| {
+            let n = f64::from(1_i32 << bits);
+            let fits = |v: f64| (v * n - (v * n).round()).abs() < EPSILON * n;
+            (fits(min) && fits(max)).then_some((origin, n))
+        })
+        .filter(|&(_, n)| n > 1.0)
+}
+
+/// `VoxelShape.collideX` moving up into a box `aabb` already reaches into: the first cell
+/// line of the box's grid past `from` (the top of `aabb` less the epsilon) inside the box.
+fn grid_line_above(lo: f64, hi: f64, from: f64) -> Option<f64> {
+    let (origin, n) = grid_cells(lo, hi)?;
+    let line = origin + (((from - origin) * n).floor() + 1.0) / n;
+    (line > lo && line < hi - EPSILON).then_some(line)
+}
+
+/// [`grid_line_above`] moving down: the last cell line at or below `from` inside the box.
+fn grid_line_below(lo: f64, hi: f64, from: f64) -> Option<f64> {
+    let (origin, n) = grid_cells(lo, hi)?;
+    let line = origin + ((from - origin) * n).floor() / n;
+    (line > lo + EPSILON && line < hi).then_some(line)
+}
+
 /// `Shapes.collide(axis, aabb, shapes, distance)`: how far `aabb` moves along `axis` (0 = X,
 /// 1 = Y, 2 = Z) before it touches one of `boxes`.
 pub fn collide_axis(boxes: &[Aabb], aabb: &Aabb, axis: usize, delta: f64) -> f64 {
@@ -346,10 +379,21 @@ pub fn collide_axis(boxes: &[Aabb], aabb: &Aabb, axis: usize, delta: f64) -> f64
         if !overlaps {
             continue;
         }
-        if delta > 0.0 && axis_min(b, axis) >= axis_max(aabb, axis) - EPSILON {
-            delta = delta.min(axis_min(b, axis) - axis_max(aabb, axis));
-        } else if delta < 0.0 && axis_max(b, axis) <= axis_min(aabb, axis) + EPSILON {
-            delta = delta.max(axis_max(b, axis) - axis_min(aabb, axis));
+        let (lo, hi) = (axis_min(b, axis), axis_max(b, axis));
+        if delta > 0.0 {
+            let top = axis_max(aabb, axis);
+            if lo >= top - EPSILON {
+                delta = delta.min(lo - top);
+            } else if let Some(line) = grid_line_above(lo, hi, top - EPSILON) {
+                delta = delta.min(line - top);
+            }
+        } else {
+            let bottom = axis_min(aabb, axis);
+            if hi <= bottom + EPSILON {
+                delta = delta.max(hi - bottom);
+            } else if let Some(line) = grid_line_below(lo, hi, bottom + EPSILON) {
+                delta = delta.max(line - bottom);
+            }
         }
         if delta.abs() < EPSILON {
             return 0.0;

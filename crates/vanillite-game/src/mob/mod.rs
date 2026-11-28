@@ -37,7 +37,7 @@ pub mod tame;
 pub mod teleport;
 
 use vanillite_base::random::{LegacyRandom, RandomSource};
-use vanillite_base::{Aabb, BlockPos, ChunkPos, Vec3};
+use vanillite_base::{Aabb, BlockPos, Vec3};
 use vanillite_data::block::BlockState;
 use vanillite_data::entity::{ATTRIBUTES, EntityTypeId};
 use vanillite_world::entity::{
@@ -1615,24 +1615,10 @@ pub fn light_magic_value(level: &Level, env: &Environment, pos: BlockPos) -> f32
     env.ambient_light + (1.0 - env.ambient_light) * curved
 }
 
-/// `canSeeSky(pos)`: no light blocking block above (the sky light at full strength).
+/// `canSeeSky(pos)`: the sky light at `pos` is at full strength (it passes glass and leaves,
+/// unlike the motion blocking heightmap).
 pub fn can_see_sky(level: &Level, pos: BlockPos) -> bool {
-    if pos.y >= level.max_y() {
-        return true;
-    }
-    let Some(c) = level.chunks.chunk(ChunkPos::new(pos.x >> 4, pos.z >> 4)) else {
-        return false;
-    };
-    let Some(heights) = c
-        .chunk
-        .heightmaps()
-        .get(vanillite_chunk::HeightmapKind::MotionBlocking)
-    else {
-        return false;
-    };
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-    let top = heights.get((pos.x & 15) as u32, (pos.z & 15) as u32) as i32 + c.chunk.min_y();
-    top <= pos.y
+    level.light(pos).0 >= 15
 }
 
 /// One mob tick (`ServerLevel.tickNonPassenger`: `tickCount++`, then `Mob.tick`), with the

@@ -988,7 +988,7 @@ fn can_be_picked(ents: &Entities, id: EntityId) -> bool {
 /// `AbstractBoat.canCollideWith(other)` of a new boat: what it collides with
 /// (`canBeCollidedWith`: boats, minecarts, shulkers; or `isPushable`: living entities that are
 /// not spectators).
-fn blocks_boat(ents: &Entities, id: EntityId) -> bool {
+pub(crate) fn blocks_boat(ents: &Entities, id: EntityId) -> bool {
     if let Some(p) = ents.player(id) {
         return p.game_mode != vanillite_config::GameMode::Spectator
             && !p.survival.is_dead_or_dying();

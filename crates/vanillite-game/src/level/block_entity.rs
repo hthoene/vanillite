@@ -1533,8 +1533,18 @@ pub fn apply_block_entity_data(
     tag != old && level.load_block_entity_nbt(pos, &tag)
 }
 
-/// `BlockEntity.applyComponentsFromItemStack` of a placed block item.
+/// `BlockItem.updateBlockEntityComponents`: `applyComponentsFromItemStack`, then `setChanged`
+/// (comparators next to the placed block read it again).
 pub fn apply_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
+    if level.block_entity(pos).is_none() {
+        return;
+    }
+    apply_item_components(level, pos, stack);
+    crate::block::container::set_changed(level, pos);
+}
+
+/// `BlockEntity.applyComponentsFromItemStack` of a placed block item.
+fn apply_item_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
     if !matches!(
         level.block_entity(pos),
         None | Some(BlockEntity::CopperGolemStatue(_))

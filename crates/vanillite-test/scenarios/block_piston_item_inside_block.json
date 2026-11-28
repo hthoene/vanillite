@@ -1,0 +1,14 @@
+{
+  "description": "A piston pushes a block with an item inside it (#289): the item ticked inside the block, so it has noPhysics and Entity.move(PISTON) moves it without collisions and without the 0.51 piston limit.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [7, -57, 4]],
+  "ticks": 14,
+  "setup": [
+    {"op": "set", "pos": [1, -60, 2], "block": "minecraft:piston[extended=false,facing=east]"},
+    {"op": "set", "pos": [2, -60, 2], "block": "minecraft:glass"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 2.5 -59.9 2.5 {Item:{id:\"minecraft:stone\",count:1},PickupDelay:100}"},
+    {"tick": 3, "op": "place", "pos": [0, -60, 2], "block": "minecraft:redstone_block"}
+  ]
+}

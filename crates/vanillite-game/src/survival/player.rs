@@ -4042,7 +4042,8 @@ fn simulate_move(
                 let drag = 1.0 + portion * (f64::from(0.98_f32) - 1.0);
                 (portion * gravity - current.y) * drag * restitution
             } else {
-                -current.y * 0.0
+                // `(0.0 - y) * 1.0 * 0.0`: a resting `+0.0` stays `+0.0`.
+                (0.0 - current.y) * 0.0
             };
             if restitution > 0.0 {
                 if effect_state

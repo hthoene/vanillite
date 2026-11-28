@@ -1,0 +1,16 @@
+{
+  "description": "Daylight burning under glass (#289): Mob.isSunBurnTick asks canSeeSky, which is the full sky light at the eye (it passes glass), not the motion blocking heightmap. The zombie under glass burns, the one under stone does not.",
+  "tier": "fast",
+  "time": 6000,
+  "light": true,
+  "region": [[0, -61, 0], [10, -57, 4]],
+  "ticks": 80,
+  "setup": [
+    {"op": "fill", "from": [0, -58, 0], "to": [4, -58, 4], "block": "minecraft:glass"},
+    {"op": "fill", "from": [6, -58, 0], "to": [10, -58, 4], "block": "minecraft:stone"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:zombie 2.5 -60.0 2.5 {NoAI:1b,PersistenceRequired:1b}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:zombie 8.5 -60.0 2.5 {NoAI:1b,PersistenceRequired:1b}"}
+  ]
+}
