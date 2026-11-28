@@ -10,8 +10,8 @@ use super::geometry::{is_face_empty, is_face_full};
 use super::props::{HORIZONTAL, PosExt, StateExt, clockwise, counter_clockwise};
 use super::tables::{can_burn, tags};
 use super::{
-    SupportType, can_attach_multiface, can_support_center, can_support_rigid_block, is_face_sturdy,
-    is_solid, raw_brightness,
+    SupportType, can_attach_multiface, can_support_center, can_support_rigid_block, face_sturdy_at,
+    is_face_sturdy, is_solid, raw_brightness,
 };
 
 /// `state.canSurvive(level, pos)`.
@@ -151,7 +151,9 @@ pub(crate) fn can_survive(level: &impl BlockLevel, state: BlockState, pos: Block
         }
         Class::Cactus => cactus_can_survive(level, pos),
         Class::Carpet => !level.is_empty_block(pos.below()),
-        Class::CeilingHangingSign => is_face_sturdy(
+        Class::CeilingHangingSign => face_sturdy_at(
+            level,
+            pos.above(),
             level.block(pos.above()),
             Direction::Down,
             SupportType::Center,
@@ -162,12 +164,14 @@ pub(crate) fn can_survive(level: &impl BlockLevel, state: BlockState, pos: Block
             Some(facing) => t.supports_cocoa.contains(level.block(pos.relative(facing))),
             None => true,
         },
-        Class::Comparator | Class::Repeater => diode_can_survive_on(level.block(pos.below())),
+        Class::Comparator | Class::Repeater => {
+            diode_can_survive_on(level, pos.below(), level.block(pos.below()))
+        }
         Class::Door => {
             let below_pos = pos.below();
             let below = level.block(below_pos);
             if state.value("half") == Some("lower") {
-                is_face_sturdy(below, Direction::Up, SupportType::Full)
+                face_sturdy_at(level, below_pos, below, Direction::Up, SupportType::Full)
             } else {
                 below.block() == state.block()
             }
@@ -218,7 +222,9 @@ pub(crate) fn can_survive(level: &impl BlockLevel, state: BlockState, pos: Block
             !is_solid(above) || class_of(above) == Class::FenceGate
         }
         Class::PistonHead => piston_head_can_survive(level, state, pos),
-        Class::RedstoneWire => redstone_wire_can_survive_on(level.block(pos.below())),
+        Class::RedstoneWire => {
+            redstone_wire_can_survive_on(level, pos.below(), level.block(pos.below()))
+        }
         Class::Scaffolding => scaffolding_distance(level, pos) < 7,
         Class::SnowLayer => snow_layer_can_survive(level, pos),
         Class::Speleothem => match state.direction("vertical_direction") {
@@ -238,7 +244,7 @@ pub(crate) fn can_survive(level: &impl BlockLevel, state: BlockState, pos: Block
 /// The face of `pos` towards `direction` is sturdy (`isFaceSturdy` with `SupportType.FULL`).
 #[inline]
 fn sturdy_at(level: &impl BlockLevel, pos: BlockPos, direction: Direction) -> bool {
-    is_face_sturdy(level.block(pos), direction, SupportType::Full)
+    face_sturdy_at(level, pos, level.block(pos), direction, SupportType::Full)
 }
 
 /// `VegetationBlock.canSurvive`: `mayPlaceOn` the block below.
@@ -381,14 +387,23 @@ pub(crate) fn lantern_connected_direction(state: BlockState) -> Direction {
     }
 }
 
-/// `DiodeBlock.canSurviveOn`: the block below is rigid at its top.
-pub(crate) fn diode_can_survive_on(below: BlockState) -> bool {
-    is_face_sturdy(below, Direction::Up, SupportType::Rigid)
+/// `DiodeBlock.canSurviveOn`: the block `below` at `below_pos` is rigid at its top.
+pub(crate) fn diode_can_survive_on(
+    level: &impl BlockLevel,
+    below_pos: BlockPos,
+    below: BlockState,
+) -> bool {
+    face_sturdy_at(level, below_pos, below, Direction::Up, SupportType::Rigid)
 }
 
-/// `RedstoneWireBlock.canSurviveOn`.
-pub fn redstone_wire_can_survive_on(below: BlockState) -> bool {
-    is_face_sturdy(below, Direction::Up, SupportType::Full) || below.is(ids::HOPPER)
+/// `RedstoneWireBlock.canSurviveOn` on the block `below` at `below_pos`.
+pub fn redstone_wire_can_survive_on(
+    level: &impl BlockLevel,
+    below_pos: BlockPos,
+    below: BlockState,
+) -> bool {
+    face_sturdy_at(level, below_pos, below, Direction::Up, SupportType::Full)
+        || below.is(ids::HOPPER)
 }
 
 /// `CactusBlock.canSurvive`.
@@ -497,7 +512,7 @@ fn growing_plant_can_survive(level: &impl BlockLevel, class: Class, pos: BlockPo
     can_attach
         && (attached.is(head)
             || attached.is(body)
-            || is_face_sturdy(attached, growth, SupportType::Full))
+            || face_sturdy_at(level, attached_pos, attached, growth, SupportType::Full))
 }
 
 /// `HangingMossBlock.canStayAtPosition`.
@@ -548,7 +563,7 @@ pub fn scaffolding_distance(level: &impl BlockLevel, pos: BlockPos) -> i32 {
     let mut distance = 7;
     if below.is(ids::SCAFFOLDING) {
         distance = below.int("distance").unwrap_or(7);
-    } else if is_face_sturdy(below, Direction::Up, SupportType::Full) {
+    } else if face_sturdy_at(level, below_pos, below, Direction::Up, SupportType::Full) {
         return 0;
     }
     for direction in HORIZONTAL {
@@ -587,8 +602,9 @@ fn is_valid_speleothem_placement(
     pos: BlockPos,
     tip: Direction,
 ) -> bool {
-    let behind = level.block(pos.relative(tip.opposite()));
-    is_face_sturdy(behind, tip, SupportType::Full)
+    let behind_pos = pos.relative(tip.opposite());
+    let behind = level.block(behind_pos);
+    face_sturdy_at(level, behind_pos, behind, tip, SupportType::Full)
         || is_speleothem_with_direction(behind, tip) && behind.block() == state.block()
 }
 

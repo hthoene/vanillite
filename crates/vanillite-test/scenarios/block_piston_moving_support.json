@@ -1,0 +1,106 @@
+{
+  "description": "Blocks on a moving piston (#264): isFaceSturdy of a moving_piston is the collision shape of its block entity (MovingPistonBlock has a dynamic shape). A rail pushed up on stone checks the arriving stone at the end of the move, a redstone wire on top of a retracting piston (now a moving_piston with the extended base's shape) survives, and a rail falls when its stone is pulled away.",
+  "tier": "fast",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      8,
+      -55,
+      4
+    ]
+  ],
+  "ticks": 20,
+  "setup": [
+    {
+      "op": "set",
+      "pos": [
+        2,
+        -60,
+        2
+      ],
+      "block": "minecraft:sticky_piston[extended=false,facing=up]"
+    },
+    {
+      "op": "set",
+      "pos": [
+        2,
+        -59,
+        2
+      ],
+      "block": "minecraft:stone"
+    },
+    {
+      "op": "set",
+      "pos": [
+        2,
+        -58,
+        2
+      ],
+      "block": "minecraft:powered_rail[powered=false,shape=north_south,waterlogged=false]"
+    },
+    {
+      "op": "set",
+      "pos": [
+        6,
+        -58,
+        2
+      ],
+      "block": "minecraft:piston[extended=false,facing=down]"
+    },
+    {
+      "op": "set",
+      "pos": [
+        6,
+        -57,
+        2
+      ],
+      "block": "minecraft:redstone_wire"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "place",
+      "pos": [
+        1,
+        -60,
+        2
+      ],
+      "block": "minecraft:redstone_block"
+    },
+    {
+      "tick": 2,
+      "op": "place",
+      "pos": [
+        7,
+        -58,
+        2
+      ],
+      "block": "minecraft:redstone_block"
+    },
+    {
+      "tick": 10,
+      "op": "place",
+      "pos": [
+        1,
+        -60,
+        2
+      ],
+      "block": "minecraft:air"
+    },
+    {
+      "tick": 10,
+      "op": "place",
+      "pos": [
+        7,
+        -58,
+        2
+      ],
+      "block": "minecraft:air"
+    }
+  ]
+}

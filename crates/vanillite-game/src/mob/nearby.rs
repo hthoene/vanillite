@@ -262,7 +262,12 @@ impl NearbyPlayers {
     /// 64²); infinity when no player is within [`RADIUS`] chunks and 128 blocks.
     pub fn nearest_distance_sqr(&self, at: Vec3, near: f64) -> f64 {
         let chunk = BlockPos::containing(at.x, at.y, at.z).chunk();
-        let around = self.around(chunk);
+        self.nearest_distance_sqr_around(at, near, self.around(chunk))
+    }
+
+    /// [`Self::nearest_distance_sqr`] with the players around the chunk of `at` already
+    /// looked up ([`Self::around`]).
+    pub fn nearest_distance_sqr_around(&self, at: Vec3, near: f64, around: &[u32]) -> f64 {
         if around.len() > CROWD && self.grid.is_built() {
             // A crowd: the first player within each limit, from the players by chunk.
             for limit in [near, 4096.0, SPAWN_DISTANCE_SQR] {

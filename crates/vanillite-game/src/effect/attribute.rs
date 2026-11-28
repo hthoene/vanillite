@@ -146,14 +146,64 @@ pub struct Modifier {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Modifiers {
     list: Vec<Modifier>,
+    /// Base values set by a command or plugin (`AttributeInstance.setBaseValue`) for the
+    /// attributes the entity keeps no field of: all of a player's, a mob's beyond its `Attrs`
+    /// (`minecraft:scale`, ...). `None` for nearly every entity: no allocation.
+    bases: Option<Box<[(Attribute, f64)]>>,
     /// Attributes whose value may have changed since the last [`Self::take_dirty`].
     dirty: u64,
 }
 
 impl Modifiers {
-    /// Whether no modifier is set.
+    /// Whether no modifier and no own base value is set (every value is the default's).
     pub fn is_empty(&self) -> bool {
-        self.list.is_empty()
+        self.list.is_empty() && self.bases.is_none()
+    }
+
+    /// The own base value of `attribute`, if one is set.
+    pub fn base(&self, attribute: Attribute) -> Option<f64> {
+        self.bases
+            .as_ref()?
+            .iter()
+            .find(|(a, _)| *a == attribute)
+            .map(|&(_, v)| v)
+    }
+
+    /// The own base values.
+    pub fn bases(&self) -> impl Iterator<Item = (Attribute, f64)> + '_ {
+        self.bases.iter().flat_map(|b| b.iter().copied())
+    }
+
+    /// `setBaseValue` of an attribute the entity keeps no field of.
+    pub fn set_base(&mut self, attribute: Attribute, value: f64) {
+        self.mark(attribute);
+        if let Some(b) = self
+            .bases
+            .as_mut()
+            .and_then(|b| b.iter_mut().find(|(a, _)| *a == attribute))
+        {
+            b.1 = value;
+            return;
+        }
+        let mut bases = self.bases.take().map(Vec::from).unwrap_or_default();
+        bases.push((attribute, value));
+        self.bases = Some(bases.into_boxed_slice());
+    }
+
+    /// Drops the own base value of `attribute` (back to the type's default).
+    pub fn clear_base(&mut self, attribute: Attribute) {
+        let Some(bases) = self.bases.take() else {
+            return;
+        };
+        let mut bases = Vec::from(bases);
+        bases.retain(|(a, _)| *a != attribute);
+        self.bases = (!bases.is_empty()).then(|| bases.into_boxed_slice());
+        self.mark(attribute);
+    }
+
+    /// Whether only own base values are set, no modifier.
+    pub fn has_modifiers(&self) -> bool {
+        !self.list.is_empty()
     }
 
     /// All modifiers.
@@ -207,8 +257,13 @@ impl Modifiers {
         removed
     }
 
-    /// `AttributeInstance.calculateValue` with `base` as the base value.
+    /// `AttributeInstance.calculateValue` with `base` as the base value (an own base value
+    /// set by [`Self::set_base`] takes its place).
     pub fn value(&self, attribute: Attribute, base: f64) -> f64 {
+        let base = match &self.bases {
+            None => base,
+            Some(_) => self.base(attribute).unwrap_or(base),
+        };
         if self.list.is_empty() {
             return attribute.sanitize(base);
         }

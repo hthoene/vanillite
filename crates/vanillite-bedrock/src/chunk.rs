@@ -428,6 +428,7 @@ pub fn translate(
         &mut heads,
     );
     flower_pots(&mut actors, x, z, layout.java_min_section, &java_blocks, v);
+    let near_pistons = near_pistons(x, z, layout.java_min_section, &java_blocks);
 
     // Sub-chunks up to the highest non-empty one; biomes for the whole dimension.
     let count = translated
@@ -480,11 +481,13 @@ pub fn translate(
     if !v.before_26_60() {
         out.push(0); // No client biome override.
     }
-    Ok((out, actors, heads))
+    Ok((out, actors, heads, near_pistons))
 }
 
 /// A translated chunk: the `level_chunk` body, its block actors and its player heads.
-pub type ChunkOut = (Vec<u8>, Vec<Vec<u8>>, Vec<Head>);
+/// The Bedrock chunk, its block actors, its player heads and the Java blocks in front of its
+/// pistons (the blocks they may move).
+pub type ChunkOut = (Vec<u8>, Vec<Vec<u8>>, Vec<Head>, Vec<([i32; 3], u32)>);
 
 /// A player head with a skin in a chunk: position, Java state and the `textures` value of its
 /// profile.
@@ -556,6 +559,62 @@ fn block_entities(
         }
         if let Some(nbt) = crate::blockentity::translate(pos, state, compound, v.palette) {
             out.push(crate::packets::block_actor_data(pos, &nbt));
+        }
+    }
+    out
+}
+
+/// The Java blocks in front of the chunk's pistons (up to 13, within the chunk): the blocks a
+/// piston may move. Only sections whose palette holds a piston are scanned.
+fn near_pistons(
+    cx: i32,
+    cz: i32,
+    min_section: i32,
+    sections: &[Container],
+) -> Vec<([i32; 3], u32)> {
+    let mut out = Vec::new();
+    let is_piston = |s: u32| crate::blockentity::piston_facing(s).is_some();
+    let base_y = min_section.saturating_mul(16);
+    let height = i32::try_from(sections.len())
+        .unwrap_or(0)
+        .saturating_mul(16);
+    let state_at = |lx: i32, y: i32, lz: i32| -> Option<u32> {
+        if !(0..16).contains(&lx) || !(0..16).contains(&lz) || !(0..height).contains(&y) {
+            return None;
+        }
+        let c = sections.get(usize::try_from(y >> 4).ok()?)?;
+        Some(c.get(usize::try_from((y & 15) << 8 | lz << 4 | lx).ok()?))
+    };
+    for (i, c) in sections.iter().enumerate() {
+        if !c.palette.is_empty() && !c.palette.iter().any(|&s| is_piston(s)) {
+            continue;
+        }
+        let sy = i32::try_from(i).unwrap_or(0).saturating_mul(16);
+        for index in 0..ENTRIES {
+            let Some(facing) = crate::blockentity::piston_facing(c.get(index)) else {
+                continue;
+            };
+            let idx = i32::try_from(index).unwrap_or(0);
+            let (lx, ly, lz) = (idx & 15, sy.wrapping_add(idx >> 8), (idx >> 4) & 15);
+            let [dx, dy, dz] = crate::blockentity::direction_step(facing);
+            for k in 1..=13 {
+                let (x, y, z) = (
+                    lx.wrapping_add(dx.wrapping_mul(k)),
+                    ly.wrapping_add(dy.wrapping_mul(k)),
+                    lz.wrapping_add(dz.wrapping_mul(k)),
+                );
+                let Some(state) = state_at(x, y, z) else {
+                    break;
+                };
+                out.push((
+                    [
+                        cx.wrapping_mul(16).wrapping_add(x),
+                        base_y.wrapping_add(y),
+                        cz.wrapping_mul(16).wrapping_add(z),
+                    ],
+                    state,
+                ));
+            }
         }
     }
     out
@@ -669,7 +728,7 @@ mod tests {
         let java = chunk(&sections);
         let table = BiomeTable::new(&["minecraft:plains".to_owned()]);
         let cache = ChunkCache::new(16);
-        let (out, _, _) =
+        let (out, _, _, _) =
             translate(Version::latest(), 3, -2, &java, layout, &table, 0, &cache).unwrap();
         let mut r = Reader::new(&out);
         assert_eq!(

@@ -250,8 +250,9 @@ fn run(
     radius: i32,
     tick: Duration,
     wake: Option<&mpsc::Receiver<()>>,
-) -> (Duration, Duration) {
+) -> (Duration, Duration, f64) {
     let start = Instant::now();
+    let cpu_start = cpu_ms();
     // One ticket reaches at most 32 chunks; larger areas get a ticket per chunk, as a
     // pregenerator does.
     let mut tickets = Vec::new();
@@ -265,12 +266,14 @@ fn run(
         }
     }
     let mut first = None;
+    let mut first_cpu = 0.0;
     let total = (2 * radius + 1).pow(2) as usize;
     loop {
         let tick_start = Instant::now();
         chunks.tick();
         if first.is_none() && chunks.chunk(ChunkPos::new(0, 0)).is_some() {
             first = Some(start.elapsed());
+            first_cpu = cpu_ms() - cpu_start;
         }
         let mut full = 0;
         for z in -radius..=radius {
@@ -279,7 +282,7 @@ fn run(
             }
         }
         if full == total {
-            return (first.unwrap_or_default(), start.elapsed());
+            return (first.unwrap_or_default(), start.elapsed(), first_cpu);
         }
         let deadline = tick_start + tick;
         match wake {
@@ -304,7 +307,7 @@ fn report(
     a: &Args,
     chunks: &Chunks,
     timings: &Timings,
-    (first, total): (Duration, Duration),
+    (first, total, first_cpu): (Duration, Duration, f64),
     cpu: f64,
 ) {
     let full = (2 * a.radius + 1).pow(2) as f64;
@@ -320,7 +323,7 @@ fn report(
         .collect();
     println!(
         "{{\"phase\":\"{phase}\",\"radius\":{},\"threads\":{},\"tick_ms\":{},\"full_chunks\":{full},\
-         \"loaded_chunks\":{},\"first_ms\":{:.0},\"wall_ms\":{:.0},\"full_per_s\":{:.1},\
+         \"loaded_chunks\":{},\"first_ms\":{:.0},\"first_cpu_ms\":{first_cpu:.0},\"wall_ms\":{:.0},\"full_per_s\":{:.1},\
          \"process_cpu_ms\":{cpu:.0},\"rss_mib\":{},\"peak_rss_mib\":{},\"stages\":{{{}}}}}",
         a.radius,
         a.threads,

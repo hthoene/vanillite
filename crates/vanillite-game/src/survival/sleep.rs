@@ -306,6 +306,7 @@ fn free_at(level: &Level, pos: BlockPos) -> bool {
     }
     let full = state.has(vanillite_data::block::flags::COLLISION_FULL_BLOCK);
     !(full
+        && !crate::survival::blocks::never_suffocating(block)
         && crate::player::play::game_data()
             .is_none_or(|d| d.block_in_tag(block.0, "minecraft:causes_suffocation")))
 }

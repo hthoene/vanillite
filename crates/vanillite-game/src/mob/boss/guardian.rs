@@ -813,7 +813,7 @@ pub fn travel(t: &mut Tick<'_, '_>, input: Vec3) -> bool {
     }
     let mut v = t.velocity() * 0.9;
     if !state(t).moving && t.mob_ref().target.is_none() {
-        v.y -= 0.005;
+        v = v + Vec3::new(0.0, -0.005, 0.0);
     }
     t.set_velocity(v);
     true

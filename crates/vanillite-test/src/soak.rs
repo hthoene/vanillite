@@ -74,12 +74,110 @@ pub struct Report {
     /// Time of the Vanillite run and the ticks it ran.
     pub vanillite: Duration,
     pub ran: u32,
+    /// What changed in the region during Vanillite's run (up to the first divergence).
+    pub activity: Activity,
+}
+
+/// What changes in the region from frame to frame: a run without any of it is idle, and its
+/// "same as Vanilla" says little.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Activity {
+    /// Frames compared with the one before.
+    pub ticks: u32,
+    /// Blocks whose state changed.
+    pub blocks: u64,
+    /// Block entities whose data changed, came or went.
+    pub block_entities: u64,
+    /// Entities that came (per type, the rise of its count).
+    pub spawns: u64,
+    /// Entities that went.
+    pub deaths: u64,
+    /// Item entities that came.
+    pub items: u64,
+}
+
+impl Activity {
+    /// Whether nothing changed but entities moving.
+    pub fn idle(&self) -> bool {
+        self.blocks == 0 && self.block_entities == 0 && self.spawns == 0 && self.deaths == 0
+    }
+
+    /// The counts per 100 ticks.
+    pub fn per_100(&self) -> String {
+        let rate = |n: u64| n as f64 * 100.0 / f64::from(self.ticks.max(1));
+        format!(
+            "{:.1} blocks, {:.1} block entities, +{:.1}/-{:.1} entities, {:.1} items",
+            rate(self.blocks),
+            rate(self.block_entities),
+            rate(self.spawns),
+            rate(self.deaths),
+            rate(self.items)
+        )
+    }
+}
+
+type LastFrame = (
+    std::sync::Arc<Vec<u32>>,
+    std::collections::BTreeMap<String, u64>,
+    Vec<String>,
+);
+
+/// Counts the [`Activity`] of a stream of frames.
+#[derive(Default)]
+struct ActivityMeter {
+    activity: Activity,
+    /// The last frame's blocks, entities per type and block entities.
+    last: Option<LastFrame>,
+}
+
+impl ActivityMeter {
+    fn frame(&mut self, frame: &Frame) {
+        let mut kinds = std::collections::BTreeMap::new();
+        for e in &frame.entities {
+            *kinds.entry(e.kind.clone()).or_insert(0u64) += 1;
+        }
+        if let Some((blocks, last_kinds, block_entities)) = &self.last {
+            let a = &mut self.activity;
+            a.ticks += 1;
+            a.blocks += blocks
+                .iter()
+                .zip(frame.blocks.iter())
+                .filter(|(x, y)| x != y)
+                .count() as u64;
+            // Both lists are sorted: the entries only on one side.
+            let (mut i, mut j) = (0, 0);
+            let (old, new) = (block_entities, &frame.block_entities);
+            while i < old.len() || j < new.len() {
+                match (old.get(i), new.get(j)) {
+                    (Some(x), Some(y)) if x == y => (i, j) = (i + 1, j + 1),
+                    (Some(x), Some(y)) if x < y => {
+                        (i, a.block_entities) = (i + 1, a.block_entities + 1)
+                    }
+                    (Some(_), None) => (i, a.block_entities) = (i + 1, a.block_entities + 1),
+                    _ => (j, a.block_entities) = (j + 1, a.block_entities + 1),
+                }
+            }
+            for (kind, n) in &kinds {
+                let before = last_kinds.get(kind).copied().unwrap_or(0);
+                let came = n.saturating_sub(before);
+                a.spawns += came;
+                if kind == "minecraft:item" {
+                    a.items += came;
+                }
+            }
+            for (kind, before) in last_kinds {
+                a.deaths += before.saturating_sub(kinds.get(kind).copied().unwrap_or(0));
+            }
+        }
+        self.last = Some((frame.blocks.clone(), kinds, frame.block_entities.clone()));
+    }
 }
 
 impl Report {
     /// One row of the summary table.
     pub fn row(&self) -> String {
         let result = match &self.verdict {
+            Verdict::Same if self.activity.idle() => "inactive (same as Vanilla)".to_owned(),
             Verdict::Same => "same as Vanilla".to_owned(),
             Verdict::Diverges { tick, known } => format!(
                 "{}diverges at tick {tick} (day {}, +{})",
@@ -92,9 +190,10 @@ impl Report {
         };
         let tps = self.ran as f64 / self.vanillite.as_secs_f64().max(1e-3);
         format!(
-            "| {} | {} | {result} | {} | {:.0} s ({tps:.0} ticks/s) |",
+            "| {} | {} | {result} | {} | {} | {:.0} s ({tps:.0} ticks/s) |",
             self.name,
             self.ticks,
+            self.activity.per_100(),
             self.vanilla.map_or_else(
                 || "cached".to_owned(),
                 |d| format!("{:.1} min", d.as_secs_f64() / 60.0)
@@ -134,6 +233,7 @@ pub fn run(
         vanilla: None,
         vanillite: Duration::ZERO,
         ran: 0,
+        activity: Activity::default(),
     };
     let dir = out.join(&scenario.name);
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -192,6 +292,7 @@ fn soak(
     let mut diverged: Option<Trace> = None;
     let mut stopped = false;
     let mut ran = 0;
+    let mut meter = ActivityMeter::default();
     let factory = crate::server_world::factory;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         runner::stream(
@@ -200,6 +301,7 @@ fn soak(
             Execution::Parallel,
             &mut |trace, frame| {
                 ran = frame.tick;
+                meter.frame(&frame);
                 if sums.get(frame.tick as usize) != Some(&trace.checksum(&frame, &mut names)) {
                     diverged = Some(one_frame(trace, frame));
                     return Ok(false);
@@ -214,6 +316,7 @@ fn soak(
     }));
     report.vanillite = started.elapsed();
     report.ran = ran;
+    report.activity = meter.activity;
     match result {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => return Err(format!("Vanillite at tick {ran}: {e}")),
@@ -347,6 +450,39 @@ fn record_golden(
     deadline: Option<Instant>,
 ) -> Result<Option<Vec<u64>>, String> {
     std::fs::create_dir_all(snapshots).map_err(|e| format!("{}: {e}", snapshots.display()))?;
+    // A recorder the system kills (out of memory while other runs take the host's memory)
+    // records once more before the scenario counts as failed.
+    match record_sums(scenario, file, java, dir, snapshots, deadline) {
+        Err(e) if e.contains("SIGKILL") => {
+            eprintln!(
+                "{}: the Vanilla recorder was killed, recording again",
+                scenario.name
+            );
+            record_sums(scenario, file, java, dir, snapshots, deadline)
+        }
+        r => r,
+    }
+    .and_then(|sums| {
+        let Some(sums) = sums else {
+            return Ok(None);
+        };
+        let bytes: Vec<u8> = sums.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let tmp = sums_path.with_extension("sums.tmp");
+        std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, sums_path).map_err(|e| format!("{}: {e}", sums_path.display()))?;
+        Ok(Some(sums))
+    })
+}
+
+/// One recording of [`record_golden`]: the checksums, `None` if the deadline ended it.
+fn record_sums(
+    scenario: &Scenario,
+    file: &Path,
+    java: &Java,
+    dir: &Path,
+    snapshots: &Path,
+    deadline: Option<Instant>,
+) -> Result<Option<Vec<u64>>, String> {
     let mut sums = Vec::with_capacity(scenario.ticks as usize + 1);
     let mut names = Vec::new();
     let mut stopped = false;
@@ -382,10 +518,6 @@ fn record_golden(
             scenario.ticks + 1
         ));
     }
-    let bytes: Vec<u8> = sums.iter().flat_map(|s| s.to_le_bytes()).collect();
-    let tmp = sums_path.with_extension("sums.tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, sums_path).map_err(|e| format!("{}: {e}", sums_path.display()))?;
     Ok(Some(sums))
 }
 

@@ -343,6 +343,11 @@ public final class ScenarioRecorder {
         // Without game ticks: the snapshot's scheduled ticks keep their delays from game time
         // 0, like in Vanillite's new level (a warm-up would move them later).
         Area loading = new Area(min, max);
+        if (snapshotEntities) {
+          // The entities load at game time 0, like in Vanillite's new level.
+          server.getWorldData().overworldData().setGameTime(0);
+          ParityHooks.seedLoads();
+        }
         for (int cx = loading.minX; cx <= loading.maxX; cx++) {
           for (int cz = loading.minZ; cz <= loading.maxZ; cz++) {
             level.setChunkForced(cx, cz, true);
@@ -1094,7 +1099,7 @@ public final class ScenarioRecorder {
 
     /**
      * The canonical text of a tag, the same as {@code trace::canonical_nbt} on the Rust side:
-     * compound keys sorted, typed numbers ({@code 1b 2s 3 4L}), floats and doubles as
+     * compound keys sorted, {@code attributes} lists sorted by {@code id}, typed numbers ({@code 1b 2s 3 4L}), floats and doubles as
      * {@code 1.0f}/{@code 1.0d} when integral and small, else as their bit pattern
      * ({@code f:3fc00000}, {@code d:...}), strings quoted with {@code \\} and {@code "}
      * escaped.
@@ -1109,7 +1114,17 @@ public final class ScenarioRecorder {
             sb.append(i == 0 ? "" : ",");
             quote(sb, keys.get(i));
             sb.append(':');
-            canonical(sb, c.get(keys.get(i)));
+            net.minecraft.nbt.Tag v = c.get(keys.get(i));
+            if (keys.get(i).equals("attributes") && v instanceof net.minecraft.nbt.ListTag l) {
+              // AttributeMap.pack lists the instances in identity-hash order: sorted by id.
+              List<net.minecraft.nbt.Tag> sorted = new ArrayList<>(l);
+              sorted.sort(java.util.Comparator.comparing(t -> t instanceof net.minecraft.nbt.CompoundTag ct
+                  ? ct.getStringOr("id", "") : ""));
+              net.minecraft.nbt.ListTag copy = new net.minecraft.nbt.ListTag();
+              copy.addAll(sorted);
+              v = copy;
+            }
+            canonical(sb, v);
           }
           sb.append('}');
         }

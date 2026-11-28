@@ -482,7 +482,17 @@ pub fn bucket_or_feed(ix: &mut Interact<'_, '_>) -> Interaction {
                 seed,
             );
         }
-        let Some(stack) = ix.ents.mob(ix.target).map(|m| bucket_stack(m, bucket)) else {
+        let flags = ix
+            .ents
+            .store
+            .get(ix.target)
+            .map(|e| e.flags())
+            .unwrap_or_default();
+        let Some(stack) = ix
+            .ents
+            .mob(ix.target)
+            .map(|m| bucket_stack(m, flags, bucket))
+        else {
             return Interaction::Pass;
         };
         crate::mob::animal::filled_bucket(ix.ents, ix.player, &stack);
@@ -501,8 +511,12 @@ pub fn bucket_or_feed(ix: &mut Interact<'_, '_>) -> Interaction {
 
 /// `saveToBucketTag` of axolotls (with `axolotl/variant` and the hunting cooldown) and
 /// tadpoles: the default bucket data, their age and age lock.
-fn bucket_stack(m: &MobData, item: &str) -> crate::item::ItemStack {
-    let (mut stack, mut data) = crate::mob::fam::bucket_default(m, item);
+fn bucket_stack(
+    m: &MobData,
+    flags: vanillite_world::entity::EntityFlags,
+    item: &str,
+) -> crate::item::ItemStack {
+    let (mut stack, mut data) = crate::mob::fam::bucket_default(m, flags, item);
     let s = state(m);
     if m.kind == crate::mob::Kind::Axolotl {
         if let Some(id) =

@@ -157,10 +157,10 @@ impl Scoreboard {
             out.insert("Objectives", List(objectives));
         }
         let mut scores = Vec::new();
-        for holder in &self.holder_order {
+        for holder in self.holder_order.iter_ascending() {
             for (objective, score) in self.scores.get(holder).into_iter().flatten() {
                 let mut c = Compound::new()
-                    .with("Name", holder.as_str())
+                    .with("Name", holder)
                     .with("Objective", objective.as_str());
                 pack_score(score, &mut c);
                 scores.push(Tag::Compound(c.in_java_hash_order()));

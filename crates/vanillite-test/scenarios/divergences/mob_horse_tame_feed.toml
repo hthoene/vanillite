@@ -1,0 +1,3 @@
+tick = 2
+cause = "mounting a horse by interacting: doPlayerRide copies the horse's pitch (-2.86) to the player, Vanilla's recorded player keeps pitch 0 (source not found); the riding player's body yaw then differs (Vanilla takes the horse's body yaw in positionRider and clamps it to 50 degrees from the head)"
+owner = "game-systems-developer #281"

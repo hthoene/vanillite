@@ -28,6 +28,16 @@ fn fam(g: Goal) -> MobGoal {
 }
 
 /// `BeeBecomeAngryTargetGoal.beeCanTarget`: angry and not stung.
+/// `BeePollinateGoal.isPollinating`.
+pub(crate) fn is_pollinating(m: &MobData) -> bool {
+    st(m).pollinating
+}
+
+/// `BeeAttackGoal`'s condition on top of the melee attack.
+pub(crate) fn can_attack(t: &crate::mob::Tick<'_, '_>) -> bool {
+    bee_can_target(t)
+}
+
 fn bee_can_target(t: &crate::mob::Tick<'_, '_>) -> bool {
     let m = t.mob_ref();
     common::is_angry(m, t.env.game_time) && st(m).bee_flags & FLAG_HAS_STUNG == 0

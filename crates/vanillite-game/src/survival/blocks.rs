@@ -10,6 +10,9 @@ use vanillite_worldgen::behaviour::StateExt;
 pub trait BlockAccess {
     /// The block state at `pos`.
     fn block_state(&self, pos: BlockPos) -> Option<BlockState>;
+    /// The collision boxes (relative to `pos`) of the moving piston at `pos`, from its block
+    /// entity; none without one or without access to block entities.
+    fn moving_piston_boxes(&self, _pos: BlockPos, _out: &mut Vec<[f64; 6]>) {}
     /// [`BlockAccess::block_state`] of every position in the box from `min` to `max`
     /// (inclusive) in X, then Z, then Y order (Y varies fastest).
     fn block_states_in(&self, min: BlockPos, max: BlockPos, f: &mut dyn FnMut(Option<BlockState>)) {
@@ -50,6 +53,20 @@ mod special {
     /// Blocks whose `isSuffocating` is `always`.
     pub const ALWAYS_SUFFOCATING: [BlockId; 4] =
         [ids::FARMLAND, ids::SOUL_SAND, ids::DIRT_PATH, ids::MUD];
+}
+
+/// Blocks whose `isSuffocating` is `never` though they are in `#causes_suffocation` with a
+/// full cube: glass (plain, stained and tinted), leaves, mangrove roots, copper grates and the
+/// moving piston.
+pub fn never_suffocating(block: BlockId) -> bool {
+    let name = block.info().name;
+    let name = name.strip_prefix("minecraft:").unwrap_or(name);
+    matches!(
+        name,
+        "glass" | "tinted_glass" | "mangrove_roots" | "moving_piston"
+    ) || name.ends_with("_stained_glass")
+        || name.ends_with("_leaves")
+        || name.ends_with("copper_grate")
 }
 
 /// `Block.getBounceRestitution`: slime blocks, beds and shelf mushrooms bounce entities that
@@ -176,7 +193,9 @@ impl BlockFacts {
         {
             return state.value("extended") == Some("false");
         }
-        Self::has(&self.causes_suffocation, block) && state.has(flags::COLLISION_FULL_BLOCK)
+        Self::has(&self.causes_suffocation, block)
+            && state.has(flags::COLLISION_FULL_BLOCK)
+            && !never_suffocating(block)
     }
 
     /// `Block.fallOn` of a block.

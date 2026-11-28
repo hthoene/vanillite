@@ -84,6 +84,10 @@ func (s *session) observe(pk packet.Packet) {
 			}
 		case *packet.AddActor:
 			fmt.Printf("    AddActor %s %d\n", pk.EntityType, pk.EntityRuntimeID)
+		case *packet.BlockActorData:
+			fmt.Printf("    BlockActorData %v %v\n", pk.Position, pk.NBTData)
+		case *packet.UpdateBlock:
+			fmt.Printf("    UpdateBlock %v %d layer %d\n", pk.Position, pk.NewBlockRuntimeID, pk.Layer)
 		case *packet.ActorEvent:
 			fmt.Printf("    ActorEvent %d %d\n", pk.EntityRuntimeID, pk.EventType)
 		}
@@ -498,8 +502,50 @@ func (s *session) run(idle time.Duration) {
 			p := s.pos
 			s.command(fmt.Sprintf("worldborder center %d %d", int(p[0])+3, int(p[2])))
 			ok := s.commandThen("worldborder set 8", is(func(e *packet.LevelEvent) bool { return e.EventType == packet.LevelEventParticleDenyBlock }))
+			// Walking through the border: the client is stopped at it (half a player inside;
+			// the command centres the border on the block).
+			edge := float32(int(p[0])+3) + 0.5 + 4 - 0.3
+			s.pos[0] = edge + 2
+			s.input(nil)
+			ok = ok && s.wait("border stop", 5*time.Second, is(func(m *packet.MovePlayer) bool {
+				return m.EntityRuntimeID == s.data.EntityRuntimeID && m.Position[0] <= edge+0.01
+			}))
 			s.command("worldborder set 1000")
 			return ok
+		}},
+		{"piston", func() bool {
+			f := s.feet()
+			base := protocol.BlockPos{f[0] + 3, f[1], f[2] + 3}
+			front := protocol.BlockPos{base[0] + 1, base[1], base[2]}
+			s.command(fmt.Sprintf("fill %d %d %d %d %d %d air", base[0], base[1], base[2], base[0]+3, base[1]+1, base[2]))
+			s.command(fmt.Sprintf("setblock %d %d %d sticky_piston[facing=east]", base[0], base[1], base[2]))
+			if !s.commandThen(fmt.Sprintf("setblock %d %d %d oak_planks", front[0], front[1], front[2]), blockAt(front)) {
+				return false
+			}
+			s.idle(200 * time.Millisecond)
+			actor := func(id string, f func(map[string]any) bool) func(packet.Packet) bool {
+				return is(func(a *packet.BlockActorData) bool { return a.NBTData["id"] == id && f(a.NBTData) })
+			}
+			arm := func(state uint8) func(packet.Packet) bool {
+				return actor("PistonArm", func(n map[string]any) bool { return n["State"] == state })
+			}
+			moving := func(expanding uint8) func(packet.Packet) bool {
+				return actor("MovingBlock", func(n map[string]any) bool {
+					b, _ := n["movingBlock"].(map[string]any)
+					return n["expanding"] == expanding && b["name"] == "minecraft:oak_planks"
+				})
+			}
+			// Powered from above: the planks move (sent before the arm) and the arm extends.
+			s.command(fmt.Sprintf("setblock %d %d %d redstone_block", base[0], base[1]+1, base[2]))
+			if !s.wait("planks pushed", 5*time.Second, moving(1)) || !s.wait("piston extending", 5*time.Second, arm(1)) ||
+				!s.wait("piston extended", 5*time.Second, arm(2)) {
+				return false
+			}
+			s.idle(300 * time.Millisecond)
+			// Unpowered: the sticky piston pulls them back.
+			s.command(fmt.Sprintf("setblock %d %d %d air", base[0], base[1]+1, base[2]))
+			return s.wait("planks pulled", 5*time.Second, moving(0)) && s.wait("piston retracting", 5*time.Second, arm(3)) &&
+				s.wait("piston retracted", 5*time.Second, arm(0))
 		}},
 		{"player head", func() bool {
 			f := s.feet()

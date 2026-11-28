@@ -28,6 +28,9 @@ data/<palette version>/:
 - pots.bin: u32 count, then per potted plant: u16 Java block state id of the pot, u16 length and
   the network NBT payload (a compound with name, states and version) of the plant's Bedrock block
   state.
+- states.bin: zlib-compressed: u32 count, then per Bedrock runtime id: u16 length and the network
+  NBT payload of its block state (a compound with name, states and version), for the
+  `movingBlock` of piston-moved blocks.
 - frames.bin: 24 u16 Bedrock runtime ids of `minecraft:frame` then `minecraft:glow_frame`, per
   `item_frame_map_bit` (0, 1) and `facing_direction` (0-5): Java item frames are blocks there.
 Shared by all releases, in data/:
@@ -46,6 +49,7 @@ import os
 import re
 import struct
 import sys
+import zlib
 
 # ---- Java (big-endian) NBT reader -------------------------------------------------------------
 
@@ -421,6 +425,12 @@ def write_release(root, mappings, resources, version, fallbacks, item_fallbacks,
     print(f'{version} blocks: {len(table)} Java states, {len(runtime)} Bedrock states, '
           f'{fell_back} fallbacks, {missing} unmapped')
     write_frames(out_dir, lookup)
+    out = bytearray(struct.pack('<I', len(palette[2])))
+    for entry in palette[2]:
+        state = ('c', [(k, compound_get(entry, k)) for k in ('name', 'states', 'version')])
+        payload = net_payload(state)
+        out += struct.pack('<H', len(payload)) + payload
+    open(os.path.join(out_dir, 'states.bin'), 'wb').write(zlib.compress(bytes(out), 9))
     # Block properties of start_game (data-driven vanilla blocks; none before 26.50).
     path = os.path.join(resources, f'data_driven_blocks.{version}.nbt')
     ddb = read_gz_nbt(path) if os.path.exists(path) else ('c', [])

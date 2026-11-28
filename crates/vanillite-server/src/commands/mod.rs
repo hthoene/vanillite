@@ -630,7 +630,7 @@ pub fn run_command_on_level(
     let parsed = global
         .commands()
         .parse_command(line.trim().trim_start_matches('/'), &source)
-        .map_err(|e| error_message(&e).plain())?;
+        .map_err(|e| format!("`{line}`: {}", error_message(&e).plain()))?;
     let mut env = Env {
         level,
         global,
@@ -775,6 +775,29 @@ pub(crate) fn run_collected(
 }
 
 fn run_server_command(world: &mut ServerWorld, global: &Global, line: &str, kind: SourceKind) {
+    let pos = global.systems.spawn();
+    run_server_command_at(world, global, line, kind, pos);
+}
+
+/// A server command as the console at `pos` of the world (parity scenarios run theirs at the
+/// origin, like the Vanilla recorder).
+#[cfg(feature = "test-support")]
+pub(crate) fn run_console_command_at(
+    world: &mut ServerWorld,
+    global: &Global,
+    line: &str,
+    pos: vanillite_base::Vec3,
+) {
+    run_server_command_at(world, global, line, SourceKind::Console, pos);
+}
+
+fn run_server_command_at(
+    world: &mut ServerWorld,
+    global: &Global,
+    line: &str,
+    kind: SourceKind,
+    pos: vanillite_base::Vec3,
+) {
     let command = line.trim().trim_start_matches('/');
     if command.is_empty() {
         return;
@@ -782,15 +805,7 @@ fn run_server_command(world: &mut ServerWorld, global: &Global, line: &str, kind
     let Some(arc) = global.arc() else {
         return;
     };
-    let source = CommandSource::new(
-        arc,
-        kind,
-        4,
-        world.id(),
-        global.systems.spawn(),
-        (0.0, 0.0),
-        None,
-    );
+    let source = CommandSource::new(arc, kind, 4, world.id(), pos, (0.0, 0.0), None);
     let id = world.id();
     let mut env = Env {
         level: world.level_mut(),
@@ -807,25 +822,20 @@ fn run_server_command(world: &mut ServerWorld, global: &Global, line: &str, kind
             run_line(&mut env, line, source);
         }
         Err(e) => {
-            let context = e.context().map(|context| {
-                format!(
+            if matches!(source.kind, SourceKind::Console | SourceKind::Rcon(_)) {
+                // `Commands.performCommand`: both lines as failures of the source (the console
+                // logs them translated, like `MinecraftServer.sendSystemMessage`).
+                send_error(&source, global, &e, command);
+                return;
+            }
+            log::warn!("{}", global.console_text(&error_message(&e)));
+            if let Some(context) = e.context() {
+                log::warn!(
                     "{}{}{}<--[HERE]",
                     if context.ellipsis { "..." } else { "" },
                     context.before,
                     context.after
-                )
-            });
-            if matches!(source.kind, SourceKind::Rcon(_)) {
-                // `Commands.performCommand`: both lines as failures of the source.
-                source.send_failure(global, error_message(&e));
-                if let Some(context) = context {
-                    source.send_failure(global, vanillite_protocol::text::Component::text(context));
-                }
-                return;
-            }
-            log::warn!("{}", error_message(&e).plain());
-            if let Some(context) = context {
-                log::warn!("{context}");
+                );
             }
         }
     }

@@ -703,7 +703,7 @@ fn block_entity_diff(t: u32, expected: &[String], actual: &[String], out: &mut V
 }
 
 /// The canonical text of a tag, the same as `ScenarioRecorder.Trace.canonical` on the Java
-/// side: compound keys sorted, typed numbers (`1b 2s 3 4L`), floats and doubles as `1.0f` /
+/// side: compound keys sorted, `attributes` lists sorted by `id`, typed numbers (`1b 2s 3 4L`), floats and doubles as `1.0f` /
 /// `1.0d` when integral and below 10^6, else as their bit pattern (`f:3fc00000`, `d:...`),
 /// strings quoted with `\` and `"` escaped.
 pub fn canonical_nbt(out: &mut String, tag: &vanillite_nbt::Tag) {
@@ -736,7 +736,23 @@ pub fn canonical_nbt(out: &mut String, tag: &vanillite_nbt::Tag) {
                 }
                 quote(out, k);
                 out.push(':');
-                canonical_nbt(out, v);
+                match v {
+                    // `AttributeMap.pack` lists the instances in hash order (identity hashes):
+                    // sorted by id on both sides.
+                    Tag::List(l) if k == "attributes" => {
+                        let id = |t: &Tag| match t {
+                            Tag::Compound(c) => match c.get("id") {
+                                Some(Tag::String(s)) => s.clone(),
+                                _ => String::new(),
+                            },
+                            _ => String::new(),
+                        };
+                        let mut sorted = l.0.clone();
+                        sorted.sort_by_key(id);
+                        canonical_nbt(out, &Tag::List(vanillite_nbt::List(sorted)));
+                    }
+                    _ => canonical_nbt(out, v),
+                }
             }
             out.push('}');
         }

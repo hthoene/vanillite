@@ -46,10 +46,13 @@ pub(crate) struct Params<'a> {
     pub(crate) this_entity: Option<EntityId>,
     pub(crate) tool: Option<&'a ItemStack>,
     pub(crate) entity: Option<&'a EntityLootContext<'a>>,
+    /// The loot table's `random_sequence`: its random instead of the level's
+    /// (`LootContext.Builder.create(randomSequence)`).
+    pub(crate) sequence: Option<&'a str>,
 }
 
 /// Runs `f` with a loot context of the server's data at the command's level and the level's
-/// random (`LootParams` without a seed).
+/// random (`LootParams` without a seed), or the random of the table's sequence.
 pub(crate) fn with_context<R>(
     env: &mut Env<'_>,
     params: Params<'_>,
@@ -71,6 +74,10 @@ pub(crate) fn with_context<R>(
             .tool
             .map_or(0, |tool| data.enchantment_level(tool, name))
     };
+    let global = env.global;
+    // Taken out while the level's random is borrowed for `f`.
+    let entities = std::mem::take(&mut level.entities);
+    let score = |id: EntityId, objective: &str| score_of(global, &entities, id, objective);
     let ctx = LootContext {
         origin: params.origin,
         this_entity: params.this_entity,
@@ -81,9 +88,16 @@ pub(crate) fn with_context<R>(
         holder_set: &holder_set,
         biome: Some(&biome_matches),
         entity: params.entity,
+        weather: Some((level.is_raining(), level.is_thundering())),
+        score: Some(&score),
         ..LootContext::empty()
     };
-    f(&data, &ctx, level.random())
+    let result = match params.sequence {
+        Some(key) => level.with_random_sequence(key, |r| f(&data, &ctx, r)),
+        None => f(&data, &ctx, level.random()),
+    };
+    level.entities = entities;
+    result
 }
 
 /// `ItemCommands.applyModifier`: the item modifier of `modifier` on a copy of `stack` in the
@@ -117,13 +131,37 @@ pub(crate) fn apply_modifier(
     Ok(out)
 }
 
+/// `EntityHasScoreCondition`: the score of the entity (a player by name, any other entity
+/// by UUID) in `objective`.
+fn score_of(
+    global: &crate::global::Global,
+    entities: &vanillite_game::entities::Entities,
+    id: EntityId,
+    objective: &str,
+) -> Option<i32> {
+    let holder = match entities.player(id) {
+        Some(p) => p.profile.name.clone(),
+        None => vanillite_protocol::types::Uuid(entities.store.get(id)?.uuid()).to_string(),
+    };
+    global
+        .systems
+        .scoreboard()
+        .score(&holder, objective)
+        .map(|s| s.value)
+}
+
 /// `LootItemCondition.test` of a predicate argument (`ResourceOrIdArgument.lootPredicate`)
-/// with `this` as `THIS_ENTITY` at `origin` (`LootContextParamSets.COMMAND` and `SELECTOR`).
+/// with `this` as `THIS_ENTITY` at `origin` (`LootContextParamSets.COMMAND` and `SELECTOR`);
+/// `weather` is the level's (raining, thundering); `chunks` are the level's blocks for
+/// `location_check` (without them a block predicate holds).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn test_predicate(
     entities: &vanillite_game::entities::Entities,
+    chunks: Option<&vanillite_world::chunks::Chunks>,
     global: &crate::global::Global,
     this: Option<EntityId>,
     origin: Vec3,
+    weather: (bool, bool),
     predicate: &(Option<String>, Option<serde_json::Value>),
     rng: &mut dyn LootRandom,
 ) -> Result<bool, String> {
@@ -143,13 +181,25 @@ pub(crate) fn test_predicate(
         });
     let item_in_tag = |item: u16, tag: &str| data.item_in_tag(item, tag);
     let holder_set = |registry: &str, entry: &str| data.holder_set(registry, entry);
+    let score = |id: EntityId, objective: &str| score_of(global, entities, id, objective);
+    // `LocationCheck`: the block at the origin moved by the offset, if loaded.
+    let at = BlockPos::containing(origin.x, origin.y, origin.z);
+    let neighbour = |dx: i32, dy: i32, dz: i32| {
+        chunks
+            .and_then(|c| c.block(at.offset(dx, dy, dz)))
+            .map(vanillite_data::block::BlockState)
+    };
+    let neighbour: &dyn Fn(i32, i32, i32) -> Option<vanillite_data::block::BlockState> = &neighbour;
     let ctx = LootContext {
         origin: Some(origin),
         this_entity: this,
+        neighbour: chunks.map(|_| neighbour),
         item_in_tag: &item_in_tag,
         enchanting: Some(&data.enchanting),
         holder_set: &holder_set,
         entity: entity.as_ref(),
+        weather: Some(weather),
+        score: Some(&score),
         ..LootContext::empty()
     };
     data.loot
@@ -209,6 +259,17 @@ fn roll_arg(
     params: Params<'_>,
 ) -> Result<Vec<ItemStack>, CommandError> {
     let (id, inline) = resource_or_inline(args, "loot_table")?;
+    let sequence = id.as_deref().and_then(|id| {
+        env.global
+            .game()
+            .loot
+            .random_sequence(id)
+            .map(str::to_owned)
+    });
+    let params = Params {
+        sequence: sequence.as_deref(),
+        ..params
+    };
     let mut out = Vec::new();
     let result = with_context(env, params, |data, ctx, rng| match (&id, &inline) {
         (Some(id), _) => {
@@ -291,7 +352,12 @@ fn drops(
                 block_entity: Some(&components),
             };
             let mut out = Vec::new();
-            data.loot.block_drops(&ctx, env.level.random(), &mut out);
+            match data.loot.block_random_sequence(state) {
+                Some(key) => env
+                    .level
+                    .with_random_sequence(key, |r| data.loot.block_drops(&ctx, r, &mut out)),
+                None => data.loot.block_drops(&ctx, env.level.random(), &mut out),
+            }
             Ok((out, Some(table)))
         }
         LootSource::Kill => {
@@ -338,10 +404,12 @@ fn drops(
                 tags: &*data,
                 attacker_enchantment_level: &no_level,
             };
+            let sequence = data.loot.random_sequence(&table).map(str::to_owned);
             let params = Params {
                 origin: Some(source.pos),
                 this_entity: Some(id),
                 entity: Some(&entity),
+                sequence: sequence.as_deref(),
                 ..Params::default()
             };
             let mut out = Vec::new();
@@ -414,7 +482,7 @@ fn output(
                             let infinite = p.game_mode == vanillite_config::GameMode::Creative;
                             let mut s = stack;
                             let added = p.inventory.add(None, &mut s, infinite);
-                            items::sync_inventory(&mut env.level.entities, id);
+                            items::send_inventory(&mut env.level.entities, id);
                             added
                         }
                         None => {
@@ -424,7 +492,7 @@ fn output(
                                         p.game_mode == vanillite_config::GameMode::Creative;
                                     let mut s = stack;
                                     p.inventory.add(None, &mut s, infinite);
-                                    items::sync_inventory(&mut level.entities, id);
+                                    items::send_inventory(&mut level.entities, id);
                                 }
                             });
                             true

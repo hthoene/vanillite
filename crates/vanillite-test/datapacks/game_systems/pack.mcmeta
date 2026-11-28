@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "Vanillite parity test: functions (load and tick tags, macros, return, recursion, schedule), predicates, item modifiers and loot tables",
+    "min_format": 121,
+    "max_format": 121
+  }
+}

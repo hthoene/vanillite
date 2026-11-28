@@ -1,0 +1,39 @@
+{
+  "description": "An item inside a block keeps its ground flag (#264): with noPhysics, Entity.move only adds the movement and leaves onGround as it was, so a sliding item that a block closes around keeps the ground friction and the -0.5 bounce while it is pushed out (moveTowardsClosestSpace).",
+  "tier": "fast",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      7,
+      -57,
+      4
+    ]
+  ],
+  "ticks": 12,
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:item 1.5 -60.0 2.5 {Item:{id:\"minecraft:stone\",count:1},PickupDelay:100,Motion:[0.3d,0.0d,0.0d]}"
+    },
+    {
+      "tick": 4,
+      "op": "fill",
+      "from": [
+        1,
+        -60,
+        2
+      ],
+      "to": [
+        6,
+        -60,
+        2
+      ],
+      "block": "minecraft:glass"
+    }
+  ]
+}

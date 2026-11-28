@@ -261,18 +261,11 @@ impl EffectHost for MobHost<'_, '_, '_> {
         self.t.mob_ref().tick_count
     }
     fn play_sound(&mut self, sound: &str) {
+        // `onEffectAdded`: the mob's own sound source (`getSoundSource`).
         let pos = self.t.pos();
         let seed = crate::survival::sound_seed();
-        play_sound(
-            self.t.env.out,
-            None,
-            pos,
-            sound,
-            SoundSource::Neutral,
-            1.0,
-            1.0,
-            seed,
-        );
+        let source = self.t.mob_ref().kind.sound_source();
+        play_sound(self.t.env.out, None, pos, sound, source, 1.0, 1.0, seed);
     }
 }
 
@@ -315,14 +308,21 @@ fn send_to_passengers(ents: &mut Entities, out: &mut Vec<Effect>, id: EntityId) 
         .copied()
         .filter(|&p| ents.player(p).is_some())
         .collect();
-    let Some(network_id) = ents.store.get(id).map(|e| e.network_id().0) else {
+    let Some((network_id, pos)) = ents.store.get(id).map(|e| (e.network_id().0, e.pos())) else {
         return;
     };
     let Some(m) = ents.mob_mut(id) else {
         return;
     };
+    let source = m.kind.sound_source();
     for event in m.effects.take_events() {
         let packet = match event {
+            // `onEffectAdded` of an effect added outside the mob's tick.
+            EffectEvent::Sound(sound) => {
+                let seed = crate::survival::sound_seed();
+                play_sound(out, None, pos, &sound, source, 1.0, 1.0, seed);
+                continue;
+            }
             EffectEvent::Update {
                 instance, blend, ..
             } => SharedPacket::of(&update_packet(network_id, &instance, blend)),
@@ -333,7 +333,6 @@ fn send_to_passengers(ents: &mut Entities, out: &mut Vec<Effect>, id: EntityId) 
                 entity_id: network_id,
                 effect: i32::from(effect.0),
             }),
-            _ => continue,
         };
         for &player in &riders {
             out.push(Effect::To {
@@ -431,7 +430,9 @@ pub fn sync_player(entity: &mut EntityMut<'_>, player: &mut PlayerData, env: &mu
                     });
                 }
                 EffectEvent::Sound(sound) => {
-                    let seed = env.random.next_long();
+                    // `Level.playSound`: the seed comes from `soundSeedGenerator`, not the
+                    // level random.
+                    let seed = crate::survival::sound_seed();
                     play_sound(
                         env.out,
                         None,
@@ -454,6 +455,11 @@ pub fn sync_player(entity: &mut EntityMut<'_>, player: &mut PlayerData, env: &mu
         return;
     }
     let dirty = fx.modifiers.take_dirty();
+    if dirty.contains(&Attribute::SCALE) {
+        let scale = super::attribute_map::scale_of(&fx.modifiers);
+        let pose = entity.as_ref().pose();
+        entity.set_dims(crate::player::scaled_dimensions(pose, scale));
+    }
     let s = &mut player.survival;
     for &a in &dirty {
         if a == Attribute::MAX_HEALTH {
@@ -498,6 +504,7 @@ fn push_attributes(
         .map(|&a| {
             let value = base
                 .and_then(|b| attr_field_ref(b, a))
+                .or_else(|| fx.modifiers.base(a))
                 .unwrap_or_else(|| a.base_of(kind));
             (a, value)
         })
@@ -559,6 +566,10 @@ pub fn player_equipment_update(
     let new = player_equipment_modifiers(player);
     let old = &player.survival.equipment_modifiers;
     let mut changed: Vec<Attribute> = Vec::new();
+    if full {
+        // The base values a command or plugin set (`getSyncableAttributes`).
+        changed.extend(player.survival.effects.modifiers.bases().map(|(a, _)| a));
+    }
     for m in old.iter().chain(new.iter()) {
         if changed.contains(&m.attribute) {
             continue;
@@ -571,10 +582,11 @@ pub fn player_equipment_update(
     }
     player.survival.equipment_modifiers = new;
     player.survival.equipment_dirty = false;
+    let own = &player.survival.effects.modifiers;
     let synced: Vec<(Attribute, f64)> = changed
         .iter()
         .filter(|a| a.syncable())
-        .map(|&a| (a, a.base_of(ids::PLAYER)))
+        .map(|&a| (a, own.base(a).unwrap_or_else(|| a.base_of(ids::PLAYER))))
         .collect();
     if synced.is_empty() {
         return None;
@@ -683,6 +695,13 @@ pub fn sync_mob(ents: &mut Entities, out: &mut Vec<Effect>, id: EntityId) {
     if m.health > 0.0 {
         entity.mark_data_dirty();
     }
+    // `onAttributeUpdated(SCALE)`: `refreshDimensions`.
+    if dirty.contains(&Attribute::SCALE) {
+        let dims = crate::mob::kinds::mob_dimensions(m);
+        if entity.as_ref().dims() != dims {
+            entity.set_dims(dims);
+        }
+    }
     push_attributes(&entity, &dirty, &m.effects, kind, Some(&base), out);
 }
 
@@ -724,14 +743,42 @@ pub fn mob_pairing_attributes(
     m: &crate::mob::MobData,
     given: &crate::mob::entity_nbt::NbtAttributes,
 ) -> Option<UpdateAttributes> {
+    let kind = m.kind.type_id();
     let synced: Vec<(Attribute, f64)> = given
         .0
         .iter()
         .filter(|a| a.attribute.syncable())
-        .filter_map(|a| Some((a.attribute, mob_attribute_base(m, a.attribute)?)))
+        .map(|a| {
+            let base = mob_attribute_base(m, a.attribute)
+                .or_else(|| m.effects.modifiers.base(a.attribute))
+                .unwrap_or_else(|| a.attribute.base_of(kind));
+            (a.attribute, base)
+        })
         .collect();
     (!synced.is_empty()).then(|| UpdateAttributes {
         body: attribute::encode_update(network_id, &synced, &m.effects.modifiers),
+    })
+}
+
+/// The `update_attributes` of the attributes a command or plugin changed on a player, for the
+/// players that start to see it (`ServerEntity.sendPairingData`).
+pub fn player_pairing_attributes(network_id: i32, p: &PlayerData) -> Option<UpdateAttributes> {
+    let own = &p.survival.effects.modifiers;
+    let synced: Vec<(Attribute, f64)> = p
+        .survival
+        .attributes
+        .0
+        .iter()
+        .filter(|a| a.attribute.syncable())
+        .map(|a| {
+            let base = own
+                .base(a.attribute)
+                .unwrap_or_else(|| a.attribute.base_of(ids::PLAYER));
+            (a.attribute, base)
+        })
+        .collect();
+    (!synced.is_empty()).then(|| UpdateAttributes {
+        body: attribute::encode_update(network_id, &synced, own),
     })
 }
 
@@ -827,6 +874,10 @@ impl EffectHost for BareMobHost<'_> {
     }
     fn tick_count(&self) -> i32 {
         self.m.tick_count
+    }
+    fn play_sound(&mut self, sound: &str) {
+        // Played with the mob's next tick ([`send_to_passengers`]).
+        self.m.effects.push_sound(sound);
     }
 }
 
@@ -1306,12 +1357,24 @@ pub fn on_hurt(
             f64::from(-sin * x + cos * z),
         );
         let y_rot = level_random.next_float() * 360.0;
+        let at = Vec3::new(pos.x, pos.y + f64::from(height) / 2.0, pos.z);
         out.push(Effect::SpawnMob {
             kind: ids::SILVERFISH,
-            pos: Vec3::new(pos.x, pos.y + f64::from(height) / 2.0, pos.z),
+            pos: at,
             y_rot,
             velocity,
         });
+        // `silverfish.playSound(SILVERFISH_HURT)` once it is added.
+        crate::survival::play_sound(
+            out,
+            None,
+            at,
+            "minecraft:entity.silverfish.hurt",
+            vanillite_protocol::packets::play::clientbound::SoundSource::Hostile,
+            1.0,
+            1.0,
+            crate::survival::sound_seed(),
+        );
     }
 }
 
@@ -1381,4 +1444,47 @@ pub fn add_to_mob(m: &mut crate::mob::MobData, new: EffectInstance) -> bool {
         return false;
     }
     active::add(&mut BareMobHost { m, kind }, new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `InfestedMobEffect.spawnSilverfish`: each silverfish comes with its hurt sound (S-12 of
+    /// #272).
+    #[test]
+    fn infested_silverfish_play_their_hurt_sound() {
+        let mut fx = ActiveEffects::default();
+        fx.force_add(crate::effect::EffectInstance::new(
+            MobEffect::INFESTED,
+            100,
+            0,
+        ));
+        let mut out = Vec::new();
+        // A seed whose first float is at most 0.1 (the 10 % chance).
+        let seed = (0..10_000_i64)
+            .find(|&s| LegacyRandom::new(s).next_float() <= 0.1)
+            .unwrap_or(0);
+        let mut random = LegacyRandom::new(seed);
+        let mut level_random = LegacyRandom::new(1);
+        on_hurt(
+            &fx,
+            &mut random,
+            &mut level_random,
+            Vec3::ZERO,
+            1.8,
+            Vec3::new(0.0, 0.0, 1.0),
+            &mut out,
+        );
+        let spawned = out
+            .iter()
+            .filter(|e| matches!(e, Effect::SpawnMob { .. }))
+            .count();
+        let sounds = out
+            .iter()
+            .filter(|e| matches!(e, Effect::Nearby { .. }))
+            .count();
+        assert!(spawned >= 1);
+        assert_eq!(spawned, sounds);
+    }
 }

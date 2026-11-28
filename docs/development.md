@@ -4,9 +4,10 @@
 
 - Rust is pinned in `rust-toolchain.toml`; rustup installs it on the first `cargo` call.
 - `cargo install --locked cargo-nextest cargo-deny` (or the prebuilt binaries).
-- Optional: [sccache](https://github.com/mozilla/sccache) as `RUSTC_WRAPPER` shares compiled
-  dependencies between checkouts.
-- The first build extracts the Vanilla data from Mojang's server jars (network and a JDK; see
+- Recommended: [sccache](https://github.com/mozilla/sccache) as `RUSTC_WRAPPER` shares compiled
+  dependencies between checkouts and target directories (a fresh clone builds in about half
+  the time).
+- The first build extracts the Vanilla data from Mojang's server jars (network, `curl` and a JDK; see
   [Vanilla data](#vanilla-data)): about two minutes, once per machine. A JDK 25 is otherwise
   needed only for golden regeneration.
 - `cargo xtask setup` once per clone (`--global`: for every clone of this user): installs the
@@ -107,6 +108,14 @@ them) and named in the report; porting them is part of the switch.
 | `release` | Shipped binary: fat LTO, one codegen unit, stripped. Slow to build. |
 | `release-fast` | Close to release speed, quick to rebuild; test server deploys. |
 | `profiling` | Release code with symbols for perf, flamegraphs and heaptrack. |
+
+Keep `cargo build` and `cargo test` on one set of compiled crates: a feature enabled only in
+`[dev-dependencies]` (directly or by a dev-only crate's own dependencies) changes the features
+of a shared dependency in test builds, and cargo then compiles that dependency and every
+workspace crate above it a second time. Enable such a feature in the normal dependency, and
+keep dev-only crates free of dependencies (the micro benchmarks use `tools/microbench`, not
+criterion, for that reason). Build scripts share no compiled crates with the rest, so their
+dependencies (`vanillite-datagen`) stay few: downloads go through the system `curl`.
 
 ## Test server
 

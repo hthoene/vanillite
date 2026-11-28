@@ -36,6 +36,9 @@ pub struct Palette {
     /// Bedrock block states of potted plants (`pots.bin`).
     pots_bin: &'static [u8],
     pots: OnceLock<FxHashMap<u16, &'static [u8]>>,
+    /// Bedrock block states by runtime id (`states.bin`, compressed).
+    states_bin: &'static [u8],
+    states: OnceLock<States>,
     blocks: OnceLock<Blocks>,
     items: OnceLock<Items>,
 }
@@ -53,6 +56,8 @@ macro_rules! palette {
             frames_bin: include_bytes!(concat!("../data/", $name, "/frames.bin")),
             pots_bin: include_bytes!(concat!("../data/", $name, "/pots.bin")),
             pots: OnceLock::new(),
+            states_bin: include_bytes!(concat!("../data/", $name, "/states.bin")),
+            states: OnceLock::new(),
             blocks: OnceLock::new(),
             items: OnceLock::new(),
         }
@@ -113,6 +118,11 @@ impl Palette {
         pots.get(&u16::try_from(java).ok()?).copied()
     }
 
+    /// The Bedrock block states by runtime id (unpacked on first use: pistons moving blocks).
+    pub fn states(&self) -> &States {
+        self.states.get_or_init(|| States::parse(self.states_bin))
+    }
+
     /// The item tables.
     pub fn items(&self) -> &Items {
         self.items.get_or_init(|| {
@@ -123,6 +133,72 @@ impl Palette {
                 self.blocks(),
             )
         })
+    }
+}
+
+/// The Bedrock block states (network NBT payloads of name, states and version) by runtime id.
+#[derive(Debug, Default)]
+pub struct States {
+    bytes: Vec<u8>,
+    /// Start and end in `bytes` per runtime id.
+    ranges: Vec<(u32, u32)>,
+    /// Runtime id of `minecraft:moving_block`.
+    pub moving_block: Option<u32>,
+}
+
+impl States {
+    fn parse(compressed: &[u8]) -> States {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        if flate2::read::ZlibDecoder::new(compressed)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            return States::default();
+        }
+        let count = bytes
+            .get(..4)
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, u32::from_le_bytes);
+        let mut ranges = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
+        let mut at = 4usize;
+        for _ in 0..count {
+            let Some(&[a, b]) = bytes.get(at..at.saturating_add(2)) else {
+                break;
+            };
+            let start = at.saturating_add(2);
+            let end = start.saturating_add(usize::from(u16::from_le_bytes([a, b])));
+            if end > bytes.len() {
+                break;
+            }
+            ranges.push((
+                u32::try_from(start).unwrap_or(0),
+                u32::try_from(end).unwrap_or(0),
+            ));
+            at = end;
+        }
+        let mut states = States {
+            bytes,
+            ranges,
+            moving_block: None,
+        };
+        // The payload starts with the `name` string tag: 8, 4, "name", then the value.
+        let wanted = b"minecraft:moving_block";
+        states.moving_block = (0..states.ranges.len()).find_map(|i| {
+            let p = states.get(u32::try_from(i).ok()?)?;
+            let value = p.get(6..)?;
+            (value.first() == Some(&22) && value.get(1..23) == Some(wanted.as_slice()))
+                .then(|| u32::try_from(i).ok())
+                .flatten()
+        });
+        states
+    }
+
+    /// The network NBT payload (entries and end tag) of a runtime id's block state.
+    pub fn get(&self, runtime: u32) -> Option<&[u8]> {
+        let &(start, end) = self.ranges.get(usize::try_from(runtime).ok()?)?;
+        self.bytes
+            .get(usize::try_from(start).ok()?..usize::try_from(end).ok()?)
     }
 }
 

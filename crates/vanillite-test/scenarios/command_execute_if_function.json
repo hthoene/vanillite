@@ -1,0 +1,188 @@
+{
+  "description": "execute if|unless function (#283): return values decide the condition (return 0, no return and return fail fail it), a function tag runs until the first function returns, every source runs the functions as itself, a macro function without arguments fails to instantiate and stops the tag there, an empty tag and an unknown function end the chain, and the condition cannot end a command; results stored into a probe chest.",
+  "tier": "fast",
+  "dimensions": true,
+  "block_entities": true,
+  "region": [
+    [
+      -16,
+      -61,
+      -16
+    ],
+    [
+      31,
+      -58,
+      31
+    ]
+  ],
+  "ticks": 3,
+  "datapack": "conditions",
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        1.5,
+        -60.0,
+        2.5
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 0 -60 0 minecraft:chest"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace block 0 -60 0 container.0 with minecraft:paper"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "scoreboard objectives add c dummy"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:armor_stand 3.5 -60 3.5 {Tags:[\"t\"],NoGravity:1b}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "tag steve add t"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p a1 int 1 run execute if function vanillite_test:cond_true run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p a2 int 1 run execute if function vanillite_test:cond_zero run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p a3 int 1 run execute unless function vanillite_test:cond_zero run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p a4 int 1 run execute if function vanillite_test:no_return run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p a5 int 1 run execute unless function vanillite_test:no_return run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p a6 int 1 run execute if function vanillite_test:cond_fail run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p a7 int 1 run execute unless function vanillite_test:cond_fail run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p a8 int 1 run execute if function #vanillite_test:first_returns run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p a9 int 1 run scoreboard players get calls c"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p aa int 1 run execute if function #vanillite_test:last_returns run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ab int 1 run scoreboard players get calls c"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ac int 1 run execute unless function #vanillite_test:none_return run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ad int 1 run scoreboard players get calls c"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ae int 1 run execute as @e[tag=t] if function vanillite_test:is_player run scoreboard players add sel c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p af int 1 run execute as @e[tag=t] unless function vanillite_test:is_player run scoreboard players add sel c 10"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p ag int 1 run execute if function #vanillite_test:with_macro run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ah int 1 run execute unless function #vanillite_test:with_macro run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ai int 1 run scoreboard players get calls c"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p aj int 1 run execute if function vanillite_test:macro_ret run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p ak int 1 run execute if function #vanillite_test:empty run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p al int 1 run execute if function vanillite_test:cond_true if function vanillite_test:cond_true run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p am int 1 run execute if function vanillite_test:missing run scoreboard players add hits c 1"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p an int 1 run execute if function vanillite_test:cond_true"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ao int 1 run execute if function vanillite_test:cond_true run function vanillite_test:counted"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ap int 1 run scoreboard players get hits c"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "data modify block 0 -60 0 Items[0].components.\"minecraft:custom_data\" set from storage t:p"
+    }
+  ]
+}

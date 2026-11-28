@@ -155,7 +155,7 @@ jobs:
               echo "**Vanillite $VERSION for Minecraft Java Edition $MC.**"
             fi
             echo
-            echo "Download the archive for your system, unpack it and start \`vanillite\` (\`vanillite.exe\` on Windows); the README.txt inside explains the first start. Docker: \`docker pull thoenehannes/vanillite:${VERSION}-mc${MC}\`. Checksums: SHA256SUMS. The Windows binary is signed after publishing; if the Windows zip was downloaded in the first hours after the release, its \`vanillite.exe\` may still be unsigned."
+            echo "Download the archive for your system, unpack it and start \`vanillite\` (\`vanillite.exe\` on Windows); the README.txt inside explains the first start. Docker: \`docker pull thoenehannes/vanillite:${VERSION}-mc${MC}\`. Checksums: SHA256SUMS. \`vanillite.exe\` is not code-signed: Windows SmartScreen may warn on the first start (More info > Run anyway)."
             # The version's section of CHANGELOG.md, without its heading.
             changes="$(awk -v v="## $VERSION" '$0 == v { on = 1; next } on && /^## / { exit } on' CHANGELOG.md)"
             if [[ -n "${changes//[[:space:]]/}" ]]; then

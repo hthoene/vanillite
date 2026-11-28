@@ -79,7 +79,7 @@ fn use_item_on(
         level.set_block(pos, BlockState::AIR, crate::level::update::ALL_IMMEDIATE);
         if id == items::FLINT_AND_STEEL {
             if !ctx.infinite {
-                super::hurt_item(level, stack, 1, ctx.player);
+                super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
             }
         } else {
             stack.shrink(1);
@@ -243,7 +243,10 @@ pub fn tick_entity(level: &mut Level, id: EntityId) {
     } else {
         GRAVITY
     };
-    velocity.y -= gravity;
+    // Added as a vector: a -0.0 of x or z becomes 0.0 like in Java.
+    if gravity != 0.0 {
+        velocity = velocity + Vec3::new(0.0, -gravity, 0.0);
+    }
     // `wasTouchingWater` of the last `updateFluidInteraction`, which resets the fall distance.
     let in_water = crate::experience_orb::touching_water(level, &aabb);
     let moved = move_self(level, id, pos, aabb, velocity, gravity);

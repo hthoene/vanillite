@@ -102,6 +102,12 @@ final class ScenarioEntities {
       java.util.Set.of(
           "add_entity",
           "remove_entities",
+          "set_objective",
+          "set_display_objective",
+          "set_score",
+          "reset_score",
+          "set_player_team",
+          "map_item_data",
           "boss_event",
           "login",
           "respawn",

@@ -4,7 +4,7 @@
 use vanillite_abi::event::{BLOCK_FADE, BLOCK_SPREAD, LEAVES_DECAY};
 use vanillite_base::random::RandomSource;
 use vanillite_base::{BlockPos, Direction};
-use vanillite_data::block::{BlockId, BlockState, flags, ids};
+use vanillite_data::block::{BlockId, BlockKind, BlockState, flags, ids};
 use vanillite_worldgen::behaviour::{PosExt, StateExt, merged_face_occludes};
 
 use super::hook_events as he;
@@ -96,8 +96,17 @@ pub(super) fn nylium_random_tick(level: &mut Level, state: BlockState, pos: Bloc
 fn leaves_distance_at(state: BlockState) -> i32 {
     if block_tags().prevents_nearby_leaf_decay.contains(state) {
         0
-    } else {
+    } else if matches!(
+        super::place::util::StateExt::kind(state),
+        BlockKind::LeavesBlock
+            | BlockKind::MangroveLeavesBlock
+            | BlockKind::TintedParticleLeavesBlock
+            | BlockKind::UntintedParticleLeavesBlock
+    ) {
+        // `hasProperty(DISTANCE)`: only leaves; scaffolding's `distance` is another property.
         state.int("distance").unwrap_or(7)
+    } else {
+        7
     }
 }
 

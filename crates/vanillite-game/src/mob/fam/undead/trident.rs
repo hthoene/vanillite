@@ -28,9 +28,19 @@ pub fn throw(t: &mut Tick<'_, '_>, start: Vec3, dir: Vec3, item: ItemStack, unce
     let (velocity, rot) = shoot(&mut own, dir, 1.6, uncertainty);
     let mut d = MissileData::new(MissileKind::Trident);
     d.ints[3] = loyalty(&item);
+    d.foil = has_foil(&item);
     d.item = item;
     d.random_state = own.state();
     crate::mob::missile::spawn_shot(t, start, velocity, rot, d);
+}
+
+/// `ItemStack.hasFoil`: the glint override, else whether it is enchanted.
+pub fn has_foil(item: &ItemStack) -> bool {
+    use vanillite_protocol::components::ids::ENCHANTMENT_GLINT_OVERRIDE;
+    match crate::item_nbt::effective_component(item, ENCHANTMENT_GLINT_OVERRIDE) {
+        Some(v) => v.first().is_some_and(|&b| b != 0),
+        None => !crate::item::enchantments(item).is_empty(),
+    }
 }
 
 /// The return acceleration of a trident (`getTridentReturnToOwnerAcceleration`: Loyalty).
@@ -75,6 +85,7 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
         return;
     }
     let was_in_ground = d.in_ground;
+    let was_returning = d.ints[2] & RETURNING != 0;
     let mut own = vanillite_base::random::LegacyRandom::from_state(d.random_state);
     let Some(e) = t.ents.store.get(id) else {
         return;
@@ -145,6 +156,7 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
         velocity = Vec3::ZERO;
         d.in_ground = true;
     }
+    d.shake = d.shake.saturating_sub(1);
     if d.in_ground && !no_physics {
         let last = u16::try_from(d.ints[1] - 1).ok().map(BlockState);
         let probe = Aabb::new(pos.x, pos.y, pos.z, pos.x, pos.y, pos.z).inflate(0.06, 0.06, 0.06);
@@ -170,8 +182,13 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
         }
     } else {
         set_in_ground_time(&mut d, 0);
+        // A returning trident comes back handle first.
         #[allow(clippy::cast_possible_truncation)]
-        let y_rot = atan2_deg(velocity.x, velocity.z) as f32;
+        let y_rot = if no_physics {
+            atan2_deg(-velocity.x, -velocity.z)
+        } else {
+            atan2_deg(velocity.x, velocity.z)
+        } as f32;
         let hd = (velocity.x * velocity.x + velocity.z * velocity.z).sqrt();
         #[allow(clippy::cast_possible_truncation)]
         let x_rot = atan2_deg(velocity.y, hd) as f32;
@@ -247,10 +264,19 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
                 velocity = Vec3::ZERO;
                 d.ints[1] = i32::from(t.level.block(hit_pos).0) + 1;
                 crate::mob::missile::hit_block_at_speed(t.level, t.cx, id, hit_pos, at, speed);
+                // `AbstractArrow.onHitBlock`: the enchantment effects, the hit ground sound
+                // (`entity.arrow.hit` from the second landing on), the shake.
+                hit_block_effects(t, &d, hit_pos, at);
                 d.in_ground = true;
                 let pitch = 1.2 / (own.next_float() * 0.2 + 0.9);
-                sound(t, pos, "minecraft:item.trident.hit_ground", 1.0, pitch);
-                hit_block_effects(t, &d, hit_pos, at);
+                let ground_sound = if d.arrow_hit_sound {
+                    "minecraft:entity.arrow.hit"
+                } else {
+                    "minecraft:item.trident.hit_ground"
+                };
+                sound(t, pos, ground_sound, 1.0, pitch);
+                d.shake = 7;
+                d.arrow_hit_sound = true;
                 crate::mob::missile::land_event(t.env.out, t.level, id, d.owner, Some(hit_pos), at);
             } else {
                 pos = to;
@@ -274,7 +300,7 @@ pub fn tick(t: &mut MissileTick<'_, '_>) {
         e.set_rot(Rotation { ..rot });
         // Only `IN_GROUND` of the synched values changes here; resending it would restart the
         // client's shake.
-        if d.in_ground != was_in_ground {
+        if d.in_ground != was_in_ground || (d.ints[2] & RETURNING != 0) != was_returning {
             e.mark_data_dirty();
         }
     }
@@ -334,7 +360,8 @@ fn find_hit(
         let grown = oe.aabb().inflate(m, m, m);
         if let Some(f) = segment_box(from, to, &grown) {
             let hit = from + (to - from) * f;
-            let dist = from.distance_to_sqr(oe.pos());
+            // `ProjectileUtil.getEntityHitResult`: the nearest clip point.
+            let dist = from.distance_to_sqr(hit);
             if best.is_none_or(|(_, b, _)| dist < b) {
                 best = Some((other, dist, hit));
             }
@@ -505,7 +532,7 @@ pub fn try_pickup(
         return false;
     }
     let returning = d.ints[2] & RETURNING != 0;
-    if !(d.in_ground || returning) {
+    if !(d.in_ground || returning) || d.shake > 0 {
         return false;
     }
     let infinite = player.game_mode == vanillite_config::GameMode::Creative;
@@ -531,9 +558,25 @@ pub fn save(d: &MissileData, out: &mut Compound) {
         i16::try_from(d.ints[0].clamp(0, 32767)).unwrap_or(0),
     );
     out.insert("inGround", d.in_ground);
+    if let Some(state) = d.ints[1].checked_sub(1).and_then(|s| u16::try_from(s).ok()) {
+        out.insert(
+            "inBlockState",
+            crate::level::block_entity::write_state_codec(BlockState(state)),
+        );
+    }
+    out.insert("shake", i8::try_from(d.shake).unwrap_or(0));
     out.insert("pickup", i8::try_from(d.pickup).unwrap_or(0));
-    out.insert("damage", 8.0_f64);
+    out.insert("damage", 2.0_f64);
     out.insert("crit", false);
+    out.insert("PierceLevel", 0_i8);
+    out.insert(
+        "SoundEvent",
+        if d.arrow_hit_sound {
+            "minecraft:entity.arrow.hit"
+        } else {
+            "minecraft:item.trident.hit_ground"
+        },
+    );
     out.insert("DealtDamage", d.ints[2] & DEALT != 0);
     if !d.item.is_empty() {
         out.insert("item", crate::inventory::stack_to_nbt(&d.item));
@@ -548,6 +591,16 @@ pub fn load(d: &mut MissileData, tag: &Compound) {
     let boolean = |k: &str| crate::mob::entity_nbt::get_bool(tag, k).unwrap_or(false);
     d.in_ground = boolean("inGround");
     d.ints[0] = crate::mob::entity_nbt::get_int(tag, "life").unwrap_or(0);
+    d.shake = crate::mob::entity_nbt::get_int(tag, "shake")
+        .map_or(0, |v| u8::try_from(v & 255).unwrap_or(0));
+    d.arrow_hit_sound =
+        tag.get("SoundEvent").and_then(Tag::as_str) == Some("minecraft:entity.arrow.hit");
+    if let Some(state) = tag
+        .get("inBlockState")
+        .and_then(crate::level::block_entity::read_state_codec)
+    {
+        d.ints[1] = i32::from(state.0) + 1;
+    }
     if boolean("DealtDamage") {
         d.ints[2] |= DEALT;
     }
@@ -566,9 +619,40 @@ pub fn encode(w: &mut DataWriter<'_>, d: &MissileData) {
     if d.kind != MissileKind::Trident {
         return;
     }
-    w.byte(8, 0, 0);
+    // `ID_FLAGS`: bit 2 no physics (returning).
+    w.byte(8, if d.ints[2] & RETURNING != 0 { 2 } else { 0 }, 0);
     w.byte(9, 0, 0);
     w.boolean(10, d.in_ground, false);
     w.byte(11, u8::try_from(d.ints[3].clamp(0, 127)).unwrap_or(0), 0);
-    w.boolean(12, !crate::item::enchantments(&d.item).is_empty(), false);
+    w.boolean(12, d.foil, false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `AbstractArrow.addAdditionalSaveData` of a trident: base damage 2, the shake, the hit
+    /// ground sound after its first landing and the block it is in; read back the same
+    /// (#272, I3-28).
+    #[test]
+    fn trident_nbt_keeps_arrow_state() {
+        let mut d = MissileData::new(MissileKind::Trident);
+        d.shake = 5;
+        d.arrow_hit_sound = true;
+        d.in_ground = true;
+        d.ints[1] = i32::from(vanillite_data::block::ids::STONE.default_state().0) + 1;
+        let mut out = Compound::new();
+        save(&d, &mut out);
+        assert_eq!(out.get("damage"), Some(&Tag::Double(2.0)));
+        assert_eq!(out.get("shake"), Some(&Tag::Byte(5)));
+        assert_eq!(
+            out.get("SoundEvent").and_then(Tag::as_str),
+            Some("minecraft:entity.arrow.hit")
+        );
+        let mut back = MissileData::new(MissileKind::Trident);
+        load(&mut back, &out);
+        assert_eq!(back.shake, 5);
+        assert!(back.arrow_hit_sound);
+        assert_eq!(back.ints[1], d.ints[1]);
+    }
 }

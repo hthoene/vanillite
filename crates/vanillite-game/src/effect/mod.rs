@@ -16,6 +16,7 @@
 
 pub mod active;
 pub mod attribute;
+pub mod attribute_map;
 pub mod cloud;
 pub mod consume;
 pub mod instance;

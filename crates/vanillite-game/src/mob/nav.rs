@@ -1037,6 +1037,12 @@ pub fn rotlerp(a: f32, b: f32, max: f32) -> f32 {
     r
 }
 
+/// `Entity.setXRot`: the pitch modulo 360 clamped to `[-90, 90]` (a pitch `rotlerp` wrapped
+/// to 350 becomes 90).
+pub fn clamp_x_rot(x_rot: f32) -> f32 {
+    (x_rot % 360.0).clamp(-90.0, 90.0)
+}
+
 /// `getAttributeValue(MOVEMENT_SPEED)`: sprinting mobs (cats and ocelots after their prey or
 /// fleeing) move 30% faster (`SPEED_MODIFIER_SPRINTING`).
 pub fn movement_speed(t: &Tick<'_, '_>) -> f64 {
@@ -1228,7 +1234,7 @@ fn tick_flying_move_control(t: &mut Tick<'_, '_>, max_turn: i32, hovers: bool) {
         let x_rot_d = -atan2_deg_f(yd, sd);
         #[allow(clippy::cast_precision_loss)]
         let max = max_turn as f32;
-        rot.x_rot = rotlerp(rot.x_rot, x_rot_d, max);
+        rot.x_rot = clamp_x_rot(rotlerp(rot.x_rot, x_rot_d, max));
         t.mob().yya = if yd > 0.0 { speed } else { -speed };
     }
     t.core_mut().set_rot(rot);
@@ -1349,10 +1355,18 @@ pub fn tick_look_control(t: &mut Tick<'_, '_>) {
         }
         LookKind::Default => {}
     }
+    default_look_tick(t, true);
+}
+
+/// The body of `LookControl.tick`; `reset_x` is `resetXRotOnTick` (the pitch drops to 0 before
+/// the mob looks at anything).
+pub fn default_look_tick(t: &mut Tick<'_, '_>, reset_x: bool) {
     let p = t.pos();
     let eye = t.eye_y();
     let mut rot = t.core().rot();
-    rot.x_rot = 0.0;
+    if reset_x {
+        rot.x_rot = 0.0;
+    }
     let body = t.mob_ref().y_body_rot;
     let look = t.mob_ref().look;
     if look.cooldown > 0 {

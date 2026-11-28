@@ -510,7 +510,7 @@ fn bullet_tick(t: &mut MissileTick<'_, '_>) {
             (d.vec.z - v.z) * 0.2,
         );
     } else if !e.flags().contains(EntityFlags::NO_GRAVITY) {
-        v.y -= 0.04;
+        v = v + Vec3::new(0.0, -0.04, 0.0);
     }
     let hit = hit_on_move(t.level, t.ents, me, &d, pos, v);
     let new_pos = pos + v;
@@ -769,7 +769,7 @@ fn potion_tick(t: &mut MissileTick<'_, '_>) {
     };
     let pos = e.pos();
     let mut v = e.velocity();
-    v.y -= 0.05;
+    v = v + Vec3::new(0.0, -0.05, 0.0);
     let in_water = is_water(t.level.block(BlockPos::containing(pos.x, pos.y, pos.z)));
     v = v * f64::from(if in_water { 0.8_f32 } else { 0.99_f32 });
     let hit = hit_on_move(t.level, t.ents, me, &d, pos, v);

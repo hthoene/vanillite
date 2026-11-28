@@ -182,11 +182,15 @@ pub fn player_attribute(
         item::attribute_modifiers(p.inventory.equipment(slot), slot, name, &mut mods);
     }
     let effects = &p.survival.effects.modifiers;
+    let mut base = base;
     if !effects.is_empty()
         && let Some(id) = item::attribute_id(name)
         && let Ok(id) = u8::try_from(id)
     {
-        for m in effects.of(crate::effect::attribute::Attribute(id)) {
+        // A base value set by a command or plugin.
+        let attribute = crate::effect::attribute::Attribute(id);
+        base = effects.base(attribute).unwrap_or(base);
+        for m in effects.of(attribute) {
             #[allow(clippy::as_conversions)]
             mods.push((m.operation as u8, m.amount));
         }
@@ -681,8 +685,8 @@ fn attack_hit(
     if enemy {
         hurt_weapon(ents, env, attacker, weapon);
         if smash && let Some(p) = ents.player_mut(attacker) {
-            // `MaceItem.postHurtEnemy`: `resetFallDistance`.
-            p.survival.fall_distance = 0.0;
+            // `MaceItem.postHurtEnemy`: `resetFallDistance` (`FALL_FROM_HEIGHT`).
+            crate::advancements::tracking::reset_fall_distance(p);
         }
     }
     damage_stats_and_hearts(ents, cx, attacker, target, old_health);
@@ -852,6 +856,9 @@ fn mace_hurt_enemy(
     }) else {
         return;
     };
+    if t_on_ground && let Some(p) = ents.player_mut(attacker) {
+        p.survival.spawn_extra_particles_on_fall = true;
+    }
     let sound = if t_on_ground {
         if fall_distance > 5.0 {
             "minecraft:item.mace.smash_ground_heavy"
@@ -873,20 +880,26 @@ fn mace_hurt_enemy(
     let mut near = Vec::new();
     ents.store
         .for_each_in(&tbox.inflate(3.5, 3.5, 3.5), false, |e| near.push(e));
+    let target_uuid = ents.store.get(target).map(|e| e.uuid());
     for nearby in near {
+        // `knockbackPredicate`: living, no spectator, neither attacker nor target, not allied
+        // to the attacker, no tamed animal of the target, no marker armor stand, no flying
+        // creative player.
         if nearby == attacker || nearby == target {
             continue;
         }
-        let living = ents.mob(nearby).is_some_and(super::MobData::is_alive)
-            || ents
-                .player(nearby)
-                .is_some_and(|p| p.game_mode != vanillite_config::GameMode::Spectator);
-        if !living {
+        let living = ents.mob(nearby).is_some()
+            || ents.player(nearby).is_some_and(|p| {
+                p.game_mode != vanillite_config::GameMode::Spectator
+                    && !(p.game_mode == vanillite_config::GameMode::Creative && p.survival.flying)
+            });
+        if !living || is_allied(ents, env, attacker, nearby) {
             continue;
         }
-        // Tamed animals of the attacker stay.
         if ents.mob(nearby).is_some_and(|m| {
-            m.owner.is_some() && m.owner == ents.store.get(attacker).map(|e| e.uuid())
+            (m.tame && m.owner.is_some() && m.owner == target_uuid)
+                || (crate::decoration::stand::is_stand(m.kind)
+                    && crate::decoration::stand::is_marker(m))
         }) {
             continue;
         }
@@ -1539,8 +1552,9 @@ pub(crate) fn hurt_equipment(
     hurt_inventory_item(ents, env, owner, index, amount);
 }
 
-/// `ItemStack.hurtAndBreak(amount, mob, slot)` of a mob's equipment: Unbreaking from the
-/// level random, then `onEquippedItemBroken` (the slot's break entity event) when it breaks.
+/// `ItemStack.hurtAndBreak(amount, mob, slot)` of a mob's equipment: the `item_damage`
+/// effects (Unbreaking) from the level random, then `onEquippedItemBroken` (the slot's break
+/// entity event) when it breaks.
 fn hurt_mob_equipment(
     ents: &mut Entities,
     env: &mut Env<'_>,
@@ -1551,61 +1565,37 @@ fn hurt_mob_equipment(
     let Some(m) = ents.mob(owner) else {
         return;
     };
-    let stack = m.equipment.get(slot).clone();
-    if amount <= 0 || stack.is_empty() || !item::is_damageable(&stack) {
-        return;
-    }
-    let data = crate::player::play::game_data();
-    let unbreaking = data
-        .as_ref()
-        .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-    let armor = data.is_some_and(|d| d.item_in_tag(stack.item, "minecraft:enchantable/armor"));
-    #[allow(clippy::cast_precision_loss)]
-    let level = unbreaking.max(0) as f32;
-    let removed_chance = if armor {
-        2.0 * level / (5.0 * level + 5.0)
-    } else {
-        level / (level + 1.0)
-    };
-    let mut damage = 0;
-    for _ in 0..amount {
-        if unbreaking <= 0 || env.random.next_float() >= removed_chance {
-            damage += 1;
-        }
-    }
+    let mut stack = m.equipment.get(slot).clone();
+    let damage = crate::durability::change(&stack, amount, false, env.random);
     if damage == 0 {
         return;
     }
     let d = item::damage(&stack).saturating_add(damage);
-    let broken = d >= item::max_damage(&stack);
+    let broken = crate::durability::apply(&mut stack, d);
     let Some(m) = ents.mob_mut(owner) else {
         return;
     };
-    if broken {
-        m.equipment.set(slot, ItemStack::EMPTY);
-    } else {
-        let mut s = stack;
-        item::set_damage(&mut s, d);
-        m.equipment.set(slot, s);
-    }
+    m.equipment.set(slot, stack);
     ents.equipment_updates.push(owner);
     if broken {
-        // `LivingEntity.entityEventForEquipmentBreak`.
-        let event = match slot {
-            EquipmentSlot::MainHand => 47,
-            EquipmentSlot::OffHand => 48,
-            EquipmentSlot::Head => 49,
-            EquipmentSlot::Chest => 50,
-            EquipmentSlot::Feet => 51,
-            EquipmentSlot::Legs => 52,
-            EquipmentSlot::Body => 65,
-            EquipmentSlot::Saddle => 68,
-        };
-        crate::mob::animal::entity_event(ents, env, owner, event);
+        crate::mob::animal::entity_event(ents, env, owner, crate::durability::break_event(slot));
     }
 }
 
-/// `ItemStack.hurtAndBreak(amount, player, ..)` of the stack at `index` of a player's
+/// The equipment slot of a player's inventory index (selected hotbar slot, off hand, armour).
+pub(crate) fn inventory_slot(selected: usize, index: usize) -> EquipmentSlot {
+    match index {
+        crate::inventory::OFFHAND => EquipmentSlot::OffHand,
+        36 => EquipmentSlot::Feet,
+        37 => EquipmentSlot::Legs,
+        38 => EquipmentSlot::Chest,
+        39 => EquipmentSlot::Head,
+        i if i == selected => EquipmentSlot::MainHand,
+        _ => EquipmentSlot::MainHand,
+    }
+}
+
+/// `ItemStack.hurtAndBreak(amount, player, slot)` of the stack at `index` of a player's
 /// inventory.
 pub(crate) fn hurt_inventory_item(
     ents: &mut Entities,
@@ -1617,35 +1607,13 @@ pub(crate) fn hurt_inventory_item(
     let Some(p) = ents.player(owner) else {
         return;
     };
-    if p.game_mode == vanillite_config::GameMode::Creative || amount <= 0 {
-        return;
-    }
+    let creative = p.game_mode == vanillite_config::GameMode::Creative;
+    let slot = inventory_slot(p.inventory.selected, index);
     let stack = p.inventory.get(index).clone();
-    if stack.is_empty() || !item::is_damageable(&stack) {
-        return;
-    }
-    let data = crate::player::play::game_data();
-    let unbreaking = data
-        .as_ref()
-        .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-    let armor = data.is_some_and(|d| d.item_in_tag(stack.item, "minecraft:enchantable/armor"));
-    #[allow(clippy::cast_precision_loss)]
-    let level = unbreaking.max(0) as f32;
-    let removed_chance = if armor {
-        2.0 * level / (5.0 * level + 5.0)
-    } else {
-        level / (level + 1.0)
-    };
-    let mut damage = 0;
-    for _ in 0..amount {
-        if unbreaking <= 0 || env.random.next_float() >= removed_chance {
-            damage += 1;
-        }
-    }
+    let damage = crate::durability::change(&stack, amount, creative, env.random);
     if damage == 0 {
         return;
     }
-    let pos = ents.store.get(owner).map(|e| e.pos());
     let Some(p) = ents.player_mut(owner) else {
         return;
     };
@@ -1659,10 +1627,8 @@ pub(crate) fn hurt_inventory_item(
         return;
     };
     let d = item::damage(s).saturating_add(damage);
-    if crate::advancements::view::apply_damage(Some(advancements), Some(stats), s, d)
-        && let Some(pos) = pos
-    {
-        player_sound(env, pos, "minecraft:entity.item.break");
+    if crate::advancements::view::apply_damage(Some(advancements), Some(stats), s, d) {
+        crate::durability::broken_in_env(ents, env, owner, slot);
     }
 }
 

@@ -570,6 +570,11 @@ pub(crate) fn summon_for(
             };
             if let Some(rider) = rider.entity {
                 super::entities_cmd::mount(env.level, env.global, dimension, rider, vehicle);
+                // `startRiding` leaves the passenger where it was made: its first `rideTick`
+                // places it on the vehicle.
+                if let Some(mut e) = env.level.entities.store.get_mut(rider) {
+                    e.set_pos(pos);
+                }
             }
         }
     }
@@ -975,15 +980,20 @@ fn test(
                 .filter(|e| e.world == env.world)
                 .and_then(|e| e.id);
             let level = &mut *env.level;
+            let weather = (level.is_raining(), level.is_thundering());
             let entities = std::mem::take(&mut level.entities);
+            let mut random = level.lend_random();
             let result = super::loot_cmd::test_predicate(
                 &entities,
+                Some(&level.chunks),
                 env.global,
                 this,
                 source.pos,
+                weather,
                 &predicate,
-                level.random(),
+                &mut random,
             );
+            level.restore_random(random);
             level.entities = entities;
             i32::from(
                 result.map_err(|e| CommandError::new("command.exception", vec![ErrArg::Str(e)]))?,

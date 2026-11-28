@@ -48,14 +48,15 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal --component clippy
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
-      - uses: actions/cache@v4
+      # The Vanilla data the build extracts from Mojang's server jars (#213): the current version
+      # and the older ones of vanillite-multiversion, restored instead of extracted again (about
+      # 2.5 min per job). Only the codegen job saves it: it extracts every pinned version, so the
+      # entry is complete (a job that saved first could leave the older versions out).
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           # Dev (and manual runs, to measure a branch warm) write the cache; others read it.
@@ -82,14 +83,15 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
-      - uses: actions/cache@v4
+      # The Vanilla data the build extracts from Mojang's server jars (#213): the current version
+      # and the older ones of vanillite-multiversion, restored instead of extracted again (about
+      # 2.5 min per job). Only the codegen job saves it: it extracts every pinned version, so the
+      # entry is complete (a job that saved first could leave the older versions out).
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' }}
@@ -135,14 +137,15 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
-      - uses: actions/cache@v4
+      # The Vanilla data the build extracts from Mojang's server jars (#213): the current version
+      # and the older ones of vanillite-multiversion, restored instead of extracted again (about
+      # 2.5 min per job). Only the codegen job saves it: it extracts every pinned version, so the
+      # entry is complete (a job that saved first could leave the older versions out).
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' }}
@@ -201,14 +204,15 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
-      - uses: actions/cache@v4
+      # The Vanilla data the build extracts from Mojang's server jars (#213): the current version
+      # and the older ones of vanillite-multiversion, restored instead of extracted again (about
+      # 2.5 min per job). Only the codegen job saves it: it extracts every pinned version, so the
+      # entry is complete (a job that saved first could leave the older versions out).
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' }}
@@ -255,14 +259,14 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
+      # The Vanilla data the build extracts from Mojang's server jars (#213). This job saves the
+      # entry the other jobs restore: `cargo xtask codegen --check` extracts the current and every
+      # older pinned version, so the entry is complete.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' }}
@@ -313,14 +317,15 @@ jobs:
             ~/.rustup/update-hashes/1.*
           key: rustup-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}
       - run: rustup toolchain install --profile minimal
-      # The Vanilla data the build extracts from Mojang's server jars (#213), one entry per
-      # pinned version and pipeline: restored instead of extracted again; a missing entry is
-      # extracted by the build and saved with the new key.
-      - uses: actions/cache@v4
+      # The Vanilla data the build extracts from Mojang's server jars (#213): the current version
+      # and the older ones of vanillite-multiversion, restored instead of extracted again (about
+      # 2.5 min per job). Only the codegen job saves it: it extracts every pinned version, so the
+      # entry is complete (a job that saved first could leave the older versions out).
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/vanillite/vanilla-data
-          key: vanilla-data-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
-          restore-keys: vanilla-data-
+          key: vanilla-data-v2-${{ hashFiles('data/**/version.toml', 'tools/extractor/src/**/*.java', 'crates/vanillite-datagen/src/**') }}
+          restore-keys: vanilla-data-v2-
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch' }}

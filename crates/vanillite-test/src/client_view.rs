@@ -21,6 +21,9 @@
 //!   packets), `attr <attribute> <value>` (the player's own attributes from
 //!   `update_attributes`: the value the client computes from base and modifiers, 4 decimals):
 //!   the state after the tick where it changed.
+//! - `<packet> <body hex>`: the scoreboard and team packets as sent (`set_objective`,
+//!   `set_display_objective`, `set_score`, `reset_score`, `set_player_team`);
+//!   `map_item_data <bytes> <hash>`: a map update by its size and FNV-1a hash of its body.
 //!
 //! Entity ids, packet order and batching within a tick, chunk data, light, keep-alives and
 //! everything else are left out. So is the game mode the player joins in: the Java recorder
@@ -272,6 +275,27 @@ impl ClientView {
                     self.slots
                         .insert(format!("{}:{i}", p.container_id), item(stack));
                 }
+            }
+            cb::SetObjective::ID
+            | cb::SetDisplayObjective::ID
+            | cb::SetScore::ID
+            | cb::ResetScore::ID
+            | cb::SetPlayerTeam::ID => {
+                let name = match id {
+                    cb::SetObjective::ID => "set_objective",
+                    cb::SetDisplayObjective::ID => "set_display_objective",
+                    cb::SetScore::ID => "set_score",
+                    cb::ResetScore::ID => "reset_score",
+                    _ => "set_player_team",
+                };
+                events.push(format!("{name} {}", crate::scenario::to_hex(r.take_rest())));
+            }
+            cb::MapItemData::ID => {
+                let rest = r.take_rest();
+                let hash = rest.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+                    (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+                });
+                events.push(format!("map_item_data {} {hash:016x}", rest.len()));
             }
             _ => {}
         }

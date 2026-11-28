@@ -166,9 +166,9 @@ pub fn explosion_loot(
 /// centre.
 pub fn pop_resource(level: &mut Level, pos: BlockPos, stack: ItemStack) {
     let half_height = 0.125;
-    let x = f64::from(pos.x) + 0.5 + level.random().next_double() * 0.5 - 0.25;
-    let y = f64::from(pos.y) + 0.5 + level.random().next_double() * 0.5 - 0.25 - half_height;
-    let z = f64::from(pos.z) + 0.5 + level.random().next_double() * 0.5 - 0.25;
+    let x = f64::from(pos.x) + 0.5 + (level.random().next_double() * 0.5 - 0.25);
+    let y = f64::from(pos.y) + 0.5 + (level.random().next_double() * 0.5 - 0.25) - half_height;
+    let z = f64::from(pos.z) + 0.5 + (level.random().next_double() * 0.5 - 0.25);
     // The position is drawn either way; empty stacks and the `block_drops` rule only stop the
     // item entity.
     if stack.is_empty() || !level.settings.block_drops {

@@ -1,0 +1,29 @@
+{
+  "description": "A player makes a map from an empty map stack and carries it: the map's colours fill in around the player while held, banners clicked with the map toggle their markers, an item frame and a glow item frame with the map add frame markers, a second map made far away gets the next id. The client view holds the map_item_data updates (size and hash).",
+  "tier": "fast",
+  "dimensions": true,
+  "client_view": true,
+  "player_state": true,
+  "region": [[-16, -61, -16], [31, -58, 31]],
+  "ticks": 28,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [1.5, -60.0, 2.5]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "fill 4 -61 4 12 -61 12 minecraft:water"},
+    {"tick": 1, "op": "command", "command": "fill 0 -61 6 3 -58 9 minecraft:red_wool"},
+    {"tick": 1, "op": "command", "command": "setblock 5 -60 1 minecraft:white_banner[rotation=0]{CustomName:\"Home\"}"},
+    {"tick": 1, "op": "command", "command": "setblock 6 -60 1 minecraft:blue_banner[rotation=4]"},
+    {"tick": 2, "op": "use_item", "entity": "steve", "item": "minecraft:map", "count": 1},
+    {"tick": 8, "op": "use", "entity": "steve", "pos": [5, -60, 1], "face": "north"},
+    {"tick": 9, "op": "use", "entity": "steve", "pos": [6, -60, 1], "face": "north"},
+    {"tick": 12, "op": "command", "command": "summon minecraft:item_frame 3 -60 0 {Facing:3b,Tags:[\"f\"]}"},
+    {"tick": 12, "op": "command", "command": "item replace entity @e[tag=f,limit=1] contents from entity steve weapon.mainhand"},
+    {"tick": 14, "op": "command", "command": "summon minecraft:glow_item_frame 4 -60 0 {Facing:3b,Tags:[\"g\"],Item:{id:\"minecraft:filled_map\",count:1,components:{\"minecraft:map_id\":0}}}"},
+    {"tick": 16, "op": "use", "entity": "steve", "pos": [5, -60, 1], "face": "north"},
+    {"tick": 18, "op": "use_item", "entity": "steve", "item": "minecraft:map", "count": 1},
+    {"tick": 18, "op": "command", "command": "tp steve 300 -60 300"},
+    {"tick": 22, "op": "command", "command": "tp steve 1.5 -60 2.5"},
+    {"tick": 25, "op": "command", "command": "kill @e[tag=g]"}
+  ]
+}

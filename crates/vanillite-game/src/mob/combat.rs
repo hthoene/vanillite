@@ -962,13 +962,23 @@ fn mob_totem(
             }
         }
     }
-    let mob_kind = ents.mob(target).map(|m| m.kind.type_id());
-    if let Some(mob_kind) = mob_kind {
+    let mob_kind = ents
+        .mob(target)
+        .map(|m| (m.kind.type_id(), m.sound_source()));
+    if let Some((mob_kind, source)) = mob_kind {
+        let mut sounds = Vec::new();
         crate::effect::living::with_host(level, ents, env, cx, target, |host| {
             let mut rolls = rolls.into_iter();
             let mut roll = || rolls.next().unwrap_or(0.0);
-            crate::totem::apply_effects(&effects, mob_kind, host, &mut roll);
+            crate::totem::apply_effects(&effects, mob_kind, host, &mut roll, &mut |s| {
+                sounds.push(s.to_owned());
+            });
         });
+        if let Some(at) = ents.store.get(target).map(|e| e.pos()) {
+            for s in sounds {
+                crate::totem::play_consume_sound(env.out, at, &s, source);
+            }
+        }
     }
     if let Some(mut e) = ents.store.get_mut(target) {
         e.mark_data_dirty();

@@ -33,6 +33,31 @@ const DEFAULT_PATCH: &str = r#"{"geometry":{"default":"geometry.humanoid.custom"
 /// The slim model.
 const SLIM_PATCH: &str = r#"{"geometry":{"default":"geometry.humanoid.customSlim"}}"#;
 
+/// The player models the patches above name (`geometry.humanoid.custom` and `...customSlim`).
+/// Clients need them in the skin's geometry field: since Bedrock 1.21.90 an empty field shows
+/// the default skin, and since 1.26.60 the client rejects the whole `player_list` packet because
+/// the field must hold valid JSON.
+const HUMANOID_GEOMETRY: &str = include_str!("humanoid_geometry.json");
+
+/// Deepest JSON nesting a skin field may have (the client rejects deeper ones; serde_json's own
+/// recursion limit is 128).
+const MAX_JSON_DEPTH: usize = 64;
+
+/// `bytes` if it is a JSON object no deeper than [`MAX_JSON_DEPTH`].
+fn json_object(bytes: Vec<u8>) -> Option<Vec<u8>> {
+    let v: Value = serde_json::from_slice(&bytes).ok()?;
+    (v.is_object() && depth(&v) <= MAX_JSON_DEPTH).then_some(bytes)
+}
+
+/// Nesting depth of a JSON value (scalars 0).
+fn depth(v: &Value) -> usize {
+    match v {
+        Value::Array(a) => a.iter().map(depth).max().unwrap_or(0).saturating_add(1),
+        Value::Object(o) => o.values().map(depth).max().unwrap_or(0).saturating_add(1),
+        _ => 0,
+    }
+}
+
 /// The model of player heads: the head cube and the hat layer around the origin.
 const SKULL_PATCH: &str = r#"{"geometry":{"default":"geometry.vanillite.skull"}}"#;
 const SKULL_GEOMETRY: &str = r#"{"format_version":"1.10.0","geometry.vanillite.skull":{"texturewidth":64,"textureheight":64,"visible_bounds_width":2,"visible_bounds_height":1,"visible_bounds_offset":[0,0,0],"bones":[{"name":"head","pivot":[0,24,0],"cubes":[{"origin":[-4,0,-4],"size":[8,8,8],"uv":[0,0]}]},{"name":"hat","parent":"head","pivot":[0,24,0],"cubes":[{"origin":[-4,0,-4],"size":[8,8,8],"uv":[32,0],"inflate":0.5}]}]}}"#;
@@ -112,7 +137,7 @@ impl Skin {
             width: 64,
             height: 64,
             data,
-            geometry: Vec::new(),
+            geometry: HUMANOID_GEOMETRY.as_bytes().to_vec(),
             geometry_version: b"0.0.0".to_vec(),
             slim: false,
         }
@@ -132,7 +157,7 @@ impl Skin {
             width: w,
             height: h,
             data,
-            geometry: Vec::new(),
+            geometry: HUMANOID_GEOMETRY.as_bytes().to_vec(),
             geometry_version: b"0.0.0".to_vec(),
             slim,
         })
@@ -167,8 +192,16 @@ impl Skin {
         if data.len() != expected || expected > 512 * 512 * 4 {
             return None;
         }
-        let resource_patch = decode("SkinResourcePatch").unwrap_or_else(|| DEFAULT_PATCH.into());
         let slim = field(c, "ArmSize").as_str() == Some("slim");
+        // Patch and geometry go to other clients as they are: the client rejects the whole
+        // packet if either is not valid JSON, so anything else falls back to the built-in model.
+        let custom = decode("SkinResourcePatch")
+            .and_then(json_object)
+            .zip(decode("SkinGeometryData").and_then(json_object));
+        let (resource_patch, geometry) = custom.unwrap_or_else(|| {
+            let patch = if slim { SLIM_PATCH } else { DEFAULT_PATCH };
+            (patch.into(), HUMANOID_GEOMETRY.into())
+        });
         Some(Self {
             id: field(c, "SkinId")
                 .as_str()
@@ -180,7 +213,7 @@ impl Skin {
             width,
             height,
             data,
-            geometry: decode("SkinGeometryData").unwrap_or_default(),
+            geometry,
             geometry_version: decode("SkinGeometryDataEngineVersion").unwrap_or_default(),
             slim,
         })
@@ -212,5 +245,56 @@ impl Skin {
         out.extend_from_slice(&[0, 0, 0, 0, 0]); // premium, persona, cape on classic, primary, override
         io::write_str(out, "True"); // trusted
         io::write_str(out, ""); // profile hash
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The client rejects `player_list` (packet 63) unless resource patch and geometry are JSON
+    /// (#280: an empty geometry for Java and default skins disconnected every Bedrock player).
+    fn assert_json(skin: &Skin) {
+        for (what, bytes) in [
+            ("patch", &skin.resource_patch),
+            ("geometry", &skin.geometry),
+        ] {
+            let v: Value = serde_json::from_slice(bytes)
+                .unwrap_or_else(|e| panic!("{} {what} is not JSON: {e}", skin.id));
+            assert!(
+                v.is_object() && depth(&v) <= MAX_JSON_DEPTH,
+                "{} {what}",
+                skin.id
+            );
+        }
+    }
+
+    #[test]
+    fn every_skin_carries_json_patch_and_geometry() {
+        let plain = Skin::plain();
+        assert_json(&plain);
+        assert_json(&plain.skull());
+        let client = |geometry: &str| {
+            serde_json::json!({
+                "SkinId": "custom",
+                "SkinImageWidth": 64,
+                "SkinImageHeight": 64,
+                "SkinData": STANDARD.encode(vec![0u8; 64 * 64 * 4]),
+                "SkinResourcePatch": STANDARD.encode(SLIM_PATCH),
+                "SkinGeometryData": STANDARD.encode(geometry),
+                "ArmSize": "slim",
+            })
+        };
+        let deep = format!("{}1{}", r#"{"a":"#.repeat(100), "}".repeat(100));
+        for geometry in ["", "null", "{", &deep] {
+            let Some(skin) = Skin::from_client_data(&client(geometry)) else {
+                panic!("no skin for geometry {geometry:?}");
+            };
+            assert_json(&skin);
+            assert_eq!(skin.geometry, HUMANOID_GEOMETRY.as_bytes(), "{geometry:?}");
+            assert_eq!(skin.resource_patch, SLIM_PATCH.as_bytes());
+        }
+        let own = Skin::from_client_data(&client(SKULL_GEOMETRY)).map(|s| s.geometry);
+        assert_eq!(own.as_deref(), Some(SKULL_GEOMETRY.as_bytes()));
     }
 }

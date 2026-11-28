@@ -8,6 +8,8 @@
 //! and new ticks scheduled meanwhile wait for a later tick. The type of a tick is a block id for
 //! block ticks and a fluid id for fluid ticks.
 
+mod java;
+
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, VecDeque};
 
@@ -158,8 +160,9 @@ impl PartialOrd for Candidate {
 #[derive(Debug, Default)]
 pub struct LevelTicks {
     containers: FxHashMap<ChunkPos, ChunkTicks>,
-    /// The trigger time of every container's next tick (`nextTickForContainer`).
-    next_tick: FxHashMap<ChunkPos, i64>,
+    /// The trigger time of every container's next tick (`nextTickForContainer`), by packed
+    /// chunk position: its iteration order decides the order of tying containers.
+    next_tick: java::Long2LongMap,
     /// Ticks collected for this game tick, in run order.
     to_run: VecDeque<ScheduledTick>,
     /// `toRunThisTickSet`, built on demand.
@@ -191,7 +194,7 @@ impl LevelTicks {
             });
         }
         if let Some(next) = container.peek() {
-            self.next_tick.insert(chunk, next.trigger);
+            self.next_tick.put(chunk.as_long(), next.trigger);
         }
         self.containers.insert(chunk, container);
     }
@@ -199,7 +202,7 @@ impl LevelTicks {
     /// Removes the container of a chunk that unloads and returns its ticks relative to
     /// `game_time`.
     pub fn remove_container(&mut self, chunk: ChunkPos, game_time: i64) -> Vec<SavedTick> {
-        self.next_tick.remove(&chunk);
+        self.next_tick.remove(chunk.as_long());
         self.containers
             .remove(&chunk)
             .map(|c| c.pack(game_time))
@@ -226,7 +229,7 @@ impl LevelTicks {
         }
         // `chunkScheduleUpdater`: the new tick is the container's next one.
         if container.peek() == Some(&tick) {
-            self.next_tick.insert(chunk, tick.trigger);
+            self.next_tick.put(chunk.as_long(), tick.trigger);
         }
         true
     }
@@ -275,10 +278,10 @@ impl LevelTicks {
                 changed.push(chunk);
                 match container.peek() {
                     Some(next) => {
-                        self.next_tick.insert(chunk, next.trigger);
+                        self.next_tick.put(chunk.as_long(), next.trigger);
                     }
                     None => {
-                        self.next_tick.remove(&chunk);
+                        self.next_tick.remove(chunk.as_long());
                     }
                 }
             }
@@ -319,9 +322,10 @@ impl LevelTicks {
         self.to_run.clear();
         self.to_run_set.clear();
         // `sortContainersToTick`.
-        let mut heap: BinaryHeap<Reverse<Candidate>> = BinaryHeap::new();
+        let mut heap: java::PriorityQueue<Candidate> = java::PriorityQueue::new();
         let containers = &self.containers;
-        self.next_tick.retain(|&chunk, next| {
+        self.next_tick.retain(|packed, next| {
+            let chunk = ChunkPos::from_long(packed);
             if *next > now {
                 return true;
             }
@@ -332,10 +336,10 @@ impl LevelTicks {
                 *next = peek.trigger;
                 true
             } else if ticking(chunk) {
-                heap.push(Reverse(Candidate {
+                heap.offer(Candidate {
                     key: peek.intra_tick_key(),
                     chunk,
-                }));
+                });
                 false
             } else {
                 true
@@ -343,7 +347,7 @@ impl LevelTicks {
         });
         // `drainContainers`.
         while self.to_run.len() < max {
-            let Some(Reverse(top)) = heap.pop() else {
+            let Some(top) = heap.poll() else {
                 break;
             };
             let Some(container) = self.containers.get_mut(&top.chunk) else {
@@ -354,7 +358,7 @@ impl LevelTicks {
                 self.to_run.push_back(tick);
             }
             // `drainFromCurrentContainer`.
-            let next_best = heap.peek().map(|Reverse(c)| c.key);
+            let next_best = heap.peek().map(|c| c.key);
             while self.to_run.len() < max {
                 let Some(next) = container.peek() else {
                     break;
@@ -369,19 +373,19 @@ impl LevelTicks {
             }
             if let Some(next) = container.peek() {
                 if next.trigger <= now && self.to_run.len() < max {
-                    heap.push(Reverse(Candidate {
+                    heap.offer(Candidate {
                         key: next.intra_tick_key(),
                         chunk: top.chunk,
-                    }));
+                    });
                 } else {
-                    self.next_tick.insert(top.chunk, next.trigger);
+                    self.next_tick.put(top.chunk.as_long(), next.trigger);
                 }
             }
         }
         // `rescheduleLeftoverContainers`.
-        for Reverse(left) in heap {
+        for left in heap.into_vec() {
             if let Some(next) = self.containers.get(&left.chunk).and_then(ChunkTicks::peek) {
-                self.next_tick.insert(left.chunk, next.trigger);
+                self.next_tick.put(left.chunk.as_long(), next.trigger);
             }
         }
     }

@@ -1230,5 +1230,5 @@ pub fn spawn_table(packs: Option<&LoadedPacks>) -> Option<vanillite_game::mob::s
             structures.insert(entry.id.as_str().into(), by_category);
         }
     }
-    Some(SpawnTable { biomes, structures })
+    Some(SpawnTable::new(biomes, structures))
 }

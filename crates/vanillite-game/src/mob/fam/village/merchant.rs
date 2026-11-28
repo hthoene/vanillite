@@ -186,6 +186,7 @@ fn add_offers_from_set(
     // `exploration_map` of the cartographer's map trades, from the merchant's position.
     let generation = level.generation.clone();
     let maps = level.maps_shared();
+    let refs = std::sync::Arc::clone(level.structure_refs());
     let (min_y, height) = (level.min_y(), level.max_y() - level.min_y() + 1);
     let sea_level = generation.as_ref().map_or(63, |g| g.terrain().sea_level());
     let explore = |request: &crate::loot::ExplorationMap, origin: Vec3| {
@@ -197,6 +198,7 @@ fn add_offers_from_set(
             sea_level,
             request,
             origin,
+            &refs,
         )
     };
     let ctx = crate::loot::LootContext {
@@ -551,7 +553,7 @@ pub fn notify_trade_in_level(
         // `WanderingTrader.rewardTradeXp`.
         if reward {
             let pop = 3 + m.random.next_int_bounded(4);
-            level.award_experience(orb, pop);
+            pop_orb(level, orb, pop);
         }
         return false;
     }
@@ -587,9 +589,16 @@ pub fn notify_trade_in_level(
         pop += 5;
     }
     if reward {
-        level.award_experience(orb, pop);
+        pop_orb(level, orb, pop);
     }
     resend
+}
+
+/// `addFreshEntity(new ExperienceOrb(level, x, y, z, popXp))`: one orb of the whole value, not
+/// split or merged like `ExperienceOrb.award`.
+fn pop_orb(level: &mut Level, pos: Vec3, value: i32) {
+    let (entities, network_ids, _) = level.entity_parts();
+    crate::experience_orb::spawn(entities, network_ids, pos, Vec3::ZERO, value);
 }
 
 // --- Starting a trade ----------------------------------------------------------------------------

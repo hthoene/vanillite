@@ -936,21 +936,21 @@ fn tick_ridden(t: &mut Tick<'_, '_>, rider: EntityId) {
     t.mob().y_body_rot = y_rot;
 }
 
-/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment (without Unbreaking).
+/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment: the `item_damage` effects
+/// (Unbreaking) from the level random, and the slot's break event when it breaks.
 pub fn hurt_equipment(t: &mut Tick<'_, '_>, slot: crate::item::EquipmentSlot, amount: i32) {
     let mut s = t.mob_ref().equipment.get(slot).clone();
-    if amount <= 0 || !crate::item::is_damageable(&s) {
+    let change = crate::durability::change(&s, amount, false, &mut *t.env.random);
+    if change == 0 {
         return;
     }
-    let d = crate::item::damage(&s) + amount;
-    if d >= crate::item::max_damage(&s) {
-        s = crate::item::ItemStack::default();
-        let sound = "minecraft:entity.item.break";
-        super::kinds::play_sound(t, sound, 0.8, 0.8);
-    } else {
-        crate::item::set_damage(&mut s, d);
-    }
+    let d = crate::item::damage(&s) + change;
+    let broke = crate::durability::apply(&mut s, d);
     t.mob().equipment.set(slot, s);
+    if broke {
+        let id = t.id;
+        entity_event(t, id, crate::durability::break_event(slot));
+    }
     super::equipment::broadcast(t);
 }
 
@@ -2722,7 +2722,8 @@ fn push_entities(t: &mut Tick<'_, '_>) {
         t.cx.ids = ids;
         return;
     }
-    let climbing = on_climbable(t);
+    let pushable_self =
+        t.mob_ref().is_alive() && !on_climbable(t) && t.ents.riding.passengers_of(id).is_empty();
     let root = super::root_vehicle(t.ents, id);
     // `max-entity-collisions`: only the first ones push.
     let limit =
@@ -2799,14 +2800,18 @@ fn push_entities(t: &mut Tick<'_, '_>) {
             .ents
             .player(other)
             .is_none_or(|p| p.survival.simulate_movement);
-        if let Some(mut e) = t.ents.store.get_mut(other) {
+        // `Entity.push(entity)`: each side moves only if it is pushable and carries nobody (a
+        // dying mob pushes but stays where it is).
+        if t.ents.riding.passengers_of(other).is_empty()
+            && let Some(mut e) = t.ents.store.get_mut(other)
+        {
             let v = e.as_ref().velocity();
             e.set_velocity(Vec3::new(v.x - xa, v.y, v.z - za));
             if synced {
                 e.set_flags(EntityFlags::HAS_IMPULSE, true);
             }
         }
-        if !climbing {
+        if pushable_self {
             let v = t.velocity();
             t.set_velocity(Vec3::new(v.x + xa, v.y, v.z + za));
             t.core_mut().set_flags(EntityFlags::HAS_IMPULSE, true);

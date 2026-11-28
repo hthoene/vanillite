@@ -245,6 +245,9 @@ pub struct MobData {
     pub can_pick_up_loot: bool,
     /// `isLeftHanded`.
     pub left_handed: bool,
+    /// The amount of the `random_spawn_bonus` follow range modifier `Mob.finalizeSpawn` added
+    /// (folded into `attrs.follow_range`; 0 without one), for the saved `attributes`.
+    pub spawn_bonus: f64,
     /// `PathfinderMob.restrictTo`: the home position and radius (`-1` = none).
     pub restrict_center: BlockPos,
     pub restrict_radius: i32,
@@ -385,6 +388,7 @@ impl MobData {
             equipment: equipment::Equipment::default(),
             can_pick_up_loot: false,
             left_handed: false,
+            spawn_bonus: 0.0,
             restrict_center: BlockPos::new(0, 0, 0),
             restrict_radius: -1,
             brain: None,
@@ -1171,6 +1175,17 @@ pub fn is_lava(state: BlockState) -> bool {
 
 /// `getEyeHeight` of a mob: the type's eye height, scaled for babies.
 pub fn eye_height(mob: &MobData) -> f64 {
+    let eye = unscaled_eye_height(mob);
+    // The `minecraft:scale` attribute scales the eye height with the dimensions.
+    let scale = crate::effect::attribute_map::scale_of(&mob.effects.modifiers);
+    if scale == 1.0 {
+        return eye;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    f64::from(eye as f32 * scale as f32)
+}
+
+fn unscaled_eye_height(mob: &MobData) -> f64 {
     if let Some(eye) = fam::undead::zombies::baby_eye_height(mob) {
         return f64::from(eye);
     }
@@ -1706,5 +1721,5 @@ mod size_tests {
         );
     }
 
-    const LIMIT: usize = 1808;
+    const LIMIT: usize = 1824;
 }

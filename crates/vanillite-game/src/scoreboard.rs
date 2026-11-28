@@ -437,11 +437,15 @@ pub enum ScoreEvent {
     /// `onObjectiveAdded`.
     ObjectiveAdded(String),
     /// `onObjectiveChanged`.
-    ObjectiveChanged(String),
+    ObjectiveChanged(Box<Objective>),
     /// `onObjectiveRemoved` (with its objective as it was).
     ObjectiveRemoved(Box<Objective>),
-    /// `onScoreChanged`.
-    ScoreChanged { holder: String, objective: String },
+    /// `onScoreChanged`, with the score as it was then (the packet carries that).
+    ScoreChanged {
+        holder: String,
+        objective: String,
+        score: Box<Score>,
+    },
     /// `onPlayerScoreRemoved`.
     ScoreRemoved { holder: String, objective: String },
     /// `onPlayerRemoved`: all scores of the holder.
@@ -449,9 +453,9 @@ pub enum ScoreEvent {
     /// `setDisplayObjective`: the slot id and its new objective.
     DisplaySlot { slot: u8, objective: Option<String> },
     /// `onTeamAdded`.
-    TeamAdded(String),
+    TeamAdded(Box<Team>),
     /// `onTeamChanged`.
-    TeamChanged(String),
+    TeamChanged(Box<Team>),
     /// `onTeamRemoved`.
     TeamRemoved(String),
     /// `addPlayerToTeam`.
@@ -463,6 +467,128 @@ pub enum ScoreEvent {
 /// Display slots: list, sidebar, below name and the 16 team sidebars.
 pub const DISPLAY_SLOTS: usize = 19;
 
+/// The keys of a fastutil `Object2ObjectOpenHashMap<String, _>(16, 0.5f)` as it lays them
+/// out (linear probing over `HashCommon.mix(hashCode)`, growing and shrinking like fastutil),
+/// so iteration (from the last slot down) gives Vanilla's order of `playerScores`.
+#[derive(Debug, Clone)]
+struct HolderTable {
+    slots: Vec<Option<String>>,
+    size: usize,
+}
+
+impl Default for HolderTable {
+    fn default() -> Self {
+        HolderTable {
+            slots: vec![None; Self::MIN_SLOTS],
+            size: 0,
+        }
+    }
+}
+
+impl HolderTable {
+    /// `arraySize(16, 0.5f)`.
+    const MIN_SLOTS: usize = 32;
+
+    /// `HashCommon.mix(String.hashCode())`.
+    fn mix(key: &str) -> u32 {
+        let h = key
+            .encode_utf16()
+            .fold(0u32, |h, c| h.wrapping_mul(31).wrapping_add(u32::from(c)));
+        let h = h.wrapping_mul(0x9E37_79B9);
+        h ^ (h >> 16)
+    }
+
+    fn mask(&self) -> usize {
+        self.slots.len() - 1
+    }
+
+    /// `maxFill(n, 0.5f)`.
+    fn max_fill(&self) -> usize {
+        (self.slots.len() / 2).min(self.slots.len() - 1)
+    }
+
+    fn find(&self, key: &str) -> Result<usize, usize> {
+        let mask = self.mask();
+        let mut pos = Self::mix(key) as usize & mask;
+        loop {
+            match &self.slots[pos] {
+                None => return Err(pos),
+                Some(k) if k == key => return Ok(pos),
+                Some(_) => pos = (pos + 1) & mask,
+            }
+        }
+    }
+
+    fn insert(&mut self, key: &str) {
+        let Err(pos) = self.find(key) else {
+            return;
+        };
+        self.slots[pos] = Some(key.to_owned());
+        let was = self.size;
+        self.size += 1;
+        if was >= self.max_fill() {
+            // `arraySize(size + 1, 0.5f)`.
+            self.rehash(((self.size + 1) * 2).next_power_of_two());
+        }
+    }
+
+    fn remove(&mut self, key: &str) {
+        let Ok(mut pos) = self.find(key) else {
+            return;
+        };
+        self.size -= 1;
+        // `shiftKeys`.
+        let mask = self.mask();
+        loop {
+            let last = pos;
+            pos = (last + 1) & mask;
+            loop {
+                let Some(curr) = &self.slots[pos] else {
+                    self.slots[last] = None;
+                    if self.slots.len() > Self::MIN_SLOTS && self.size < self.max_fill() / 4 {
+                        self.rehash(self.slots.len() / 2);
+                    }
+                    return;
+                };
+                let slot = Self::mix(curr) as usize & mask;
+                let stop = if last <= pos {
+                    last >= slot || slot > pos
+                } else {
+                    last >= slot && slot > pos
+                };
+                if stop {
+                    break;
+                }
+                pos = (pos + 1) & mask;
+            }
+            self.slots[last] = self.slots[pos].take();
+        }
+    }
+
+    /// `rehash(newN)`: the old slots from the last down into the new table.
+    fn rehash(&mut self, n: usize) {
+        let old = std::mem::replace(&mut self.slots, vec![None; n]);
+        let mask = n - 1;
+        for key in old.into_iter().rev().flatten() {
+            let mut pos = Self::mix(&key) as usize & mask;
+            while self.slots[pos].is_some() {
+                pos = (pos + 1) & mask;
+            }
+            self.slots[pos] = Some(key);
+        }
+    }
+
+    /// The keys in iterator and `forEach` order: from the last slot down.
+    fn iter(&self) -> impl Iterator<Item = &str> {
+        self.slots.iter().rev().flatten().map(String::as_str)
+    }
+
+    /// The keys in stream (spliterator) order: from the first slot up.
+    fn iter_ascending(&self) -> impl Iterator<Item = &str> {
+        self.slots.iter().flatten().map(String::as_str)
+    }
+}
+
 /// The scoreboard of the server.
 #[derive(Debug, Default)]
 pub struct Scoreboard {
@@ -470,8 +596,8 @@ pub struct Scoreboard {
     /// Objective names in creation order (`objectivesByName` iteration and the save order).
     objective_order: Vec<String>,
     scores: FxHashMap<String, BTreeMap<String, Score>>,
-    /// Holders in first-score order.
-    holder_order: Vec<String>,
+    /// The holders as `playerScores` (a fastutil open hash map) orders them.
+    holder_order: HolderTable,
     display: [Option<String>; DISPLAY_SLOTS],
     teams: BTreeMap<String, Team>,
     team_order: Vec<String>,
@@ -489,6 +615,17 @@ impl Scoreboard {
     fn changed(&mut self, event: ScoreEvent) {
         self.events.push(event);
         self.dirty = true;
+    }
+
+    fn score_changed(&mut self, holder: &str, objective: &str) {
+        if let Some(score) = self.score(holder, objective) {
+            let score = Box::new(score.clone());
+            self.changed(ScoreEvent::ScoreChanged {
+                holder: holder.to_owned(),
+                objective: objective.to_owned(),
+                score,
+            });
+        }
     }
 
     /// Takes the changes since the last call.
@@ -531,7 +668,8 @@ impl Scoreboard {
             return false;
         };
         f(o);
-        self.changed(ScoreEvent::ObjectiveChanged(name.to_owned()));
+        let o = Box::new(o.clone());
+        self.changed(ScoreEvent::ObjectiveChanged(o));
         true
     }
 
@@ -593,19 +731,18 @@ impl Scoreboard {
         self.scores.get(holder)
     }
 
-    /// Holders with any score, in first-score order (`getTrackedPlayers`).
+    /// Holders with any score (`getTrackedPlayers`: a stream of `playerScores.keySet()`).
     pub fn holders(&self) -> impl Iterator<Item = &str> {
         self.holder_order
-            .iter()
+            .iter_ascending()
             .filter(|h| self.scores.get(*h).is_some_and(|s| !s.is_empty()))
-            .map(String::as_str)
     }
 
-    /// The scores of an objective as (holder, score), in holder order (`listPlayerScores`).
+    /// The scores of an objective as (holder, score) (`listPlayerScores`: `playerScores.forEach`).
     pub fn scores_in(&self, objective: &str) -> Vec<(&str, &Score)> {
         self.holder_order
             .iter()
-            .filter_map(|h| Some((h.as_str(), self.scores.get(h)?.get(objective)?)))
+            .filter_map(|h| Some((h, self.scores.get(h)?.get(objective)?)))
             .collect()
     }
 
@@ -639,10 +776,7 @@ impl Scoreboard {
             changed = true;
         }
         if changed {
-            self.changed(ScoreEvent::ScoreChanged {
-                holder: holder.to_owned(),
-                objective: objective.to_owned(),
-            });
+            self.score_changed(holder, objective);
         }
         true
     }
@@ -650,7 +784,7 @@ impl Scoreboard {
     /// Creates the score if missing (unsynced like Vanilla's `getOrCreate`) and returns it.
     fn score_entry(&mut self, holder: &str, objective: &str) -> (&mut Score, bool) {
         if !self.scores.contains_key(holder) {
-            self.holder_order.push(holder.to_owned());
+            self.holder_order.insert(holder);
         }
         let scores = self.scores.entry(holder.to_owned()).or_default();
         let new = !scores.contains_key(objective);
@@ -672,10 +806,7 @@ impl Scoreboard {
         let (score, new) = self.score_entry(holder, objective);
         score.locked = locked;
         if new {
-            self.changed(ScoreEvent::ScoreChanged {
-                holder: holder.to_owned(),
-                objective: objective.to_owned(),
-            });
+            self.score_changed(holder, objective);
         } else {
             self.dirty = true;
         }
@@ -689,10 +820,7 @@ impl Scoreboard {
         let (score, new) = self.score_entry(holder, objective);
         if new || score.display != display {
             score.display = display;
-            self.changed(ScoreEvent::ScoreChanged {
-                holder: holder.to_owned(),
-                objective: objective.to_owned(),
-            });
+            self.score_changed(holder, objective);
         }
     }
 
@@ -708,10 +836,7 @@ impl Scoreboard {
         }
         let (score, _) = self.score_entry(holder, objective);
         score.number_format = format;
-        self.changed(ScoreEvent::ScoreChanged {
-            holder: holder.to_owned(),
-            objective: objective.to_owned(),
-        });
+        self.score_changed(holder, objective);
     }
 
     /// `resetSinglePlayerScore`.
@@ -724,7 +849,7 @@ impl Scoreboard {
         }
         if scores.is_empty() {
             self.scores.remove(holder);
-            self.holder_order.retain(|h| h != holder);
+            self.holder_order.remove(holder);
             self.changed(ScoreEvent::HolderRemoved(holder.to_owned()));
         } else {
             self.changed(ScoreEvent::ScoreRemoved {
@@ -740,7 +865,7 @@ impl Scoreboard {
         if self.scores.remove(holder).is_none() {
             return false;
         }
-        self.holder_order.retain(|h| h != holder);
+        self.holder_order.remove(holder);
         self.changed(ScoreEvent::HolderRemoved(holder.to_owned()));
         true
     }
@@ -783,9 +908,11 @@ impl Scoreboard {
         if self.teams.contains_key(name) {
             return false;
         }
-        self.teams.insert(name.to_owned(), Team::new(name));
+        let team = Team::new(name);
+        let added = Box::new(team.clone());
+        self.teams.insert(name.to_owned(), team);
         self.team_order.push(name.to_owned());
-        self.changed(ScoreEvent::TeamAdded(name.to_owned()));
+        self.changed(ScoreEvent::TeamAdded(added));
         true
     }
 
@@ -795,7 +922,8 @@ impl Scoreboard {
             return false;
         };
         f(t);
-        self.changed(ScoreEvent::TeamChanged(name.to_owned()));
+        let t = Box::new(t.clone());
+        self.changed(ScoreEvent::TeamChanged(t));
         true
     }
 
@@ -855,5 +983,39 @@ impl Scoreboard {
             holder: holder.to_owned(),
         });
         true
+    }
+}
+
+#[cfg(test)]
+mod holder_order_tests {
+    use super::HolderTable;
+
+    #[test]
+    fn iterates_like_a_fastutil_open_hash_map() {
+        // The orders `Object2ObjectOpenHashMap<String, _>(16, 0.5f).keySet()` gives.
+        let mut t = HolderTable::default();
+        let keys = [
+            "a", "b", "steve", "c", "z", "x", "y", "Alpha", "#fake", "p1", "p2", "p3", "p4", "p5",
+            "p6", "p7", "p8", "p9", "q1", "q2", "q3",
+        ];
+        keys.iter().for_each(|k| t.insert(k));
+        let order: Vec<&str> = t.iter().collect();
+        assert_eq!(
+            order.join(","),
+            "c,p9,steve,x,p1,q3,b,q2,a,p3,z,#fake,q1,p8,p2,y,Alpha,p4,p5,p7,p6"
+        );
+        for k in [
+            "b", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "q1", "q2",
+        ] {
+            t.remove(k);
+        }
+        let order: Vec<&str> = t.iter().collect();
+        assert_eq!(order.join(","), "c,steve,x,q3,a,z,#fake,y,Alpha");
+        let mut t = HolderTable::default();
+        ["steve", "a", "b", "z", "c"]
+            .iter()
+            .for_each(|k| t.insert(k));
+        let order: Vec<&str> = t.iter_ascending().collect();
+        assert_eq!(order.join(","), "b,z,a,steve,c");
     }
 }

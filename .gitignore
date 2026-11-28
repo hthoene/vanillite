@@ -8,3 +8,5 @@
 !/data/multiversion/*/version.toml
 /crates/vanillite-data/src/generated/
 /crates/vanillite-multiversion/src/generated/
+# Bedrock identity keys that runs and tests generate.
+bedrock-identity.key

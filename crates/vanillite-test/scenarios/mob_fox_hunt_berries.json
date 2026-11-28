@@ -1,0 +1,26 @@
+{
+  "description": "Foxes at night in a pen with ripe sweet berry bushes and a chicken: they pick berries, eat what they hold, stalk and pounce on the chicken; a sleeping fox (by day, set by data) wakes when a player comes close; a fox drops what it holds when hurt.",
+  "tier": "fast",
+  "time": 14000,
+  "region": [[0, -61, 0], [15, -56, 15]],
+  "ticks": 300,
+  "setup": [
+    {"op": "fill", "from": [0, -60, 0], "to": [15, -56, 0], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 15], "to": [15, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 0], "to": [0, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [15, -60, 0], "to": [15, -56, 15], "block": "minecraft:stone"},
+    {"op": "set", "pos": [3, -60, 3], "block": "minecraft:sweet_berry_bush[age=3]"},
+    {"op": "set", "pos": [12, -60, 4], "block": "minecraft:sweet_berry_bush[age=2]"},
+    {"op": "set", "pos": [11, -60, 11], "block": "minecraft:snow[layers=1]"}
+  ],
+  "entities": [
+    {"name": "fox", "type": "minecraft:fox", "pos": [5.5, -60.0, 5.5], "seed": 31},
+    {"name": "fox2", "type": "minecraft:fox", "pos": [10.5, -60.0, 6.5], "seed": 32},
+    {"name": "chicken", "type": "minecraft:chicken", "pos": [8.5, -60.0, 11.5], "seed": 33},
+    {"name": "steve", "type": "minecraft:player", "pos": [13.5, -60.0, 13.5]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "item replace entity @e[type=minecraft:fox,limit=1,sort=nearest,x=10.5,y=-60,z=6.5] weapon.mainhand with minecraft:sweet_berries"},
+    {"tick": 150, "op": "hurt", "entity": "fox2", "by": "steve", "amount": 1}
+  ]
+}

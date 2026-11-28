@@ -1,0 +1,24 @@
+{
+  "description": "Structure blocks: a save block powered by redstone saves the template (blocks, a chest with its items, stairs, air) under a name; load blocks place it rotated, mirrored and with integrity and seed; /place template places it too; corner and data modes. The block entities are in the frames.",
+  "tier": "fast",
+  "block_entities": true,
+  "region": [[0, -61, 0], [15, -56, 15]],
+  "ticks": 11,
+  "actions": [
+    {"tick": 1, "op": "command", "command": "fill 1 -60 0 3 -59 2 minecraft:oak_planks"},
+    {"tick": 1, "op": "command", "command": "setblock 2 -59 1 minecraft:chest[facing=east]{Items:[{Slot:3b,id:\"minecraft:diamond\",count:2}]}"},
+    {"tick": 1, "op": "command", "command": "setblock 1 -59 0 minecraft:oak_stairs[facing=east]"},
+    {"tick": 1, "op": "command", "command": "setblock 3 -60 2 minecraft:air"},
+    {"tick": 1, "op": "command", "command": "setblock 0 -60 0 minecraft:structure_block[mode=save]{mode:\"SAVE\",name:\"vanillite_test:copy\",posX:1,posY:0,posZ:0,sizeX:3,sizeY:2,sizeZ:3,ignoreEntities:1b,author:\"t\"}"},
+    {"tick": 2, "op": "command", "command": "setblock 0 -60 1 minecraft:redstone_block"},
+    {"tick": 4, "op": "command", "command": "setblock 8 -60 0 minecraft:structure_block[mode=load]{mode:\"LOAD\",name:\"vanillite_test:copy\",posX:1,posY:0,posZ:0,rotation:\"CLOCKWISE_90\",mirror:\"NONE\"}"},
+    {"tick": 4, "op": "command", "command": "setblock 8 -60 12 minecraft:structure_block[mode=load]{mode:\"LOAD\",name:\"vanillite_test:copy\",posX:1,posY:0,posZ:-4,mirror:\"LEFT_RIGHT\",integrity:0.5f,seed:7L,showair:1b}"},
+    {"tick": 5, "op": "command", "command": "setblock 8 -60 1 minecraft:redstone_block"},
+    {"tick": 5, "op": "command", "command": "setblock 8 -60 13 minecraft:redstone_block"},
+    {"tick": 7, "op": "command", "command": "place template vanillite_test:copy 0 -60 12 counterclockwise_90 front_back 0.75 3"},
+    {"tick": 8, "op": "command", "command": "setblock 14 -60 14 minecraft:structure_block[mode=corner]{mode:\"CORNER\",name:\"vanillite_test:copy\"}"},
+    {"tick": 8, "op": "command", "command": "setblock 8 -60 1 minecraft:air"},
+    {"tick": 9, "op": "command", "command": "setblock 8 -60 1 minecraft:redstone_block"},
+    {"tick": 10, "op": "command", "command": "data merge block 8 -60 0 {mode:\"DATA\",metadata:\"marker\"}"}
+  ]
+}

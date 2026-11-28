@@ -210,6 +210,19 @@ impl ChunkStatus {
         })[self.index()]
     }
 
+    /// The farthest distance at which a chunk on its way to full needs a chunk at this status
+    /// (the largest `d` with [`ChunkStatus::around_full`]`(d)` at least this status): the step
+    /// to this status is waited for by chunks up to this far away.
+    pub const fn reach(self) -> u8 {
+        match self {
+            Self::Empty | Self::StructureStarts => RADIUS_AROUND_FULL as u8,
+            Self::StructureReferences | Self::Biomes => 3,
+            Self::Terrain => 2,
+            Self::Features | Self::InitializeLight => 1,
+            Self::Light | Self::Spawn | Self::Full => 0,
+        }
+    }
+
     /// The status a chunk at `distance` from a full chunk must reach
     /// (`ChunkStatus.getStatusAroundFullChunk`); `None` beyond [`RADIUS_AROUND_FULL`].
     pub fn around_full(distance: u32) -> Option<Self> {
@@ -550,6 +563,12 @@ mod tests {
         assert!(full[4..].iter().all(|&s| s == StructureStarts));
         assert_eq!(ChunkStatus::around_full(1), Some(InitializeLight));
         assert_eq!(ChunkStatus::around_full(12), None);
+        for status in ChunkStatus::ALL {
+            let reach = (0..=RADIUS_AROUND_FULL)
+                .rev()
+                .find(|&d| ChunkStatus::around_full(d).is_some_and(|s| s >= status));
+            assert_eq!(reach, Some(u32::from(status.reach())), "{status:?}");
+        }
         assert_eq!(ChunkStatus::by_name("terrain"), Some(Terrain));
     }
 }

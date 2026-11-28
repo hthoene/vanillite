@@ -774,7 +774,7 @@ pub fn move_control(t: &mut Tick<'_, '_>) {
         if yd.abs() > f64::from(1.0e-5_f32) || sd.abs() > f64::from(1.0e-5_f32) {
             #[allow(clippy::cast_possible_truncation)]
             let x_rot_d = -(atan2_deg(yd, sd) as f32);
-            rot.x_rot = nav::rotlerp(rot.x_rot, x_rot_d, 10.0);
+            rot.x_rot = nav::clamp_x_rot(nav::rotlerp(rot.x_rot, x_rot_d, 10.0));
             t.mob().yya = if yd > 0.0 { speed } else { -speed };
         }
         t.core_mut().set_rot(rot);

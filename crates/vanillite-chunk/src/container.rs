@@ -322,6 +322,23 @@ impl<S: Strategy> PalettedContainer<S> {
         }
     }
 
+    /// Prefetch hint for the value at local coordinates: its packed word and the palette.
+    #[inline(always)]
+    pub fn prefetch_at(&self, x: u32, y: u32, z: u32) {
+        match &self.data {
+            ContainerData::Single(_) => {}
+            ContainerData::Indirect {
+                bits,
+                palette,
+                data,
+            } => {
+                bits::prefetch(data, *bits, S::index(x, y, z));
+                vanillite_base::prefetch::read(palette.as_ptr());
+            }
+            ContainerData::Direct { bits, data } => bits::prefetch(data, *bits, S::index(x, y, z)),
+        }
+    }
+
     /// Value at local coordinates.
     #[inline(always)]
     pub fn get_at(&self, x: u32, y: u32, z: u32) -> u16 {

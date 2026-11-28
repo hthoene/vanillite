@@ -1,0 +1,15 @@
+[package]
+name = "microbench"
+description = "Minimal harness for the micro benchmarks (`harness = false` benches): warm-up, calibrated samples, median."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# No dependencies on purpose: a benchmark crate in the dev-dependencies adds the features of its
+# own dependencies to test builds, which then recompile every crate that shares them.
+[dependencies]
+
+[lints]
+workspace = true

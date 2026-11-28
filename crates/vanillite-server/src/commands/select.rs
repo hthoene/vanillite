@@ -191,6 +191,8 @@ fn volume(selector: &EntitySelector, origin: Vec3) -> Option<Aabb> {
 /// What the filters read of the world.
 struct Ctx<'a> {
     entities: &'a Entities,
+    /// The chunks of the entities' level (`location_check` in predicates).
+    chunks: &'a vanillite_world::chunks::Chunks,
     global: &'a Global,
     origin: Vec3,
     aabb: Option<Aabb>,
@@ -338,11 +340,17 @@ fn filter_matches(filter: &Filter, target: &Target, ctx: &Ctx<'_>) -> bool {
             let mut rng = vanillite_base::random::LegacyRandom::new(
                 ctx.global.level.game_time() ^ (target.uuid as i64),
             );
+            let weather = {
+                let w = ctx.global.level.weather();
+                (w.raining, w.thundering)
+            };
             let passes = super::loot_cmd::test_predicate(
                 ctx.entities,
+                Some(ctx.chunks),
                 ctx.global,
                 target.entity,
                 origin,
+                weather,
                 &(Some(id.clone()), None),
                 &mut rng,
             )
@@ -401,6 +409,7 @@ pub(crate) fn select(
     );
     let ctx = Ctx {
         entities,
+        chunks: &env.level.chunks,
         global,
         origin,
         aabb: volume(selector, origin),
@@ -461,6 +470,7 @@ pub(crate) fn select(
             for (world, level) in env.other_levels() {
                 let ctx = Ctx {
                     entities: &level.entities,
+                    chunks: &level.chunks,
                     global,
                     origin,
                     aabb: ctx.aabb,

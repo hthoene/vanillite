@@ -1,0 +1,9 @@
+{"type": "minecraft:all_of", "terms": [
+  {"type": "minecraft:any_of", "terms": [
+    {"type": "minecraft:inverted", "term": {"type": "minecraft:weather_check", "raining": true}},
+    "vanillite_test:chance"
+  ]},
+  {"type": "minecraft:entity_scores", "entity": "this", "scores": {"gs": {"min": 0}}},
+  {"type": "minecraft:location_check", "offsetY": -1, "predicate": {"block": {"blocks": ["minecraft:grass_block", "minecraft:dirt"]}}},
+  {"type": "minecraft:int_value_check", "value": {"type": "minecraft:uniform", "min": 1, "max": 10}, "test": {"min": 3}}
+]}

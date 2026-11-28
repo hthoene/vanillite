@@ -75,6 +75,16 @@ pub fn get(data: &[Word], bits: u8, index: usize) -> u32 {
     ((u64::from_be_bytes(data[word]) >> shift) & mask(bits)) as u32
 }
 
+/// Prefetch hint for the word of entry `index` (no read; any index is harmless).
+#[inline(always)]
+pub fn prefetch(data: &[Word], bits: u8, index: usize) {
+    if bits == 0 || index >= MAX_ENTRIES || bits > 32 {
+        return;
+    }
+    let (word, _) = locate(index, bits);
+    vanillite_base::prefetch::read(data.as_ptr().wrapping_add(word));
+}
+
 /// Writes entry `index` and returns the previous value.
 #[inline]
 pub fn get_and_set(data: &mut [Word], bits: u8, index: usize, value: u32) -> u32 {

@@ -1,0 +1,31 @@
+{
+  "description": "Bees by day in a walled garden with flowers, a full hive and crops: they look for flowers, pollinate (hover, nectar), grow crops on the way back with nectar and go home; one is angry at a player who hits it and stings.",
+  "tier": "fast",
+  "time": 1000,
+  "block_entities": true,
+  "region": [[0, -61, 0], [15, -55, 15]],
+  "ticks": 300,
+  "setup": [
+    {"op": "fill", "from": [0, -60, 0], "to": [15, -55, 0], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 15], "to": [15, -55, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 0], "to": [0, -55, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [15, -60, 0], "to": [15, -55, 15], "block": "minecraft:stone"},
+    {"op": "set", "pos": [7, -60, 7], "block": "minecraft:beehive[facing=south,honey_level=4]"},
+    {"op": "set", "pos": [3, -60, 11], "block": "minecraft:poppy"},
+    {"op": "set", "pos": [4, -60, 12], "block": "minecraft:dandelion"},
+    {"op": "set", "pos": [11, -60, 11], "block": "minecraft:cornflower"},
+    {"op": "fill", "from": [9, -61, 3], "to": [12, -61, 5], "block": "minecraft:farmland[moisture=7]"},
+    {"op": "fill", "from": [9, -60, 3], "to": [12, -60, 5], "block": "minecraft:wheat[age=2]"},
+    {"op": "set", "pos": [3, -60, 3], "block": "minecraft:sweet_berry_bush[age=1]"}
+  ],
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [13.5, -60.0, 13.5]},
+    {"name": "bee", "type": "minecraft:bee", "pos": [7.5, -59.0, 9.5], "seed": 21, "finalize": false},
+    {"name": "bee2", "type": "minecraft:bee", "pos": [5.5, -59.0, 9.5], "seed": 22, "finalize": false},
+    {"name": "angry", "type": "minecraft:bee", "pos": [12.5, -59.0, 12.5], "seed": 23, "finalize": false}
+  ],
+  "actions": [
+    {"tick": 2, "op": "command", "command": "data modify block 7 -60 7 flower_pos set value [I;3,-60,11]"},
+    {"tick": 5, "op": "hurt", "entity": "angry", "by": "steve", "amount": 1}
+  ]
+}

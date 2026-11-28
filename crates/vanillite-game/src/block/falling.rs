@@ -364,8 +364,8 @@ fn tick_move(level: &mut Level, id: EntityId) -> Option<Resume> {
     let entity = level.entities.store.get(id)?;
     let (pos, aabb) = (entity.pos(), entity.aabb());
     // `applyGravity` and `move(SELF, deltaMovement)`.
-    let mut velocity = entity.velocity();
-    velocity.y -= 0.04;
+    // Added as a vector: a -0.0 of x or z becomes 0.0 like in Java.
+    let mut velocity = entity.velocity() + Vec3::new(0.0, -0.04, 0.0);
     let mut delta = velocity;
     if data.stuck.length_sqr() > 1.0e-7 {
         // `stuckSpeedMultiplier`: the slowed move, then the block stands still.
@@ -444,13 +444,17 @@ pub fn resume_tick(level: &mut Level, id: EntityId, r: Resume) {
         time,
     } = r;
     let vertical = moved.y != delta.y;
-    let horizontal = moved.x != delta.x || moved.z != delta.z;
+    // `Mth.equal`: within the float 1.0E-5F.
+    let equal = |a: f64, b: f64| (b - a).abs() < f64::from(1.0e-5_f32);
+    let (x_collision, z_collision) = (!equal(delta.x, moved.x), !equal(delta.z, moved.z));
+    let horizontal = x_collision || z_collision;
     let on_ground = vertical && delta.y < 0.0;
-    if moved.x != delta.x {
-        velocity.x = 0.0;
+    // `restituteMovementAfterCollisions` without bounciness: `-v * 0.0` keeps the sign bit.
+    if x_collision {
+        velocity.x = -velocity.x * 0.0;
     }
-    if moved.z != delta.z {
-        velocity.z = 0.0;
+    if z_collision {
+        velocity.z = -velocity.z * 0.0;
     }
     if vertical {
         // `Block.updateEntityMovementAfterFallOn`.
@@ -781,11 +785,24 @@ fn collide_axis(
     let start = BlockPos::containing(lo[0] - EPSILON, lo[1] - 1.0, lo[2] - EPSILON);
     let end = BlockPos::containing(hi[0] + EPSILON, hi[1] + EPSILON, hi[2] + EPSILON);
     let mut delta = delta;
-    for y in start.y..=end.y {
-        for z in start.z..=end.z {
-            for x in start.x..=end.x {
+    let mut moving = Vec::new();
+    // `BlockCollisions` also reads the cells around the box: a moving piston's shape (its
+    // block entity's) reaches up to a block out of its cell; corner cells never count.
+    for y in start.y..=end.y + 1 {
+        for z in start.z - 1..=end.z + 1 {
+            for x in start.x - 1..=end.x + 1 {
+                let edges = usize::from(x < start.x || x > end.x)
+                    + usize::from(y > end.y)
+                    + usize::from(z < start.z || z > end.z);
+                if edges == 3 {
+                    continue;
+                }
                 let pos = BlockPos::new(x, y, z);
                 let state = level.block(pos);
+                let piston = state.block() == ids::MOVING_PISTON;
+                if edges > 0 && !piston {
+                    continue;
+                }
                 let origin = [f64::from(x), f64::from(y), f64::from(z)];
                 let snow;
                 let shape = match snow_top {
@@ -793,11 +810,25 @@ fn collide_axis(
                         snow = [[0.0, 0.0, 0.0, 1.0, top, 1.0]];
                         &snow[..]
                     }
+                    _ if piston => {
+                        moving.clear();
+                        crate::mob::physics::Blocks::moving_piston_boxes(level, pos, &mut moving);
+                        &moving[..]
+                    }
                     _ => crate::mob::physics::context_shape(state, origin[1], Some(bottom)),
                 };
+                let (ox, oz) = crate::mob::physics::collision_offset(state, x, z);
                 for b in shape {
-                    let box_min = [b[0] + origin[0], b[1] + origin[1], b[2] + origin[2]];
-                    let box_max = [b[3] + origin[0], b[4] + origin[1], b[5] + origin[2]];
+                    let box_min = [
+                        (b[0] + ox) + origin[0],
+                        b[1] + origin[1],
+                        (b[2] + oz) + origin[2],
+                    ];
+                    let box_max = [
+                        (b[3] + ox) + origin[0],
+                        b[4] + origin[1],
+                        (b[5] + oz) + origin[2],
+                    ];
                     let overlaps = (0..3)
                         .filter(|&a| a != axis)
                         .all(|a| box_max[a] - EPSILON > min[a] && box_min[a] + EPSILON < max[a]);

@@ -54,8 +54,11 @@ impl Limits {
 /// Inbound frame splitter.
 #[derive(Debug)]
 pub struct FrameDecoder {
+    /// Received bytes in `pos..end`; the rest up to the length is spare space that stays
+    /// initialized, so [`FrameDecoder::spare`] need not clear it again.
     buf: Vec<u8>,
     pos: usize,
+    end: usize,
     cipher: Option<Cfb8>,
     threshold: Option<usize>,
     limits: Limits,
@@ -69,6 +72,7 @@ impl FrameDecoder {
         Self {
             buf: Vec::with_capacity(512),
             pos: 0,
+            end: 0,
             cipher: None,
             threshold: None,
             limits: Limits::HANDSHAKE,
@@ -86,7 +90,7 @@ impl FrameDecoder {
     /// switch and are decrypted now.
     pub fn enable_encryption(&mut self, secret: &[u8; 16]) {
         let mut cipher = Cfb8::new(secret);
-        if let Some(rest) = self.buf.get_mut(self.pos..) {
+        if let Some(rest) = self.buf.get_mut(self.pos..self.end) {
             cipher.decrypt(rest);
         }
         self.cipher = Some(cipher);
@@ -99,25 +103,27 @@ impl FrameDecoder {
 
     /// Bytes received but not yet returned as frames.
     pub fn buffered(&self) -> usize {
-        self.buf.len().saturating_sub(self.pos)
+        self.end.saturating_sub(self.pos)
     }
 
     /// Writable space of at least `n` bytes at the end of the buffer; call [`FrameDecoder::commit`]
     /// with the number of bytes written into it.
     pub fn spare(&mut self, n: usize) -> &mut [u8] {
         self.compact();
-        let len = self.buf.len();
-        self.buf.resize(len.saturating_add(n), 0);
-        self.buf.get_mut(len..).unwrap_or_default()
+        let want = self.end.saturating_add(n);
+        if self.buf.len() < want {
+            self.buf.resize(want, 0);
+        }
+        self.buf.get_mut(self.end..want).unwrap_or_default()
     }
 
     /// Commits `n` bytes written into [`FrameDecoder::spare`] (which reserved `reserved`) and
     /// decrypts them.
     pub fn commit(&mut self, reserved: usize, n: usize) {
-        let end = self.buf.len().saturating_sub(reserved.saturating_sub(n));
-        self.buf.truncate(end);
-        let start = end.saturating_sub(n);
-        if let (Some(cipher), Some(new)) = (self.cipher.as_mut(), self.buf.get_mut(start..end)) {
+        let start = self.end;
+        self.end = start.saturating_add(n.min(reserved)).min(self.buf.len());
+        if let (Some(cipher), Some(new)) = (self.cipher.as_mut(), self.buf.get_mut(start..self.end))
+        {
             cipher.decrypt(new);
         }
     }
@@ -131,8 +137,9 @@ impl FrameDecoder {
     }
 
     fn compact(&mut self) {
-        if self.pos > 0 && (self.pos == self.buf.len() || self.pos > 4096) {
-            self.buf.drain(..self.pos);
+        if self.pos > 0 && (self.pos == self.end || self.pos > 4096) {
+            self.buf.copy_within(self.pos..self.end, 0);
+            self.end = self.end.saturating_sub(self.pos);
             self.pos = 0;
         }
     }
@@ -175,7 +182,7 @@ impl FrameDecoder {
 
     /// Takes the next complete frame off the buffer and checks its limits.
     fn split(&mut self) -> Result<Option<Split>> {
-        let avail = self.buf.get(self.pos..).unwrap_or_default();
+        let avail = self.buf.get(self.pos..self.end).unwrap_or_default();
         // Frame length: VarInt of at most 3 bytes.
         let mut len: usize = 0;
         let mut header = 0usize;

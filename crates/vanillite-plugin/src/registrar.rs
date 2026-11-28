@@ -1209,6 +1209,15 @@ impl<P: Plugin> Registrar<P> {
         self.on_event(abi::event::ENTITY_DROP_ITEM, priority, f)
     }
 
+    /// A command is about to change an attribute of a living entity; cancellable. See [`abi::event::ENTITY_ATTRIBUTE_CHANGE`]. Since ABI 1.13.
+    pub fn on_entity_attribute_change(
+        &mut self,
+        priority: i32,
+        f: impl FnMut(&mut P, &mut Ctx<'_>, &mut GameEvent<'_>) + Send + 'static,
+    ) -> &mut Self {
+        self.on_event(abi::event::ENTITY_ATTRIBUTE_CHANGE, priority, f)
+    }
+
     /// Adds a chunk populator after a stage of the generation ([`abi::gen_stage`]). Since
     /// ABI 1.6.
     pub fn chunk_populator(&mut self, stage: u32, populator: impl ChunkPopulator) -> &mut Self {

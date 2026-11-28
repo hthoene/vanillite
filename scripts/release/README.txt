@@ -35,9 +35,8 @@ Settings: server.properties as in Vanilla, plus vanillite.toml. Every key can al
 be set as an environment variable VANILLITE_<KEY>, e.g. VANILLITE_SERVER_PORT=25566.
 
 Windows:
-vanillite.exe is signed (Properties > Digital Signatures). While the certificate
-is new, Windows SmartScreen may still warn: choose More info > Run anyway. A double
-click starts it in its own folder.
+Windows SmartScreen may warn the first time: choose More info > Run anyway. A
+double click starts it in its own folder.
 
 macOS:
 The program is not signed. The first time, open it with a right click (Control-click)

@@ -1,0 +1,3 @@
+tick = 551
+cause = "the raid starts, counts down and spawns its first wave like Vanilla (level random equal through tick 550), but the raiders walk differently towards the village: a pillager of Vanillite's wave enters the observed region at tick 551, Vanilla's raiders only from about tick 600 (raider path finding / PathfindToRaidGoal)"
+owner = "gameplay-developer #283"

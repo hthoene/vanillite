@@ -807,7 +807,8 @@ pub fn tick_framed_map(level: &Level, ents: &mut Entities, env: &Env<'_>, id: En
     };
     let frame = crate::map::Frame {
         pos: f.attached.pos,
-        rotation: data_2d(f.attached.direction).max(0) * 90,
+        // `getDirection().get2DDataValue() * 90`: -90 for floor and ceiling frames.
+        rotation: data_2d(f.attached.direction) * 90,
         entity_id: network_id,
     };
     let statics = crate::map::static_decorations(&f.item);

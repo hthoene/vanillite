@@ -15,7 +15,8 @@
 //! cargo xtask parity soak [--jobs N] [--minutes N] [<scenario>...]
 //! cargo xtask parity quick
 //! cargo xtask parity worlds [--ticks N] [--jobs N] [--minutes N] [--prepare-only] [<world>...]
-//! cargo xtask parity coverage [--jobs N] [--fuzz-minutes N] [--report-only] [<scenario>...]
+//! cargo xtask parity coverage [--jobs N] [--heap SIZE] [--fuzz-minutes N] [--report-only] [--history FILE] [<scenario>...]
+//! cargo xtask parity coverage --trend [FILE]
 //! cargo xtask worldgen sweep [--seed N] [--seeds N] [--world-seed N]... [--size N] [--kinds a,b] [--keep]
 //! cargo xtask light sweep [--seed N] [--seeds N] [--world-seed N]... [--size N] [--kinds a,b] [--keep]
 //! cargo xtask dev [--release] [-- <server args>]
@@ -135,7 +136,9 @@ pub const USAGE: &str = "usage:
       ~/.cache/vanillite/parity-worlds/ (SHA-256 checked), upgraded or pasted by the pinned
       Vanilla server, then run like soak scenarios (blocks, ticks, entities and block entities
       per tick). Writes target/parity-worlds/summary.md and <world>.md. Runs nightly.
-  cargo xtask parity coverage [--jobs N] [--fuzz-minutes N] [--report-only] [<scenario>...]
+  cargo xtask parity coverage [--jobs N] [--heap SIZE] [--fuzz-minutes N] [--report-only]
+                              [--history FILE] [<scenario>...]
+  cargo xtask parity coverage --trend [FILE]
       Which Vanilla code the parity scenarios exercise (#257): the recorder plays every
       Vanilla-recorded scenario (fast and bulk) on the pinned jar under the JaCoCo agent
       (downloaded into target/vanilla/jacoco/), on --jobs JVMs; --fuzz-minutes adds a parity
@@ -143,7 +146,10 @@ pub const USAGE: &str = "usage:
       summary.md (gameplay coverage, per system, the 30 biggest uncovered classes and
       packages), coverage.json (also per class, read by parity fuzz) and html/ (per package,
       class and method). --report-only re-reads the coverage data of the last run; scenario
-      names record just those.
+      names record just those. --heap sets each recorder JVM's -Xmx (default 4g). --history
+      appends the run's gameplay and per-system figures (instructions/branches %) as one JSON
+      line to FILE (the nightly: /var/lib/vanillite-nightly/coverage-history.jsonl); --trend
+      prints that history as Markdown (default FILE target/parity-coverage/history.jsonl).
   cargo xtask worldgen sweep [--seed N] [--seeds N] [--world-seed N]... [--size N] [--kinds a,b] [--keep]
       World generation against Vanilla (#223): for --seeds world seeds (default 3, derived from
       --seed, default the day number; or the given --world-seed values) and every kind

@@ -162,8 +162,12 @@ pub fn release(
         let start = Vec3::new(pos.x, pos.y + eye - f64::from(0.1_f32), pos.z);
         let mut data = MissileData::new(MissileKind::Trident);
         data.ints[3] = crate::mob::fam::undead::trident::loyalty(&thrown);
+        data.foil = crate::mob::fam::undead::trident::has_foil(&thrown);
+        // `AbstractArrow`: an `intangible_projectile` stack makes it creative only, like a
+        // creative player's throw.
+        let intangible = crate::crossbow::is_intangible(&thrown);
         data.item = thrown;
-        data.pickup = if creative { 2 } else { 1 };
+        data.pickup = if creative || intangible { 2 } else { 1 };
         let id = crate::mob::missile::spawn_from_rotation(
             ents,
             network_ids,
@@ -238,22 +242,17 @@ fn hurt_without_breaking(ents: &mut Entities, env: &mut Env<'_>, player: EntityI
     let Some(stack) = ents.player(player).map(|p| p.inventory.get(index).clone()) else {
         return;
     };
-    if !item::is_damageable(&stack) {
+    let creative = ents
+        .player(player)
+        .is_some_and(|p| p.game_mode == vanillite_config::GameMode::Creative);
+    let change = crate::durability::change(&stack, 1, creative, env.random);
+    if change == 0 {
         return;
-    }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-    if unbreaking > 0 {
-        #[allow(clippy::cast_precision_loss)]
-        let level = unbreaking as f32;
-        if vanillite_base::random::RandomSource::next_float(env.random) < level / (level + 1.0) {
-            return;
-        }
     }
     if let Some(p) = ents.player_mut(player)
         && let Some(s) = p.inventory.get_mut(index)
     {
-        let d = (item::damage(s) + 1).min(item::max_damage(s) - 1);
+        let d = (item::damage(s) + change).min(item::max_damage(s) - 1);
         crate::advancements::view::apply_damage(
             Some(&mut p.advancements),
             Some(&mut p.stats),
@@ -316,14 +315,20 @@ pub fn tick_spin_attacks(
         else {
             continue;
         };
+        // `getEntities(this, box)`: no spectators.
         let mut found = Vec::new();
         ents.store.for_each_in(&spin.swept, false, |e| {
-            if e != player {
+            let spectator = ents
+                .player(e)
+                .is_some_and(|p| p.game_mode == GameMode::Spectator);
+            if e != player && !spectator {
                 found.push(e);
             }
         });
         found.sort_unstable();
         let mut ticks = spin.ticks;
+        // A wall ends the spin only when the box holds no entity at all.
+        let any = !found.is_empty();
         let hit = found
             .into_iter()
             .find(|&e| ents.mob(e).is_some() || ents.player(e).is_some());
@@ -335,7 +340,7 @@ pub fn tick_spin_attacks(
                 let v = e.as_ref().velocity();
                 e.set_velocity(v * -0.2);
             }
-        } else if spin.horizontal_collision {
+        } else if !any && spin.horizontal_collision {
             ticks = 0;
         }
         let Entities { store, players, .. } = &mut *ents;

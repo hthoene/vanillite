@@ -25,6 +25,9 @@ pub fn is_arrow_kind(kind: vanillite_data::entity::EntityTypeId) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrowData {
     pub owner: Option<EntityId>,
+    /// The owner's UUID (`EntityReference`): the owner is looked up again by it every tick,
+    /// also after a reload or the owner's respawn.
+    pub owner_uuid: Option<u128>,
     pub base_damage: f64,
     pub in_ground: bool,
     pub life: i32,
@@ -82,6 +85,7 @@ impl ArrowData {
     ) -> ArrowData {
         ArrowData {
             owner,
+            owner_uuid: None,
             base_damage,
             in_ground: false,
             life: 0,
@@ -182,13 +186,12 @@ pub fn shoot(
 }
 
 /// `BowItem.releaseUsing` / `ProjectileWeaponItem.shoot` of one arrow: spawns it at `start`
-/// flying along `dir` with `power` and `uncertainty`, with the weapon's enchantments (Power
-/// adds damage, Punch knockback, Flame fire). Dispensers and other shooters use it too.
+/// flying along `dir` with `power` and `uncertainty`, fired from `weapon` (Flame sets it on
+/// fire; Power and Punch apply at the hit). Dispensers and other shooters use it too.
 #[allow(clippy::too_many_arguments)]
 pub fn shoot_arrow(
     ents: &mut Entities,
     network_ids: &vanillite_world::entity::NetworkIds,
-    random: &mut LegacyRandom,
     start: Vec3,
     dir: Vec3,
     power: f32,
@@ -208,33 +211,12 @@ pub fn shoot_arrow(
     data.crit = crit;
     data.weapon = weapon.cloned();
     if let Some(w) = weapon {
-        let combat = super::attack::combat_data();
-        let (enchants, tags): (
-            &crate::enchant::Enchantments,
-            &dyn crate::predicate::EntityTags,
-        ) = (&combat.enchants, &*combat);
-        let arrow = crate::predicate::EntityFacts {
-            kind: Some(kind),
-            ..crate::predicate::EntityFacts::default()
-        };
-        let types = crate::survival::damage::DamageTypes::built_in();
-        let cx = crate::enchant::EnchantContext {
-            types: &types,
-            tags,
-            this: None,
-            attacker: owner.and_then(|o| super::attack::facts(ents, o)),
-            direct_attacker: Some(arrow),
-            attacking_player: None,
-            source: None,
-            raining: false,
-            thundering: false,
-            location: None,
-        };
-        #[allow(clippy::cast_possible_truncation)]
-        let dmg = enchants.modify_damage(w, &cx, random, data.base_damage as f32);
-        data.base_damage = f64::from(dmg);
-        data.knockback = enchants.modify_knockback(w, &cx, random, 0.0);
-        if enchants.projectile_ignite(w).is_some() {
+        // Flame (`onProjectileSpawned`); Power and Punch apply at the hit.
+        if super::attack::combat_data()
+            .enchants
+            .projectile_ignite(w)
+            .is_some()
+        {
             // `igniteForSeconds(100)`.
             data.fire = 2000;
         }
@@ -341,36 +323,13 @@ pub fn skeleton_shoot(t: &mut Tick<'_, '_>, target: EntityId, power: f32) {
     // `igniteForSeconds(100)` of the wither skeleton's arrow.
     data.fire = if fire { 2000 } else { 0 };
     data.pierce_level = u8::try_from(pierce.clamp(0, 127)).unwrap_or(0);
-    // The weapon's Power (`modifyDamage`), Punch (`modifyKnockback`) and Flame
-    // (`onProjectileSpawned`).
     if let Some(w) = &weapon {
-        let combat = super::attack::combat_data();
-        let (enchants, tags): (
-            &crate::enchant::Enchantments,
-            &dyn crate::predicate::EntityTags,
-        ) = (&combat.enchants, &*combat);
-        let arrow = crate::predicate::EntityFacts {
-            kind: Some(kind),
-            ..crate::predicate::EntityFacts::default()
-        };
-        let types = crate::survival::damage::DamageTypes::built_in();
-        let cx = crate::enchant::EnchantContext {
-            types: &types,
-            tags,
-            this: None,
-            attacker: super::attack::facts(t.ents, id),
-            direct_attacker: Some(arrow),
-            attacking_player: None,
-            source: None,
-            raining: false,
-            thundering: false,
-            location: None,
-        };
-        #[allow(clippy::cast_possible_truncation)]
-        let dmg = enchants.modify_damage(w, &cx, t.env.random, data.base_damage as f32);
-        data.base_damage = f64::from(dmg);
-        data.knockback = enchants.modify_knockback(w, &cx, t.env.random, 0.0);
-        if enchants.projectile_ignite(w).is_some() {
+        // Flame (`onProjectileSpawned`); Power and Punch apply at the hit.
+        if super::attack::combat_data()
+            .enchants
+            .projectile_ignite(w)
+            .is_some()
+        {
             // `igniteForSeconds(100)`.
             data.fire = 2000;
         }
@@ -466,6 +425,11 @@ pub fn tick_arrow(
     let Some(mut a) = ents.arrow(id).cloned() else {
         return;
     };
+    // `getOwner`: the owner by its UUID.
+    if a.owner_uuid.is_none() {
+        a.owner_uuid = a.owner.and_then(|o| ents.store.get(o)).map(|e| e.uuid());
+    }
+    a.owner = super::missile::resolve_owner(ents, a.owner, a.owner_uuid);
     let Some(e) = ents.store.get(id) else {
         return;
     };
@@ -695,10 +659,17 @@ pub fn tick_arrow(
             super::attack::aim_deflect(ents, target, a.owner, a.owner);
             // `onHit` posts `PROJECTILE_LAND` at the hit location after `onHitEntity`.
             super::missile::land_event(env.out, level, id, a.owner, None, hit);
-            // `onHitEntity`.
+            // `onHitEntity`: the weapon's `modifyDamage` (Power) against this target.
             let pow = velocity.length_sqr().sqrt();
+            let owner_for_source = a.owner.filter(|o| ents.store.contains(*o)).unwrap_or(id);
+            let (arrow_damage, knockback) = match &a.weapon {
+                Some(w) => {
+                    weapon_hit_values(ents, env, w, kind, owner_for_source, target, a.base_damage)
+                }
+                None => (a.base_damage, a.knockback),
+            };
             #[allow(clippy::cast_possible_truncation)]
-            let mut damage = ceil((pow * a.base_damage).clamp(0.0, 2.147_483_647e9));
+            let mut damage = ceil((pow * arrow_damage).clamp(0.0, 2.147_483_647e9));
             if a.pierce_level > 0 {
                 if a.pierced.len() > usize::from(a.pierce_level) {
                     discard = true;
@@ -764,12 +735,12 @@ pub fn tick_arrow(
                     add_stuck_arrow(ents, target);
                 }
                 // `doKnockback`: Punch pushes along the arrow's flight.
-                if a.knockback > 0.0 {
+                if knockback > 0.0 {
                     let resist = super::attack::knockback_resistance(ents, target);
                     let flat = Vec3::new(velocity.x, 0.0, velocity.z);
                     if flat.length_sqr() > 0.0 {
                         let push = flat.normalize()
-                            * (f64::from(a.knockback) * 0.6 * (1.0 - resist).max(0.0));
+                            * (f64::from(knockback) * 0.6 * (1.0 - resist).max(0.0));
                         if let Some(mut e) = ents.store.get_mut(target) {
                             let v = e.as_ref().velocity();
                             e.set_velocity(v + Vec3::new(push.x, 0.1, push.z));
@@ -1464,4 +1435,43 @@ pub fn try_pickup(
         2 => infinite,
         _ => false,
     }
+}
+
+/// `AbstractArrow.onHitEntity`'s `modifyDamage(weapon, target, source, baseDamage)` (Power)
+/// and `doKnockback`'s `modifyKnockback(weapon, target, source, 0)` (Punch) of an arrow shot
+/// from `weapon`.
+fn weapon_hit_values(
+    ents: &crate::entities::Entities,
+    env: &mut crate::survival::player::Env<'_>,
+    weapon: &crate::item::ItemStack,
+    kind: vanillite_data::entity::EntityTypeId,
+    owner: EntityId,
+    target: EntityId,
+    base_damage: f64,
+) -> (f64, f32) {
+    let combat = super::attack::combat_data();
+    let (enchants, tags): (
+        &crate::enchant::Enchantments,
+        &dyn crate::predicate::EntityTags,
+    ) = (&combat.enchants, &*combat);
+    let arrow = crate::predicate::EntityFacts {
+        kind: Some(kind),
+        ..crate::predicate::EntityFacts::default()
+    };
+    let cx = crate::enchant::EnchantContext {
+        types: env.types,
+        tags,
+        this: super::attack::facts(ents, target),
+        attacker: super::attack::facts(ents, owner),
+        direct_attacker: Some(arrow),
+        attacking_player: None,
+        source: None,
+        raining: false,
+        thundering: false,
+        location: None,
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let damage = enchants.modify_damage(weapon, &cx, env.random, base_damage as f32);
+    let knockback = enchants.modify_knockback(weapon, &cx, env.random, 0.0);
+    (f64::from(damage), knockback)
 }

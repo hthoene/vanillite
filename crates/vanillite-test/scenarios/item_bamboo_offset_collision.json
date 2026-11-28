@@ -1,0 +1,13 @@
+{
+  "description": "An item dropped beside the stalk of a bamboo (#264): the bamboo's collision box moves with its random offset, so the item falls past it to the ground instead of landing on top.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [4, -57, 4]],
+  "ticks": 20,
+  "setup": [
+    {"op": "set", "pos": [0, -61, 2], "block": "minecraft:dirt"},
+    {"op": "set", "pos": [0, -60, 2], "block": "minecraft:bamboo"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 0.5 -58.9 2.65 {Item:{id:\"minecraft:stone\",count:1},Motion:[0.0,0.0,0.0],PickupDelay:100}"}
+  ]
+}

@@ -86,7 +86,8 @@ pub(crate) fn run(
                 ));
             }
             let name = name_arg(env, source, args)?;
-            let uuid = env.level.new_uuid();
+            // `Mth.createInsecureUUID(source.getLevel().getRandom())`.
+            let uuid = vanillite_game::mob::random_uuid(env.level.random());
             let (display, count) = {
                 let mut bars = global.systems.bossbars();
                 let display = bars.create(uuid, id, name).display_name();

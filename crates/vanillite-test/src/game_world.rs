@@ -99,12 +99,19 @@ impl PacketSink for NoSink {
     }
 }
 
-/// Blocks of the level's chunks for survival code.
-struct ChunkBlocks<'a>(&'a Chunks);
+/// Blocks of the level's chunks (and the moving pistons' block entities) for survival code.
+struct ChunkBlocks<'a>(
+    &'a Chunks,
+    &'a vanillite_game::level::block_entity::BlockEntities,
+);
 
 impl BlockAccess for ChunkBlocks<'_> {
     fn block_state(&self, pos: BlockPos) -> Option<BlockState> {
         self.0.block(pos).map(BlockState)
+    }
+
+    fn moving_piston_boxes(&self, pos: BlockPos, out: &mut Vec<[f64; 6]>) {
+        vanillite_game::block::piston::collision_boxes_at(self.1, pos, out);
     }
 }
 
@@ -463,10 +470,19 @@ impl GameWorld {
                     .filter(|r| r.dimension == "minecraft:overworld")
                     .map(|r| r.pos),
                 leads_mobs: self.level.entities.leashes.values().any(|&h| h == id),
-                ranges: vanillite_game::player::play::interaction_ranges(
-                    &player.inventory,
-                    player.game_mode,
-                ),
+                ranges: {
+                    let ranges = vanillite_game::player::play::interaction_ranges(
+                        &player.inventory,
+                        player.game_mode,
+                    );
+                    // The recorder calls `ServerPlayerGameMode.useItemOn` itself, without the
+                    // packet handler's reach check: a clicked block is in reach.
+                    if click.air || click.attack {
+                        ranges
+                    } else {
+                        (10_000.0, ranges.1)
+                    }
+                },
             };
             let mut effects = vanillite_server::LevelEffects::default();
             let spectators = vanillite_base::hash::FxHashSet::default();
@@ -629,6 +645,7 @@ impl GameWorld {
                     at,
                     direction,
                     location,
+                    false,
                 );
             });
         }
@@ -738,7 +755,7 @@ impl GameWorld {
         let (types, facts) = PACK.get().expect("installed");
         let r = {
             let level = &self.level;
-            let blocks = ChunkBlocks(&level.chunks);
+            let blocks = ChunkBlocks(&level.chunks, &level.block_entities);
             let raining = |pos| level.is_raining_at(pos);
             let mut no_gateway = |_| false;
             let names = |name: &str, _| vanillite_protocol::text::Component::text(name.to_owned());
@@ -750,6 +767,7 @@ impl GameWorld {
                 difficulty: self.difficulty,
                 game_time: level.game_time(),
                 min_y: MIN_Y,
+                logical_height: 384,
                 dimension: "minecraft:overworld",
                 raining_at: &raining,
                 border: None,
@@ -869,7 +887,7 @@ impl GameWorld {
                         },
                         &mut self.item_scratch,
                         &vanillite_game::item_entity::FireWorld {
-                            blocks: &ChunkBlocks(&level.chunks),
+                            blocks: &ChunkBlocks(&level.chunks, &level.block_entities),
                             facts,
                             types,
                             raining_at: &raining,
@@ -939,7 +957,11 @@ impl GameWorld {
             }
             self.finish_removals();
         }
-        // `rideTick`: passengers follow their vehicles (as the server's `WorldMobs`).
+        // `rideTick`: sneaking players get off, passengers follow their vehicles (as the
+        // server's `WorldMobs`).
+        self.with_env(|_, ents, env, _| {
+            vanillite_game::riding::stop_riding_sneaking_players(ents, env);
+        });
         vanillite_game::riding::ride_tick(&mut self.level.entities);
         // Leads after the entities (`WorldMobs` of the server): orphaned leads, gone knots.
         let discarded = self.with_env(|level, ents, env, _| {
@@ -1573,11 +1595,15 @@ fn running(kind: Kind, slots: &[Slot]) -> Value {
 fn goal_name(kind: Kind, goal: &Goal) -> &'static str {
     match goal {
         Goal::Float => "FloatGoal",
+        Goal::Panic { .. } if matches!(kind, Kind::Horse | Kind::Donkey | Kind::Mule) => {
+            "MountPanicGoal"
+        }
         Goal::Panic { .. } => "PanicGoal",
         Goal::Stroll { .. } => "WaterAvoidingRandomStrollGoal",
         Goal::LookAtPlayer { .. } if kind == Kind::Fox => "FoxLookAtPlayerGoal",
         Goal::LookAtPlayer { .. } => "LookAtPlayerGoal",
         Goal::RandomLook { .. } => "RandomLookAroundGoal",
+        Goal::Melee { .. } if kind == Kind::Bee => "BeeAttackGoal",
         Goal::Melee { kind, .. } => match kind {
             MeleeKind::Plain => "MeleeAttackGoal",
             MeleeKind::Zombie => "ZombieAttackGoal",
@@ -1592,9 +1618,12 @@ fn goal_name(kind: Kind, goal: &Goal) -> &'static str {
         Goal::FollowParent { .. } => "FollowParentGoal",
         Goal::NearestTarget { spider: true, .. } => "SpiderTargetGoal",
         Goal::NearestTarget { .. } => "NearestAttackableTargetGoal",
+        Goal::HurtBy { .. } if kind == Kind::Bee => "BeeHurtByOtherGoal",
+        Goal::HurtBy { .. } if kind == Kind::Panda => "PandaHurtByTargetGoal",
         Goal::HurtBy { .. } => "HurtByTargetGoal",
         Goal::EndermanFreeze { .. } => "EndermanFreezeWhenLookedAt",
         Goal::EndermanStare { .. } => "EndermanLookForPlayerGoal",
+        Goal::Breed { .. } if kind == Kind::Panda => "PandaBreedGoal",
         Goal::Breed { .. } => "BreedGoal",
         Goal::Tempt { .. } => "TemptGoal",
         Goal::SitWhenOrdered => "SitWhenOrderedToGoal",
@@ -1603,6 +1632,9 @@ fn goal_name(kind: Kind, goal: &Goal) -> &'static str {
         Goal::FollowOwner { .. } => "FollowOwnerGoal",
         Goal::OwnerHurtBy { .. } => "OwnerHurtByTargetGoal",
         Goal::OwnerHurt { .. } => "OwnerHurtTargetGoal",
+        Goal::Common(CommonGoal::NearestAttackable { .. }) if kind == Kind::Bee => {
+            "BeeBecomeAngryTargetGoal"
+        }
         Goal::Common(c) => common_goal_name(c),
         Goal::Fam(f) => fam_goal_name(kind, f),
         Goal::Guardian(g) => {
@@ -1738,6 +1770,7 @@ fn fam_goal_name(kind: Kind, goal: &FamGoal) -> &'static str {
             ("Fox", "Avoid") => "AvoidEntityGoal",
             ("Fox", "Pounce") => "FoxPounceGoal",
             ("Fox", "EatBerries") => "FoxEatBerriesGoal",
+            ("Fox", "StrollThroughVillage") => "FoxStrollThroughVillageGoal",
             ("Fox", "SearchForItems") => "FoxSearchForItemsGoal",
             ("Fox", "DefendTrusted") => "DefendTrustedTargetGoal",
             ("Panda", "BreedCheck") => "PandaBreedGoal",
@@ -1901,6 +1934,13 @@ fn open_level(
         spec.seed,
     );
     level.set_tree_features(Arc::clone(TREES.get().expect("installed")));
+    // Structure blocks and `/place template`: the data packs' templates and what the scenario
+    // saves (in memory, its own per world).
+    level.set_structure_templates(Arc::new(
+        vanillite_worldgen::template::StructureTemplateManager::from_roots(
+            PACKS.get().map(|p| p.roots().to_vec()).unwrap_or_default(),
+        ),
+    ));
     level.set_climate(Arc::new(Climate {
         biomes: BIOMES.get().expect("installed").clone(),
         manager: vanillite_worldgen::biome::BiomeManager::for_world_seed(spec.seed),
@@ -2133,7 +2173,7 @@ impl ScenarioWorld for GameWorld {
         level.tick_chunk_runtime();
         level.post_process();
         let mut scratch = Vec::new();
-        level.tick_chunks(&mut scratch);
+        level.tick_chunks(&mut scratch, &vanillite_game::level::tiles::Phases::INLINE);
         level.run_block_events();
         self.tick_entities();
         let level = &mut self.level;
@@ -2183,23 +2223,7 @@ impl ScenarioWorld for GameWorld {
     }
 
     fn block_entities(&self, min: BlockPos, max: BlockPos, out: &mut Vec<String>) {
-        for y in min.y..=max.y {
-            for z in min.z..=max.z {
-                for x in min.x..=max.x {
-                    let pos = BlockPos::new(x, y, z);
-                    if !self.is_loaded(pos)
-                        || self.level.block(pos).block().info().block_entity == u16::MAX
-                    {
-                        continue;
-                    }
-                    if let Some(nbt) = self.level.block_entity_nbt(pos) {
-                        let mut s = format!("{x},{y},{z} ");
-                        crate::trace::canonical_nbt(&mut s, &vanillite_nbt::Tag::Compound(nbt));
-                        out.push(s);
-                    }
-                }
-            }
-        }
+        observe_block_entities(&self.level, |p| self.is_loaded(p), min, max, out);
     }
 
     fn light(&mut self, min: BlockPos, max: BlockPos, out: &mut Vec<u8>) {
@@ -2639,6 +2663,32 @@ pub(crate) fn inside(p: BlockPos, min: BlockPos, max: BlockPos) -> bool {
 }
 
 /// Pending ticks inside `min..=max` in drain order, delays relative to the game time.
+/// The block entities of the loaded positions inside `min..=max` as `x,y,z <canonical nbt>`
+/// ([`crate::world::ScenarioWorld::block_entities`]).
+pub(crate) fn observe_block_entities(
+    level: &Level,
+    is_loaded: impl Fn(BlockPos) -> bool,
+    min: BlockPos,
+    max: BlockPos,
+    out: &mut Vec<String>,
+) {
+    for y in min.y..=max.y {
+        for z in min.z..=max.z {
+            for x in min.x..=max.x {
+                let pos = BlockPos::new(x, y, z);
+                if !is_loaded(pos) || level.block(pos).block().info().block_entity == u16::MAX {
+                    continue;
+                }
+                if let Some(nbt) = level.block_entity_nbt(pos) {
+                    let mut s = format!("{x},{y},{z} ");
+                    crate::trace::canonical_nbt(&mut s, &vanillite_nbt::Tag::Compound(nbt));
+                    out.push(s);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn observe_ticks(
     level: &Level,
     ticks: &LevelTicks,
@@ -2915,7 +2965,12 @@ impl GameWorld {
                     Pose::Standing
                 };
                 entity.set_pose(pose);
-                entity.set_dims(vanillite_game::player::dimensions(pose));
+                entity.set_dims(vanillite_game::player::scaled_dimensions(
+                    pose,
+                    vanillite_game::effect::attribute_map::scale_of(
+                        &player.survival.effects.modifiers,
+                    ),
+                ));
             }
         }
         self.level.entities.players = players;

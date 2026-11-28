@@ -26,7 +26,8 @@ import net.minecraft.util.datafix.fixes.BlockStateData;
  * ({@code .nbt}) file into a gzipped structure template with the source's data version, so
  * Vanilla's data fixers upgrade it when {@code /place template} loads it. Air is left out (the
  * template is pasted into a void world). Prints {@code size <x> <y> <z>}, then {@code lever <x>
- * <y> <z> <state>} for every lever with its {@code powered} flipped (the default trigger).
+ * <y> <z> <state>} for every lever with its {@code powered} flipped and {@code button <x> <y> <z>}
+ * for every button (the default trigger).
  */
 public final class WorldPrep {
   /** Data version of the flattened states of {@link BlockStateData} (1.13). */
@@ -89,6 +90,10 @@ public final class WorldPrep {
     void printLevers() {
       for (int[] b : placed) {
         CompoundTag state = palette.get(b[3]);
+        if (state.getStringOr("Name", "").endsWith("_button")) {
+          System.out.println("button " + b[0] + " " + b[1] + " " + b[2]);
+          continue;
+        }
         if (!state.getStringOr("Name", "").equals("minecraft:lever")) {
           continue;
         }

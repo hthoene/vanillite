@@ -233,7 +233,12 @@ fn entity_data(entity: &EntityRef<'_>, entities: &Entities, all: bool) -> Option
                 .minecart(entity.id())
                 .and_then(|m| m.custom_name.as_deref())
         })
-        .or_else(|| crate::decoration::custom_name(entities, entity.id()));
+        .or_else(|| crate::decoration::custom_name(entities, entity.id()))
+        .or_else(|| {
+            entities
+                .cloud(entity.id())
+                .and_then(|c| c.custom_name.as_deref())
+        });
     if all || name.is_some() {
         item(
             &mut out,
@@ -889,10 +894,14 @@ pub fn encode_update(message: &Message, entities: &Entities) -> Option<Encoded> 
                 .vehicle_of(message.entity)
                 .and_then(|v| crate::riding::passengers_packet(entities, v));
             let link = crate::mob::tame::link_pairing_packet(entities, message.entity);
-            let attributes = entities.mob(message.entity).and_then(|m| {
-                let given = &entities.extra(message.entity)?.attributes;
-                crate::effect::living::mob_pairing_attributes(id, m, given)
-            });
+            let attributes = match entities.mob(message.entity) {
+                Some(m) => entities.extra(message.entity).and_then(|x| {
+                    crate::effect::living::mob_pairing_attributes(id, m, &x.attributes)
+                }),
+                None => entities
+                    .player(message.entity)
+                    .and_then(|p| crate::effect::living::player_pairing_attributes(id, p)),
+            };
             if data.is_none()
                 && attributes.is_none()
                 && gear.is_none()

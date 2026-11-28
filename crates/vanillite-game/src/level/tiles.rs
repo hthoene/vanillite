@@ -95,6 +95,69 @@ pub fn inline_fork(n: usize, job: &(dyn Fn(usize) + Sync)) {
     }
 }
 
+/// Items per part of a parallel phase over chunks: below this, a part is not worth a thread.
+pub(crate) const PHASE_PART: usize = 1024;
+
+/// The parallel phases of Vanilla's serial order (`performance.threads.tick-phases`): work
+/// that only reads the level is split into contiguous parts that run on up to `threads`
+/// threads, and the results come back in the order of the input, so they do not depend on
+/// the number of threads.
+#[derive(Clone, Copy)]
+pub struct Phases<'a> {
+    /// Threads of a phase, the calling one included (1 = inline).
+    pub threads: usize,
+    /// Where the parts run.
+    pub fork: &'a Fork<'a>,
+}
+
+impl std::fmt::Debug for Phases<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Phases")
+            .field("threads", &self.threads)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Phases<'static> {
+    /// Every phase inline on the calling thread.
+    pub const INLINE: Phases<'static> = Phases {
+        threads: 1,
+        fork: &inline_fork,
+    };
+}
+
+impl Phases<'_> {
+    /// Runs `job` over contiguous parts of `items` (at least `min_part` items each, at most
+    /// [`Phases::threads`] parts) and returns what the parts appended to their output, in the
+    /// order of `items`.
+    pub fn map<T: Sync, R: Send>(
+        &self,
+        items: &[T],
+        min_part: usize,
+        job: impl Fn(&[T], &mut Vec<R>) + Sync,
+    ) -> Vec<R> {
+        let n = items.len();
+        let parts = self.threads.min(n.div_ceil(min_part.max(1))).max(1);
+        let mut out = Vec::new();
+        if parts == 1 {
+            job(items, &mut out);
+            return out;
+        }
+        let per = n.div_ceil(parts);
+        let slots: Vec<Mutex<Vec<R>>> = (0..parts).map(|_| Mutex::new(Vec::new())).collect();
+        (self.fork)(parts, &|i| {
+            let part = items.get(i * per..((i + 1) * per).min(n)).unwrap_or(&[]);
+            let mut local = Vec::new();
+            job(part, &mut local);
+            *slots[i].lock().unwrap_or_else(PoisonError::into_inner) = local;
+        });
+        for slot in slots {
+            out.append(&mut slot.into_inner().unwrap_or_else(PoisonError::into_inner));
+        }
+        out
+    }
+}
+
 /// A tile: `size × size` chunks, aligned to the chunk grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TilePos {
@@ -234,12 +297,17 @@ impl Level {
     /// in parallel, each with its own random stream, and keep the positions whose block or
     /// fluid ticks randomly (most do not); the picks then run serially in tile order. Falls
     /// back to [`Level::tick_chunks`]' order when [`TileRun`] does not apply.
-    pub fn tick_chunks_tiled(&mut self, scratch: &mut Vec<ChunkPos>, run: &TileRun<'_>) {
+    pub fn tick_chunks_tiled(
+        &mut self,
+        scratch: &mut Vec<ChunkPos>,
+        run: &TileRun<'_>,
+        phases: &Phases<'_>,
+    ) {
         let speed = self.settings.random_tick_speed;
         scratch.clear();
         self.chunks.random_ticking_candidates(scratch);
         if !run.applies(self, scratch) {
-            self.tick_chunks(scratch);
+            self.tick_chunks(scratch, phases);
             return;
         }
         let tiles = run.group(scratch);
@@ -430,7 +498,7 @@ mod tests {
         assert_eq!(dirt_left(&level), 16);
         for _ in 0..4000 {
             level.tick_time();
-            level.tick_chunks_tiled(&mut scratch, &run(fork));
+            level.tick_chunks_tiled(&mut scratch, &run(fork), &Phases::INLINE);
         }
         assert!(
             dirt_left(&level) < 16,
@@ -458,7 +526,7 @@ mod tests {
             let mut scratch = Vec::new();
             for _ in 0..300 {
                 level.tick_time();
-                level.tick_chunks_tiled(&mut scratch, &run(fork));
+                level.tick_chunks_tiled(&mut scratch, &run(fork), &Phases::INLINE);
             }
             surface(&level)
         };
@@ -492,7 +560,7 @@ mod tests {
             let mut scratch = Vec::new();
             for _ in 0..200 {
                 level.tick_time();
-                level.tick_chunks(&mut scratch);
+                level.tick_chunks(&mut scratch, &Phases::INLINE);
             }
             (surface(&level), level.random().next_int())
         };
@@ -507,7 +575,7 @@ mod tests {
             let mut scratch = Vec::new();
             for _ in 0..200 {
                 level.tick_time();
-                level.tick_chunks_tiled(&mut scratch, &run);
+                level.tick_chunks_tiled(&mut scratch, &run, &Phases::INLINE);
                 if load {
                     level.load_chunk(ChunkPos::new(40, 40));
                 }

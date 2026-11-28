@@ -457,6 +457,32 @@ pub fn needs_nbt(state: u32) -> bool {
     })
 }
 
+/// The facing (a 3D direction id) of a Java piston base state.
+pub fn piston_facing(state: u32) -> Option<u8> {
+    let s = BlockState(u16::try_from(state).ok()?);
+    if !s.is_valid()
+        || !matches!(
+            s.block().name(),
+            "minecraft:piston" | "minecraft:sticky_piston"
+        )
+    {
+        return None;
+    }
+    s.value("facing").and_then(facing_id)
+}
+
+/// The unit vector of a 3D direction id (down, up, north, south, west, east).
+pub fn direction_step(direction: u8) -> [i32; 3] {
+    match direction {
+        0 => [0, -1, 0],
+        1 => [0, 1, 0],
+        2 => [0, 0, -1],
+        3 => [0, 0, 1],
+        4 => [-1, 0, 0],
+        _ => [1, 0, 0],
+    }
+}
+
 /// Whether a Java block state is an extended piston (Bedrock draws the arm from a block actor
 /// that Java has no block entity for).
 pub fn extended_piston(state: u32) -> bool {

@@ -16,6 +16,7 @@ use vanillite_command::{
 use vanillite_data::entity::ids as entity_ids;
 use vanillite_data::item::{ItemId, Rarity};
 use vanillite_data::registry::{BLOCK, DATA_COMPONENT_TYPE, ITEM};
+use vanillite_game::block::container::ContainerRef;
 use vanillite_game::commands::ItemOp;
 use vanillite_game::entities::Entities;
 use vanillite_game::inventory::OFFHAND;
@@ -90,6 +91,17 @@ pub(crate) fn on_player(
 
 /// `containerMenu.broadcastChanges` of a player.
 pub(crate) fn sync_inventory(entities: &mut Entities, id: EntityId) {
+    if let Some(player) = entities.player_mut(id) {
+        let sink = std::sync::Arc::clone(&player.connection.sink);
+        player.inventory.broadcast_changes(sink.as_ref());
+        // The inventory's container listener (`slotChanged`): `inventory_changed` at once.
+        player.advancements.check_inventory(&player.inventory);
+    }
+}
+
+/// [`sync_inventory`] without the container listener: the slots only (`Inventory.add` of
+/// `/loot give`, which leaves `inventory_changed` to the player's next tick like Vanilla).
+pub(crate) fn send_inventory(entities: &mut Entities, id: EntityId) {
     if let Some(player) = entities.player_mut(id) {
         let sink = std::sync::Arc::clone(&player.connection.sink);
         player.inventory.broadcast_changes(sink.as_ref());
@@ -347,14 +359,20 @@ impl ItemInput {
 /// `LivingEntity.createItemStackToDrop(stack, false, false)` with `setNoPickUpDelay` and the
 /// player as the only one to pick it up (`GiveCommand`).
 pub(crate) fn drop_for(level: &mut Level, id: EntityId, stack: ItemStack) {
-    let Some((pos, rot, uuid)) = level
-        .entities
-        .store
-        .get(id)
-        .map(|e| (e.pos(), e.rot(), e.uuid()))
-    else {
+    let Some(uuid) = level.entities.store.get(id).map(|e| e.uuid()) else {
         return;
     };
+    if let Some(item) = spawn_drop(level, id, stack)
+        && let Some(data) = level.entities.item_mut(item)
+    {
+        data.target = Some(uuid);
+    }
+}
+
+/// `createItemStackToDrop(stack, false, false)` added to the level: the stack from the
+/// player's hand height, thrown where it looks with the player's own random.
+fn spawn_drop(level: &mut Level, id: EntityId, stack: ItemStack) -> Option<EntityId> {
+    let (pos, rot) = level.entities.store.get(id).map(|e| (e.pos(), e.rot()))?;
     let eye = f64::from(entity_ids::PLAYER.info().eye_height);
     let deg = std::f64::consts::PI / 180.0;
     let (sin_x, cos_x) = (
@@ -366,13 +384,10 @@ pub(crate) fn drop_for(level: &mut Level, id: EntityId, stack: ItemStack) {
         vanillite_base::math::cos(f64::from(rot.y_rot) * deg),
     );
     // The player's own random (`createItemStackToDrop`).
-    let Some(random) = level
+    let random = level
         .entities
         .player_mut(id)
-        .map(|p| &mut p.survival.random)
-    else {
-        return;
-    };
+        .map(|p| &mut p.survival.random)?;
     let dir = random.next_float() * std::f32::consts::TAU;
     let pow2 = 0.02 * random.next_float();
     let spread = random.next_float() - random.next_float();
@@ -382,12 +397,7 @@ pub(crate) fn drop_for(level: &mut Level, id: EntityId, stack: ItemStack) {
         f64::from(cos_y * cos_x * 0.3) + f64::from(dir).sin() * f64::from(pow2),
     );
     let at = Vec3::new(pos.x, pos.y + eye - 0.3, pos.z);
-    if let Some(item) =
-        vanillite_game::block::drops::spawn_item(level, at, stack, velocity, 0, None)
-        && let Some(data) = level.entities.item_mut(item)
-    {
-        data.target = Some(uuid);
-    }
+    vanillite_game::block::drops::spawn_item(level, at, stack, velocity, 0, None)
 }
 
 /// `GiveCommand.giveItem` for one player: stacks into the inventory, the rest dropped.
@@ -410,6 +420,30 @@ pub(crate) fn give_to(
         let added = player.inventory.add(None, &mut stack, infinite);
         if !(added && stack.is_empty()) {
             drop_for(level, id, stack);
+            continue;
+        }
+        // A fake drop of the prototype for the pickup animation (`makeFakeItem`: never
+        // picked up, gone on its next tick), then the pickup sound.
+        if let Some(fake) = spawn_drop(level, id, prototype.with_count(1))
+            && let Some(data) = level.entities.item_mut(fake)
+        {
+            data.pickup_delay = i16::MAX;
+            data.age = 5999;
+        }
+        let Some((pos, random)) = level.entities.store.get(id).map(|e| e.pos()).zip(
+            level
+                .entities
+                .player_mut(id)
+                .map(|p| &mut p.survival.random),
+        ) else {
+            continue;
+        };
+        let pitch = ((random.next_float() - random.next_float()) * 0.7 + 1.0) * 2.0;
+        if let Some(sound) =
+            vanillite_data::registry::SOUND_EVENT.id("minecraft:entity.item.pickup")
+        {
+            // `SoundSource.PLAYERS`.
+            level.play_sound(None, pos.x, pos.y, pos.z, sound, 7, 0.2, pitch);
         }
     }
     sync_inventory(&mut level.entities, id);
@@ -1076,28 +1110,162 @@ pub(crate) fn selected_stacks(
         .collect())
 }
 
-/// The entities of an item accessor; a block must be loaded and is never a container (block
-/// entities have no inventories yet).
-fn item_entities(
+/// `BlockItemAccessor.getContainer`: the container block entity at the loaded block of the
+/// accessor `name` (a double chest's half alone).
+fn block_container(
     args: &Args,
     name: &str,
     source: &CommandSource,
     env: &Env<'_>,
     target: bool,
+) -> Result<(vanillite_base::BlockPos, ContainerRef), CommandError> {
+    let pos = execute::loaded_block_pos(args, name, source, env)?;
+    match ContainerRef::at(env.level, pos) {
+        Some(ContainerRef::Block(_) | ContainerRef::Double(..)) => {
+            Ok((pos, ContainerRef::Block(pos)))
+        }
+        _ => {
+            let key = if target {
+                "commands.item.target.not_a_container"
+            } else {
+                "commands.item.source.not_a_container"
+            };
+            Err(error(
+                key,
+                vec![ErrArg::Int(pos.x), ErrArg::Int(pos.y), ErrArg::Int(pos.z)],
+            ))
+        }
+    }
+}
+
+/// Whether the item accessor `name` is a block.
+fn is_block(args: &Args, name: &str) -> bool {
+    matches!(args.get(name), Some(ArgValue::Coordinates(_)))
+}
+
+/// The entities of an item accessor.
+fn item_entities(
+    args: &Args,
+    name: &str,
+    source: &CommandSource,
+    env: &Env<'_>,
 ) -> Result<Vec<Target>, CommandError> {
-    if let Some(ArgValue::Coordinates(_)) = args.get(name) {
-        let pos = execute::loaded_block_pos(args, name, source, env)?;
-        let key = if target {
-            "commands.item.target.not_a_container"
-        } else {
-            "commands.item.source.not_a_container"
-        };
+    targets(args, name, source, env)
+}
+
+/// `/item replace|modify block <pos>`: the container's selected slots get the provided stacks
+/// (or the modifier's result for every non-empty one); `setItem` always succeeds.
+fn item_block(
+    op: ItemOp,
+    provider: Option<Provider>,
+    known: Option<Component>,
+    args: &Args,
+    source: &CommandSource,
+    env: &mut Env<'_>,
+) -> Result<i32, CommandError> {
+    let (pos, container) = block_container(args, "target", source, env, true)?;
+    let (slots_name, slots) = slot_range(args, "slots")?;
+    let size = container.size(env.level);
+    let here: Vec<usize> = slots
+        .iter()
+        .filter_map(|&i| usize::try_from(i).ok().filter(|&i| i < size))
+        .collect();
+    let mut selected = 0usize;
+    let mut changed = 0i32;
+    if op == ItemOp::Modify {
+        let modifier = super::loot_cmd::resource_or_inline(args, "modifier")?;
+        for i in here {
+            let stack = container.get(env.level, i);
+            if stack.is_empty() {
+                continue;
+            }
+            selected += 1;
+            let mut result = super::loot_cmd::apply_modifier(env, source, &modifier, &stack)?;
+            limit_to_container(&mut result);
+            container.set(env.level, i, result);
+            changed += 1;
+        }
+    } else if let Some(mut provider) = provider {
+        for i in here {
+            if !provider.has_next() {
+                break;
+            }
+            selected += 1;
+            let mut stack = provider.next();
+            limit_to_container(&mut stack);
+            container.set(env.level, i, stack);
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        container.set_changed(env.level);
+    }
+    if selected == 0 {
         return Err(error(
-            key,
-            vec![ErrArg::Int(pos.x), ErrArg::Int(pos.y), ErrArg::Int(pos.z)],
+            "commands.item.target.no_such_slot",
+            vec![ErrArg::Str(slots_name)],
         ));
     }
-    targets(args, name, source, env)
+    let xyz = || [Arg::Int(pos.x), Arg::Int(pos.y), Arg::Int(pos.z)];
+    let message = match (op, known) {
+        (ItemOp::Modify, _) => Component::translatable_args(
+            "commands.item.block.modify.success",
+            std::iter::once(Arg::Int(changed)).chain(xyz()).collect(),
+        ),
+        (_, Some(item)) => Component::translatable_args(
+            "commands.item.block.replace.success.known_item",
+            std::iter::once(Arg::Int(changed))
+                .chain(xyz())
+                .chain(std::iter::once(Arg::from(item)))
+                .collect(),
+        ),
+        (_, None) => Component::translatable_args(
+            "commands.item.block.replace.success",
+            std::iter::once(Arg::Int(changed)).chain(xyz()).collect(),
+        ),
+    };
+    source.send_success(env.global, message, true);
+    Ok(changed)
+}
+
+/// `BaseContainerBlockEntity.setItem`: `limitSize(getMaxStackSize(stack))` (every container
+/// block entity keeps the item's own maximum).
+fn limit_to_container(stack: &mut ItemStack) {
+    let max = item::max_stack_size(stack);
+    if stack.count > max {
+        stack.count = max;
+    }
+}
+
+/// The copies of the stacks in the source slots of an item accessor `name` (`getItems`).
+fn source_stacks(
+    args: &Args,
+    name: &str,
+    slots: &[i32],
+    source: &CommandSource,
+    env: &Env<'_>,
+) -> Result<Vec<ItemStack>, CommandError> {
+    if is_block(args, name) {
+        let (_, container) = block_container(args, name, source, env, false)?;
+        let size = container.size(env.level);
+        return Ok(slots
+            .iter()
+            .filter_map(|&i| usize::try_from(i).ok().filter(|&i| i < size))
+            .map(|i| container.get(env.level, i))
+            .collect());
+    }
+    let sources = item_entities(args, name, source, env)?;
+    let entities = &env.level.entities;
+    Ok(sources
+        .iter()
+        .filter_map(|s| s.entity)
+        .flat_map(|id| {
+            slots
+                .iter()
+                .filter_map(move |&i| entity_slot(entities, id, i))
+                .map(move |slot| slot_get(entities, id, slot))
+        })
+        .collect())
 }
 
 /// `ItemProvider` of the distributions: `of`, `cycle`, `of(...).orElseProvide(EMPTY)`.
@@ -1133,10 +1301,18 @@ pub(crate) fn item(
     source: &CommandSource,
     env: &mut Env<'_>,
 ) -> Result<i32, CommandError> {
-    let targets = item_entities(args, "target", source, env, true)?;
-    let (slots_name, slots) = slot_range(args, "slots")?;
+    let block_target = is_block(args, "target");
+    if op == ItemOp::Modify && block_target {
+        return item_block(op, None, None, args, source, env);
+    }
     if op == ItemOp::Modify {
+        let targets = item_entities(args, "target", source, env)?;
+        let (slots_name, slots) = slot_range(args, "slots")?;
         return modify_items(&targets, &slots_name, &slots, args, source, env);
+    }
+    if block_target {
+        // The target must be a container before the source is read.
+        block_container(args, "target", source, env, true)?;
     }
     let (items, known) = if args.has("item") {
         let input = ItemInput::of(args, "item", env)?;
@@ -1144,19 +1320,8 @@ pub(crate) fn item(
         let display = input.display(&stack);
         (vec![stack], Some(display))
     } else {
-        let sources = item_entities(args, "source", source, env, false)?;
         let (source_name, source_slots) = slot_range(args, "sourceSlots")?;
-        let entities = &env.level.entities;
-        let items: Vec<ItemStack> = sources
-            .iter()
-            .filter_map(|s| s.entity)
-            .flat_map(|id| {
-                source_slots
-                    .iter()
-                    .filter_map(move |&i| entity_slot(entities, id, i))
-                    .map(move |slot| slot_get(entities, id, slot))
-            })
-            .collect();
+        let items = source_stacks(args, "source", &source_slots, source, env)?;
         if items.is_empty() {
             return Err(error(
                 "commands.item.source.no_such_slot",
@@ -1179,6 +1344,11 @@ pub(crate) fn item(
         index: 0,
         op,
     };
+    if block_target {
+        return item_block(op, Some(provider), known, args, source, env);
+    }
+    let targets = item_entities(args, "target", source, env)?;
+    let (slots_name, slots) = slot_range(args, "slots")?;
     let mut selected = 0usize;
     let mut tracker = Tracker::<Component>::default();
     for target in &targets {

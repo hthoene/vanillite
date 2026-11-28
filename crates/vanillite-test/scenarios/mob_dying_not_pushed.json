@@ -1,0 +1,29 @@
+{
+  "description": "A dying mob pushes but is not pushed (#264): Entity.push moves each side only if it isPushable (alive, not on a ladder) and carries nobody. A zombie at 0 health (dying) overlaps a living one: only the living one moves apart.",
+  "tier": "fast",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      5,
+      -57,
+      5
+    ]
+  ],
+  "ticks": 6,
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:zombie 2.5 -60 2.5 {Health:0.0f,NoAI:1b,PersistenceRequired:1b}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:zombie 2.8 -60 2.6 {NoAI:1b,PersistenceRequired:1b}"
+    }
+  ]
+}

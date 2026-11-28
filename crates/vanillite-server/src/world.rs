@@ -9,7 +9,7 @@ use vanillite_base::hash::FxHashMap;
 use vanillite_config::{TrackingRules, WorldRules};
 use vanillite_game::entities::Entities;
 use vanillite_game::level::Level;
-use vanillite_game::level::tiles::TileRun;
+use vanillite_game::level::tiles::{Phases, TileRun};
 use vanillite_world::chunks::{Chunks, FULL_LEVEL, TicketId};
 use vanillite_world::entity::EntityId;
 use vanillite_world::tracking::{EntityTracker, TrackerInput, TrackerOutput, Viewer};
@@ -771,17 +771,23 @@ impl ServerWorld {
                 min_chunks: vanillite_game::level::tiles::MIN_CHUNKS,
                 fork: &fork,
             });
+            // `performance.threads.tick-phases`: the read-only parts of both in parallel.
+            let phases = Phases {
+                threads: compute.phase_threads(),
+                fork: &fork,
+            };
             self.mobs.spawn(
                 level,
                 ctx.global,
                 &self.dimension,
                 spawn_point,
                 tiles.as_ref(),
+                &phases,
             );
             lap!(self, Spawning);
             match &tiles {
-                Some(run) => level.tick_chunks_tiled(&mut self.scratch, run),
-                None => level.tick_chunks(&mut self.scratch),
+                Some(run) => level.tick_chunks_tiled(&mut self.scratch, run, &phases),
+                None => level.tick_chunks(&mut self.scratch, &phases),
             }
             lap!(self, RandomTicks);
         }
@@ -1256,6 +1262,12 @@ impl ServerWorld {
             }
             if let Some(border) = self.level.border.take_dirty() {
                 self.data.write(crate::border::SAVED_DATA, border.to_nbt());
+            }
+            if self.level.structure_refs().take_dirty() {
+                self.data.write(
+                    vanillite_game::level::structure_refs::SAVED_DATA,
+                    self.level.structure_refs().to_nbt(),
+                );
             }
             if self.level.forced.take_dirty() | std::mem::take(&mut self.tickets_dirty) {
                 crate::chunk_tickets::save(&self.data, &self.level, &self.saved_tickets());

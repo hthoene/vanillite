@@ -7,7 +7,8 @@
 //! package, class and method, and XML) is summarised per gameplay system into `summary.md` and
 //! `coverage.json` in `target/parity-coverage/` (never committed, #213). `cargo xtask parity
 //! fuzz` reads that `coverage.json` and weights its generated scenarios towards what is
-//! least exercised.
+//! least exercised. `--history <file>` appends the run's per-system figures as one JSON line
+//! (the nightly on vanillite-test2 does, #267); `--trend [<file>]` prints that history.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
@@ -44,11 +45,26 @@ pub fn out_dir(root: &Path) -> PathBuf {
     root.join("target/parity-coverage")
 }
 
-/// `cargo xtask parity coverage [--jobs N] [--fuzz-minutes N] [--report-only] [<scenario>...]`.
+/// The history file `--history` and `--trend` use when given no path.
+fn default_history(root: &Path) -> PathBuf {
+    out_dir(root).join("history.jsonl")
+}
+
+/// `cargo xtask parity coverage [--jobs N] [--heap SIZE] [--fuzz-minutes N] [--report-only]
+/// [--history FILE] [<scenario>...]` or `cargo xtask parity coverage --trend [FILE]`.
 pub fn run_coverage(root: &Path, args: &[&str]) -> Result<()> {
+    if let Some(i) = args.iter().position(|a| *a == "--trend") {
+        let file = args
+            .get(i + 1)
+            .map_or_else(|| default_history(root), PathBuf::from);
+        print!("{}", trend(&file)?);
+        return Ok(());
+    }
     let mut jobs = std::thread::available_parallelism().map_or(1, |n| (n.get() / 4).max(1));
+    let mut heap = "4g";
     let mut fuzz_minutes = None;
     let mut report_only = false;
+    let mut history = None;
     let mut names = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -58,6 +74,8 @@ pub fn run_coverage(root: &Path, args: &[&str]) -> Result<()> {
             "--fuzz-minutes" => {
                 fuzz_minutes = Some(*value()?);
             }
+            "--heap" => heap = *value()?,
+            "--history" => history = Some(PathBuf::from(value()?)),
             "--report-only" => report_only = true,
             other if other.starts_with("--") => return Err(format!("unknown argument {other}")),
             name => names.push(name),
@@ -115,7 +133,7 @@ pub fn run_coverage(root: &Path, args: &[&str]) -> Result<()> {
                 .arg(format!("-javaagent:{}", parity_agent.display()))
                 // A small scenario world needs little; the default (a quarter of the RAM per
                 // JVM) invites the OOM killer on a shared machine.
-                .arg("-Xmx4g")
+                .arg(format!("-Xmx{heap}"))
                 .arg("-cp")
                 .arg(&classpath)
                 .arg("dev.vanillite.extractor.golden.ScenarioRecorder");
@@ -180,6 +198,10 @@ pub fn run_coverage(root: &Path, args: &[&str]) -> Result<()> {
     let (json, md) = summarise(&key.minecraft, &classes, stats);
     write(&out.join("coverage.json"), &(json.to_string() + "\n"))?;
     write(&out.join("summary.md"), &md)?;
+    if let Some(file) = history {
+        append_history(root, &file, &json)?;
+        println!("coverage: appended to {}", file.display());
+    }
     let g = &json["gameplay"]["instructions"];
     println!(
         "coverage: {}% of Vanilla's gameplay code exercised (instructions); {} (per method: {})",
@@ -188,6 +210,112 @@ pub fn run_coverage(root: &Path, args: &[&str]) -> Result<()> {
         out.join("html/index.html").display()
     );
     Ok(())
+}
+
+/// One line of the history: date, commit, run, gameplay and per-system percentages.
+fn append_history(root: &Path, file: &Path, json: &Value) -> Result<()> {
+    use std::io::Write as _;
+    let pct = |v: &Value| json!([v["instructions"]["percent"], v["branches"]["percent"]]);
+    let systems: serde_json::Map<String, Value> = json["systems"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| Some((s["name"].as_str()?.to_owned(), pct(s))))
+        .collect();
+    let date =
+        crate::loadtest::command_output(Command::new("date").args(["-u", "+%Y-%m-%d %H:%M"]))?;
+    let commit = crate::loadtest::git(root, &["rev-parse", "--short=12", "HEAD"])
+        .unwrap_or_else(|_| "unknown".to_owned());
+    let run = &json["run"];
+    let line = json!({
+        "date": date.trim(),
+        "commit": commit.trim(),
+        "minecraft": json["minecraft"],
+        "scenarios": run["scenarios"],
+        "failed": run["failed"].as_array().map_or(0, Vec::len),
+        "gameplay": pct(&json["gameplay"]),
+        "total": pct(&json["total"]),
+        "systems": systems,
+    });
+    if let Some(dir) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    writeln!(f, "{line}").map_err(|e| format!("{}: {e}", file.display()))
+}
+
+/// The history as Markdown: gameplay coverage per run (the last 30), then every system's
+/// instructions and branches in the first, the previous and the latest run.
+fn trend(file: &Path) -> Result<String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let runs: Vec<Value> = text
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    let (Some(first), Some(last)) = (runs.first(), runs.last()) else {
+        return Err(format!("{}: no runs", file.display()));
+    };
+    let prev = &runs[runs.len().saturating_sub(2)];
+    let p = |v: &Value, i: usize| {
+        v[i].as_f64()
+            .map_or_else(|| "-".to_owned(), |x| format!("{x:.1}"))
+    };
+    let mut md = format!(
+        "# Vanilla code exercised by the parity scenarios ({} runs, {})\n\n\
+         | Date (UTC) | Commit | Scenarios | Failed | Gameplay instr. % | Gameplay branches % | All instr. % |\n\
+         |---|---|---|---|---|---|---|\n",
+        runs.len(),
+        file.display()
+    );
+    for r in runs.iter().rev().take(30).rev() {
+        let _ = writeln!(
+            md,
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            r["date"].as_str().unwrap_or("-"),
+            r["commit"].as_str().unwrap_or("-"),
+            r["scenarios"],
+            r["failed"],
+            p(&r["gameplay"], 0),
+            p(&r["gameplay"], 1),
+            p(&r["total"], 0),
+        );
+    }
+    let _ = writeln!(
+        md,
+        "\n## Per system (instructions % / branches %)\n\n\
+         | System | first ({}) | previous ({}) | latest ({}) | change since previous |\n\
+         |---|---|---|---|---|",
+        first["date"].as_str().unwrap_or("-"),
+        prev["date"].as_str().unwrap_or("-"),
+        last["date"].as_str().unwrap_or("-"),
+    );
+    let both = |r: &Value, s: &str| {
+        let v = &r["systems"][s];
+        format!("{} / {}", p(v, 0), p(v, 1))
+    };
+    for (name, _) in SYSTEMS {
+        let delta = |i: usize| match (
+            last["systems"][name][i].as_f64(),
+            prev["systems"][name][i].as_f64(),
+        ) {
+            (Some(a), Some(b)) => format!("{:+.1}", a - b),
+            _ => "-".to_owned(),
+        };
+        let _ = writeln!(
+            md,
+            "| {name} | {} | {} | {} | {} / {} |",
+            both(first, name),
+            both(prev, name),
+            both(last, name),
+            delta(0),
+            delta(1),
+        );
+    }
+    Ok(md)
 }
 
 fn jacoco_option(agent: &Path, exec: &Path) -> String {

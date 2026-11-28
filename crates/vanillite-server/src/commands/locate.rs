@@ -508,9 +508,57 @@ pub(super) fn place(
 
 /// The structure search and biome tags of exploration maps
 /// ([`vanillite_game::map::Explorer`]), with the registry tags of the loaded data packs.
-/// Structures already explored are not skipped: starts carry no reference counts yet.
+/// Starts are found from the terrain generator; the references maps add are kept in the
+/// world's [`StructureReferences`](vanillite_game::level::structure_refs::StructureReferences).
 pub(crate) struct MapExplorer {
     pub(crate) tags: std::sync::Arc<crate::systems::RegistryTags>,
+}
+
+/// `ExplorationMapFunction.claimStructureAt`: references the start of one of `wanted` whose
+/// box holds `pos` (`StructureManager.getStructureAt`: the starts within reach, 8 chunks),
+/// if it can be referenced.
+fn claim_structure_at(
+    terrain: &TerrainGenerator,
+    wanted: &[StructureId],
+    pos: BlockPos,
+    level: LevelHeight,
+    refs: &vanillite_game::level::structure_refs::StructureReferences,
+) {
+    use vanillite_worldgen::structure::state::StructureState;
+    let state = StructureState::new(terrain);
+    let registry = terrain.structures();
+    let sets: Vec<_> = state
+        .possible_structure_sets()
+        .iter()
+        .copied()
+        .filter(|&id| {
+            registry
+                .set(id)
+                .structures
+                .iter()
+                .any(|(s, _)| wanted.contains(s))
+        })
+        .collect();
+    let center = ChunkPos::new(pos.x >> 4, pos.z >> 4);
+    for dx in -8..=8 {
+        for dz in -8..=8 {
+            let chunk = ChunkPos::new(center.x + dx, center.z + dz);
+            for &set in &sets {
+                let Some(id) = terrain.structure_start_in(&state, set, chunk, level) else {
+                    continue;
+                };
+                if !wanted.contains(&id) {
+                    continue;
+                }
+                let inside = vanillite_worldgen::place::structure_start(terrain, id, chunk, level)
+                    .is_some_and(|start| start.bounding_box().is_inside(pos));
+                if inside {
+                    refs.try_add_reference(chunk, &registry.structure(id).name);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 impl vanillite_game::map::Explorer for MapExplorer {
@@ -522,6 +570,7 @@ impl vanillite_game::map::Explorer for MapExplorer {
         radius: i32,
         min_y: i32,
         height: i32,
+        known: Option<&vanillite_game::level::structure_refs::StructureReferences>,
     ) -> Option<BlockPos> {
         let names = self.tags.get("minecraft:worldgen/structure")?.get(tag)?;
         let wanted: Vec<StructureId> = names
@@ -531,12 +580,19 @@ impl vanillite_game::map::Explorer for MapExplorer {
         if wanted.is_empty() {
             return None;
         }
-        nearest_structure(
+        let level = LevelHeight { min_y, height };
+        let Some(refs) = known else {
+            return nearest_structure(terrain, &wanted, origin, level, radius).map(|(pos, _)| pos);
+        };
+        claim_structure_at(terrain, &wanted, origin, level, refs);
+        let registry = terrain.structures();
+        vanillite_game::level::locate::nearest_structure_claiming(
             terrain,
             &wanted,
             origin,
-            LevelHeight { min_y, height },
+            level,
             radius,
+            &mut |chunk, id| refs.try_add_reference(chunk, &registry.structure(id).name),
         )
         .map(|(pos, _)| pos)
     }
@@ -601,7 +657,8 @@ fn place_template(
             vec![ErrArg::Str(id.clone())],
         )
     };
-    let (_, generator) = generation(env).ok_or_else(invalid)?;
+    // Without a generator (a world of fixed chunks) the template goes into the loaded chunks.
+    let generator = generation(env).map(|(_, g)| g);
     // `getStructureTemplateManager().get(id)`: the world's `generated/` templates first.
     let template = env.level.structure_template(id).ok_or_else(invalid)?;
     let rotation = args
@@ -649,10 +706,39 @@ fn place_template(
     };
     let mut random = vanillite_base::random::LegacyRandom::new(seed);
     let flags = 2 | if strict { 816 } else { 0 };
-    let mut area = PlaceArea::copy(env.level, &generator, min, max);
-    let placed = area.run(&generator, |region| {
-        template.place_in_world(region, pos, pos, &settings, &mut random, flags)
-    });
+    // The rotated and mirrored template and its neighbour updates may reach past
+    // `pos..pos + size` (Vanilla places into the level itself).
+    let reach = |v: i32| v.saturating_add(1);
+    let (min, max) = (
+        BlockPos::new(
+            pos.x.saturating_sub(reach(size.x)),
+            pos.y,
+            pos.z.saturating_sub(reach(size.z)),
+        )
+        .chunk(),
+        BlockPos::new(
+            pos.x.saturating_add(reach(size.x)),
+            pos.y,
+            pos.z.saturating_add(reach(size.z)),
+        )
+        .chunk(),
+    );
+    let (area, placed) = match &generator {
+        Some(generator) => {
+            let mut area = PlaceArea::copy(env.level, generator, min, max);
+            let placed = area.run(generator, |region| {
+                template.place_in_world(region, pos, pos, &settings, &mut random, flags)
+            });
+            (area, placed)
+        }
+        None => {
+            let mut area = PlaceArea::copy_plain(env.level, min, max);
+            let placed = area.run_plain(env.level.seed(), |region| {
+                template.place_in_world(region, pos, pos, &settings, &mut random, flags)
+            });
+            (area, placed)
+        }
+    };
     area.apply(env.level);
     if !placed {
         return Err(CommandError::new("commands.place.template.failed", vec![]));

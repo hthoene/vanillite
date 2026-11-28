@@ -2,8 +2,11 @@
 //!
 //! There is exactly one pool. It has two queues: *urgent* jobs belong to a running tick phase
 //! (fork-join, see [`Compute::scope`]) and always go first; *background* jobs (chunk generation,
-//! lighting, saving, compression) run by priority, lowest number first. Nothing else in the
-//! server creates threads for computation.
+//! lighting, saving, compression) run by priority, lowest number first. The built-in pool runs
+//! them on separate threads: *tick helpers* at the tick threads' OS priority take only urgent
+//! jobs, the *workers* (lower priority, see [`Budget::worker_started`]) take background jobs.
+//! A tick phase thus never waits for a part that runs at the workers' priority. Nothing else in
+//! the server creates threads for computation.
 
 use std::any::Any;
 use std::collections::{BinaryHeap, VecDeque};
@@ -24,6 +27,12 @@ pub type Job = Box<dyn FnOnce() + Send + 'static>;
 pub trait Scheduler: Send + Sync + 'static {
     /// Number of worker threads (0 when jobs run inline).
     fn workers(&self) -> usize;
+
+    /// Number of threads that run urgent jobs besides the thread waiting for them; a parallel
+    /// tick phase splits into one part more than this.
+    fn phase_helpers(&self) -> usize {
+        self.workers()
+    }
 
     /// Queues a job of a running tick phase. Urgent jobs run before any background job.
     fn spawn_urgent(&self, job: Job);
@@ -67,7 +76,7 @@ impl fmt::Debug for Compute {
 impl Compute {
     /// Wraps a scheduler.
     pub fn new(scheduler: Arc<dyn Scheduler>) -> Self {
-        let phase_threads = scheduler.workers() + 1;
+        let phase_threads = scheduler.phase_helpers() + 1;
         Compute {
             scheduler,
             phase_threads,
@@ -75,10 +84,10 @@ impl Compute {
     }
 
     /// Limits the threads of a parallel tick phase (`performance.threads.tick-phases`):
-    /// 0 = the workers plus the calling thread, 1 = the calling thread alone.
+    /// 0 = the phase helpers plus the calling thread, 1 = the calling thread alone.
     #[must_use]
     pub fn with_phase_threads(mut self, threads: usize) -> Self {
-        let all = self.scheduler.workers() + 1;
+        let all = self.scheduler.phase_helpers() + 1;
         self.phase_threads = if threads == 0 { all } else { threads.min(all) };
         self
     }
@@ -288,25 +297,40 @@ impl Scheduler for InlineScheduler {
     fn shutdown(&self) {}
 }
 
-/// The built-in compute pool: a fixed set of workers over one urgent FIFO and one background
-/// priority heap.
+/// The built-in compute pool: a fixed set of workers and tick helpers over one urgent FIFO and
+/// one background priority heap.
 pub struct ComputePool {
     shared: Arc<Shared>,
     workers: Mutex<Vec<JoinHandle<()>>>,
     count: usize,
 }
 
+/// What a pool thread runs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Role {
+    /// Background jobs, at the workers' priority; urgent jobs too in a pool without helpers.
+    Worker,
+    /// Urgent jobs only, at the priority the pool was started with.
+    Helper,
+}
+
 impl fmt::Debug for ComputePool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ComputePool")
             .field("workers", &self.count)
+            .field("helpers", &self.shared.helpers)
             .finish()
     }
 }
 
 struct Shared {
     queues: Mutex<Queues>,
+    /// Wakes workers (background jobs, and urgent ones without helpers).
     available: Condvar,
+    /// Wakes tick helpers (urgent jobs).
+    urgent_ready: Condvar,
+    /// Tick helpers; 0 = the workers take the urgent jobs.
+    helpers: usize,
     /// Decides when background jobs may start ([`Budget::background_wait`]).
     budget: Option<Arc<Budget>>,
 }
@@ -356,21 +380,33 @@ impl Shared {
 }
 
 impl ComputePool {
-    /// Starts a pool with `workers` threads (at least one).
+    /// Starts a pool with `workers` threads (at least one) that also run the urgent jobs.
     pub fn new(workers: usize) -> io::Result<ComputePool> {
-        Self::start(workers, None)
+        Self::start(workers, 0, None)
     }
 
-    /// Starts a pool whose background jobs wait for `budget` ([`Budget::background_wait`]).
-    pub fn with_budget(workers: usize, budget: Arc<Budget>) -> io::Result<ComputePool> {
-        Self::start(workers, Some(budget))
+    /// Starts a pool whose background jobs wait for `budget` ([`Budget::background_wait`]) and
+    /// run at its worker priority, with `helpers` tick helpers for the urgent jobs (0 = the
+    /// workers run them).
+    pub fn with_budget(
+        workers: usize,
+        helpers: usize,
+        budget: Arc<Budget>,
+    ) -> io::Result<ComputePool> {
+        Self::start(workers, helpers, Some(budget))
     }
 
-    fn start(workers: usize, budget: Option<Arc<Budget>>) -> io::Result<ComputePool> {
+    fn start(
+        workers: usize,
+        helpers: usize,
+        budget: Option<Arc<Budget>>,
+    ) -> io::Result<ComputePool> {
         let count = workers.max(1);
         let shared = Arc::new(Shared {
             queues: Mutex::new(Queues::default()),
             available: Condvar::new(),
+            urgent_ready: Condvar::new(),
+            helpers,
             budget,
         });
         if let Some(budget) = &shared.budget {
@@ -384,10 +420,7 @@ impl ComputePool {
                 }
             }));
         }
-        let mut handles = Vec::with_capacity(count);
-        for index in 0..count {
-            handles.push(spawn_worker(&shared, index, 0)?);
-        }
+        let handles = spawn_threads(&shared, count, 0)?;
         Ok(ComputePool {
             shared,
             workers: Mutex::new(handles),
@@ -396,17 +429,66 @@ impl ComputePool {
     }
 }
 
-/// Starts worker `index` of `generation`.
-fn spawn_worker(shared: &Arc<Shared>, index: usize, generation: u64) -> io::Result<JoinHandle<()>> {
+/// Starts the `workers` workers and the tick helpers of `generation`.
+fn spawn_threads(
+    shared: &Arc<Shared>,
+    workers: usize,
+    generation: u64,
+) -> io::Result<Vec<JoinHandle<()>>> {
+    let roles = (0..workers)
+        .map(|index| (Role::Worker, index))
+        .chain((0..shared.helpers).map(|index| (Role::Helper, index)));
+    roles
+        .map(|(role, index)| spawn_thread(shared, role, index, generation))
+        .collect()
+}
+
+/// Starts thread `index` of `role` and `generation`.
+fn spawn_thread(
+    shared: &Arc<Shared>,
+    role: Role,
+    index: usize,
+    generation: u64,
+) -> io::Result<JoinHandle<()>> {
     let shared = Arc::clone(shared);
-    thread::Builder::new()
-        .name(format!("Compute #{index}"))
-        .spawn(move || {
+    let name = match role {
+        Role::Worker => format!("Compute #{index}"),
+        Role::Helper => format!("Tick helper #{index}"),
+    };
+    thread::Builder::new().name(name).spawn(move || match role {
+        Role::Worker => {
             if let Some(budget) = &shared.budget {
                 budget.worker_started();
             }
-            worker(&shared, generation)
-        })
+            worker(&shared, generation);
+        }
+        Role::Helper => helper(&shared, generation),
+    })
+}
+
+/// A tick helper: runs urgent jobs as they come.
+fn helper(shared: &Shared, generation: u64) {
+    let mut queues = shared.lock();
+    loop {
+        if queues.generation != generation {
+            return;
+        }
+        match queues.urgent.pop_front() {
+            Some(job) => {
+                queues.jobs_taken += 1;
+                drop(queues);
+                run_job(job);
+                queues = shared.lock();
+            }
+            None if queues.stopping => return,
+            None => {
+                queues = shared
+                    .urgent_ready
+                    .wait(queues)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+    }
 }
 
 fn worker(shared: &Shared, generation: u64) {
@@ -416,7 +498,12 @@ fn worker(shared: &Shared, generation: u64) {
             // Replaced by a fresh thread: ending this one frees what it kept.
             return;
         }
-        let job = match queues.urgent.pop_front() {
+        let urgent = if shared.helpers == 0 {
+            queues.urgent.pop_front()
+        } else {
+            None
+        };
+        let job = match urgent {
             Some(job) => job,
             None if !queues.background.is_empty()
                 && let Some(wait) = shared.budget.as_ref().and_then(|b| b.background_wait()) =>
@@ -458,9 +545,20 @@ impl Scheduler for ComputePool {
         self.count
     }
 
+    fn phase_helpers(&self) -> usize {
+        match self.shared.helpers {
+            0 => self.count,
+            helpers => helpers,
+        }
+    }
+
     fn spawn_urgent(&self, job: Job) {
         self.shared.lock().urgent.push_back(job);
-        self.shared.available.notify_one();
+        if self.shared.helpers == 0 {
+            self.shared.available.notify_one();
+        } else {
+            self.shared.urgent_ready.notify_one();
+        }
     }
 
     fn spawn_background(&self, priority: u32, job: Job) {
@@ -498,10 +596,7 @@ impl Scheduler for ComputePool {
         // Fresh workers first (they wait for the queue lock held here); the old ones are
         // only retired once all of them exist, and end after the job they run.
         let generation = queues.generation + 1;
-        let fresh: io::Result<Vec<_>> = (0..self.count)
-            .map(|index| spawn_worker(&self.shared, index, generation))
-            .collect();
-        match fresh {
+        match spawn_threads(&self.shared, self.count, generation) {
             Ok(fresh) => {
                 queues.generation = generation;
                 queues.jobs_taken = 0;
@@ -513,11 +608,13 @@ impl Scheduler for ComputePool {
         }
         drop(queues);
         self.shared.available.notify_all();
+        self.shared.urgent_ready.notify_all();
     }
 
     fn shutdown(&self) {
         self.shared.lock().stopping = true;
         self.shared.available.notify_all();
+        self.shared.urgent_ready.notify_all();
         let handles =
             std::mem::take(&mut *self.workers.lock().unwrap_or_else(PoisonError::into_inner));
         for handle in handles {

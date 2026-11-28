@@ -2,9 +2,9 @@
 # version: a line `version <x.y.z>`, then the lines of the release's SHA256SUMS
 # (`<sha256>  vanillite-bukkit-<version>-<target>.tar.gz`). A target without a line gets a log
 # line that says how to build and install the layer by hand.
-version 0.1.1
-cdb81c0326c92a37cf8c2e7dcf34b92322d862369bf405b5ac397d540a660d54  vanillite-bukkit-0.1.1-aarch64-apple-darwin.tar.gz
-c31b08ce29821fd43471c87925da301571b44c6c97dc5069101f39d53f4dcd3a  vanillite-bukkit-0.1.1-aarch64-unknown-linux-gnu.tar.gz
-3b345cd814fe8f0682d1bbda9fc8f8060d274375614cb405c57c1a4594318288  vanillite-bukkit-0.1.1-x86_64-apple-darwin.tar.gz
-1b4b06293bd59ad57131d36c01f68312efcb13a71f1800d907d1a7d841ce4f31  vanillite-bukkit-0.1.1-x86_64-pc-windows-msvc.tar.gz
-e97220c327d7177d0476bac5cbe7991496a510b5e941e242b51f78f417639c60  vanillite-bukkit-0.1.1-x86_64-unknown-linux-gnu.tar.gz
+version 0.1.2
+94e623b47cd66dd6d811d9b04294948a62658ae7d635a08dd1fd63e1bac57872  vanillite-bukkit-0.1.2-aarch64-apple-darwin.tar.gz
+673108257a778175c1b765a7fa24af81604ca4d257476af1a1c907d285440b3d  vanillite-bukkit-0.1.2-aarch64-unknown-linux-gnu.tar.gz
+04b673d81aebe552891f7b4cee508baad45f1a44051612e412de84088a5ce5f8  vanillite-bukkit-0.1.2-x86_64-apple-darwin.tar.gz
+00746351979a413de61eda6b8cf9425b1affec8b5fb2222c303ab4c6029d1847  vanillite-bukkit-0.1.2-x86_64-pc-windows-msvc.tar.gz
+e99668ff7f2cd081482a8b3c620261a9840fdf2c52354f35ae6e76fa218ae0c8  vanillite-bukkit-0.1.2-x86_64-unknown-linux-gnu.tar.gz

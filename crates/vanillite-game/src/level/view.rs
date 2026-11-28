@@ -130,4 +130,8 @@ impl BlockAccess for LevelView<'_> {
     fn block_state(&self, pos: BlockPos) -> Option<BlockState> {
         self.chunks.block(pos).map(BlockState)
     }
+
+    fn moving_piston_boxes(&self, pos: BlockPos, out: &mut Vec<[f64; 6]>) {
+        crate::block::piston::collision_boxes_at(self.block_entities, pos, out);
+    }
 }

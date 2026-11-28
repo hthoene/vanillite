@@ -735,26 +735,37 @@ impl Conn {
 
     /// Decodes the buffered play packets into actions; the rest is only counted.
     fn drain_play(&mut self, actions: &mut Vec<Action>) -> BotResult<()> {
+        // Counted once per call: the shared counter costs more than decoding at these rates.
+        let mut packets = 0u64;
+        let drained = self.drain_frames(actions, &mut packets);
+        self.metrics
+            .packets_in
+            .fetch_add(packets, Ordering::Relaxed);
+        drained.map_err(|e| format!("play: {e}"))
+    }
+
+    fn drain_frames(
+        &mut self,
+        actions: &mut Vec<Action>,
+        packets: &mut u64,
+    ) -> Result<(), vanillite_protocol::Error> {
         use ids::play::clientbound as id;
-        let err = |e: vanillite_protocol::Error| format!("play: {e}");
-        while let Some(frame) = self.decoder.next_frame().map_err(err)? {
-            self.metrics.packets_in.fetch_add(1, Ordering::Relaxed);
+        while let Some(frame) = self.decoder.next_frame()? {
+            *packets += 1;
             let mut r = Reader::new(frame);
-            let action = match r.varint().map_err(err)? {
-                id::KEEP_ALIVE => Action::KeepAlive(r.i64().map_err(err)?),
-                id::PING => Action::Ping(r.i32().map_err(err)?),
-                id::PONG_RESPONSE => Action::Pong(r.i64().map_err(err)?),
-                id::PLAYER_POSITION => {
-                    Action::Teleport(PlayerPosition::decode(&mut r).map_err(err)?)
-                }
+            let action = match r.varint()? {
+                id::KEEP_ALIVE => Action::KeepAlive(r.i64()?),
+                id::PING => Action::Ping(r.i32()?),
+                id::PONG_RESPONSE => Action::Pong(r.i64()?),
+                id::PLAYER_POSITION => Action::Teleport(PlayerPosition::decode(&mut r)?),
                 id::CHUNK_BATCH_FINISHED => Action::BatchFinished,
                 id::LEVEL_CHUNK_WITH_LIGHT => {
-                    let (x, z) = (r.i32().map_err(err)?, r.i32().map_err(err)?);
+                    let (x, z) = (r.i32()?, r.i32()?);
                     Action::Chunk(x, z, read_ground(&mut r))
                 }
                 id::FORGET_LEVEL_CHUNK => {
                     // `ChunkPos` as one long: x in the low, z in the high 32 bits.
-                    let packed = r.i64().map_err(err)?;
+                    let packed = r.i64()?;
                     Action::Forget(packed as i32, (packed >> 32) as i32)
                 }
                 id::START_CONFIGURATION => Action::StartConfiguration,

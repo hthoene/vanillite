@@ -37,15 +37,6 @@ fn can_teleport_onto(state: BlockState) -> bool {
     }
 }
 
-/// `logicalHeight` of the vanilla dimension types.
-fn logical_height(dimension: &str) -> i32 {
-    match dimension {
-        "minecraft:the_nether" => 128,
-        "minecraft:the_end" => 256,
-        _ => 384,
-    }
-}
-
 /// `TeleportRandomlyConsumeEffect.apply` of a player. The tries draw from the player's own
 /// random. Returns whether it teleported.
 pub fn teleport_randomly(
@@ -61,7 +52,7 @@ pub fn teleport_randomly(
     let (old, dims) = (e.pos(), e.dims());
     let blocks = EnvBlocks(env.blocks);
     let min_y = f64::from(env.min_y);
-    let max_y = f64::from(env.min_y) + f64::from(logical_height(env.dimension)) - 1.0;
+    let max_y = f64::from(env.min_y) + f64::from(env.logical_height) - 1.0;
     let mut scratch = Vec::new();
     let mut found = None;
     for _ in 0..16 {

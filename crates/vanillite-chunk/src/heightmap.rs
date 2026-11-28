@@ -121,6 +121,14 @@ impl Heightmap {
         bits::get(&self.data, self.bits, ((z & 15) * 16 + (x & 15)) as usize)
     }
 
+    /// Prefetch hint for the whole heightmap.
+    #[inline]
+    pub fn prefetch(&self) {
+        for word in self.data.iter().step_by(8).chain(self.data.last()) {
+            vanillite_base::prefetch::read(word);
+        }
+    }
+
     /// Sets the height of a column relative to the minimum Y.
     #[inline]
     pub fn set(&mut self, x: u32, z: u32, relative: u32) {

@@ -1,0 +1,95 @@
+{
+  "description": "Entities on a retracting piston (#264): the base becomes a moving_piston whose collision shape (its block entity's: the extended base) still carries what stands on it. A primed TNT (Entity.move of PrimedTnt) and a mock player the server moves stay on top while the piston retracts.",
+  "tier": "fast",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      7,
+      -55,
+      4
+    ]
+  ],
+  "ticks": 14,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        5.5,
+        -57.0,
+        2.5
+      ]
+    }
+  ],
+  "setup": [
+    {
+      "op": "set",
+      "pos": [
+        2,
+        -58,
+        2
+      ],
+      "block": "minecraft:piston[extended=false,facing=down]"
+    },
+    {
+      "op": "set",
+      "pos": [
+        5,
+        -58,
+        2
+      ],
+      "block": "minecraft:piston[extended=false,facing=down]"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:tnt 2.5 -57.0 2.5 {fuse:200s}"
+    },
+    {
+      "tick": 2,
+      "op": "place",
+      "pos": [
+        2,
+        -58,
+        1
+      ],
+      "block": "minecraft:redstone_block"
+    },
+    {
+      "tick": 2,
+      "op": "place",
+      "pos": [
+        5,
+        -58,
+        1
+      ],
+      "block": "minecraft:redstone_block"
+    },
+    {
+      "tick": 8,
+      "op": "place",
+      "pos": [
+        2,
+        -58,
+        1
+      ],
+      "block": "minecraft:air"
+    },
+    {
+      "tick": 8,
+      "op": "place",
+      "pos": [
+        5,
+        -58,
+        1
+      ],
+      "block": "minecraft:air"
+    }
+  ]
+}

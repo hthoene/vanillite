@@ -67,6 +67,15 @@ impl Compound {
         self
     }
 
+    pub fn ints(&mut self, name: &str, list: &[i32]) -> &mut Self {
+        self.head(11, name);
+        io::write_vari32(&mut self.0, i32::try_from(list.len()).unwrap_or(0));
+        for &v in list {
+            io::write_vari32(&mut self.0, v);
+        }
+        self
+    }
+
     pub fn compounds(&mut self, name: &str, list: &[Compound]) -> &mut Self {
         self.head(9, name);
         self.0.push(10);

@@ -63,6 +63,18 @@ pub enum Tag {
 }
 
 impl Tag {
+    /// Turns every `-0.0` float and double inside into `0.0`, as Vanilla's tags never hold
+    /// one (`FloatTag.valueOf` and `DoubleTag.valueOf` return their cached zero for it).
+    pub fn positive_zeros(&mut self) {
+        match self {
+            Tag::Float(v) if *v == 0.0 => *v = 0.0,
+            Tag::Double(v) if *v == 0.0 => *v = 0.0,
+            Tag::List(l) => l.0.iter_mut().for_each(Tag::positive_zeros),
+            Tag::Compound(c) => c.positive_zeros(),
+            _ => {}
+        }
+    }
+
     /// The binary type of this value.
     pub const fn tag_type(&self) -> TagType {
         match self {
@@ -226,6 +238,11 @@ impl Compound {
     pub fn remove(&mut self, name: &str) -> Option<Tag> {
         let idx = self.0.iter().rposition(|(n, _)| n == name)?;
         Some(self.0.remove(idx).1)
+    }
+
+    /// [`Tag::positive_zeros`] of every value.
+    pub fn positive_zeros(&mut self) {
+        self.0.iter_mut().for_each(|(_, v)| v.positive_zeros());
     }
 
     /// Number of entries.

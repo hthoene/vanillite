@@ -36,6 +36,9 @@ pub(crate) struct DataPacks {
     reloading: Mutex<()>,
     /// Counts reloads, so a failed one restores the selection only if no other followed.
     generation: AtomicU64,
+    /// Reloads load on the calling thread (the parity harness, whose ticks must not depend on
+    /// how fast a worker loads); they are still applied at the next global pre-phase.
+    synchronous: bool,
 }
 
 /// The packs selected at start.
@@ -98,6 +101,7 @@ pub(crate) fn select(
             loaded: None,
             reloading: Mutex::new(()),
             generation: AtomicU64::new(0),
+            synchronous: false,
         },
         config,
         opened,
@@ -139,9 +143,17 @@ struct Reloaded {
 }
 
 impl DataPacks {
-    /// The packs as loaded at start.
-    pub(crate) fn with_loaded(self, loaded: Option<Arc<LoadedPacks>>) -> DataPacks {
-        DataPacks { loaded, ..self }
+    /// The packs as loaded at start; `synchronous` reloads load on the calling thread.
+    pub(crate) fn with_loaded(
+        self,
+        loaded: Option<Arc<LoadedPacks>>,
+        synchronous: bool,
+    ) -> DataPacks {
+        DataPacks {
+            loaded,
+            synchronous,
+            ..self
+        }
     }
 
     /// The packs as loaded at start (`None` without the Vanilla pack).
@@ -227,7 +239,7 @@ impl DataPacks {
         if let Some(game) = reloaded.game {
             // `PlayerList.reloadResources`: the recipes go to every player.
             let packet = vanillite_protocol::SharedPacket::of(&game.recipes.update_packet());
-            vanillite_game::player::play::install_game_data(Arc::new(game));
+            global.set_game(Arc::new(game));
             *global
                 .recipes_packet
                 .write()
@@ -269,24 +281,29 @@ pub(crate) fn reload(global: &Global, ids: Vec<String>, source: CommandSource) {
     let worker = Arc::clone(&global);
     let worker_source = source.clone();
     let worker_failed = failed.clone();
+    let work = move || {
+        let global = worker;
+        // Reloads load one at a time, so their results are applied in order.
+        let _serial = lock(&global.packs.reloading);
+        match global.packs.load(&global, &packs) {
+            Ok(reloaded) => {
+                if let Some(handle) = global.handle.get() {
+                    let applied = Arc::clone(&global);
+                    handle.run_global(move |server| {
+                        applied.packs.apply(&applied, reloaded, server.network());
+                    });
+                }
+            }
+            Err(e) => worker_failed(&global, &worker_source, &e),
+        }
+    };
+    if global.packs.synchronous {
+        work();
+        return;
+    }
     let spawned = std::thread::Builder::new()
         .name("Reload".to_owned())
-        .spawn(move || {
-            let global = worker;
-            // Reloads load one at a time, so their results are applied in order.
-            let _serial = lock(&global.packs.reloading);
-            match global.packs.load(&global, &packs) {
-                Ok(reloaded) => {
-                    if let Some(handle) = global.handle.get() {
-                        let applied = Arc::clone(&global);
-                        handle.run_global(move |server| {
-                            applied.packs.apply(&applied, reloaded, server.network());
-                        });
-                    }
-                }
-                Err(e) => worker_failed(&global, &worker_source, &e),
-            }
-        });
+        .spawn(work);
     if let Err(e) = spawned {
         failed(&global, &source, &e);
     }

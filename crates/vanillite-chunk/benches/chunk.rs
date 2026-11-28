@@ -2,7 +2,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use microbench::{BatchSize, Bench, bench_group, bench_main};
 use vanillite_chunk::facts::{self, Tables};
 use vanillite_chunk::packet::encode_chunk_with_light;
 use vanillite_chunk::{Chunk, LightNibbles, Section};
@@ -66,12 +66,12 @@ fn terrain_chunk() -> Chunk {
     chunk
 }
 
-fn access(c: &mut Criterion) {
+fn access(c: &mut Bench) {
     install();
     let positions = positions(4096);
     for (name, states) in [("indirect4", 12u16), ("indirect8", 200), ("direct", 1000)] {
         let section = section_with(states);
-        c.bench_function(&format!("section/get_4096/{name}"), |b| {
+        c.bench_function(format!("section/get_4096/{name}"), |b| {
             b.iter(|| {
                 let mut sum = 0u32;
                 for &(x, y, z) in &positions {
@@ -80,7 +80,7 @@ fn access(c: &mut Criterion) {
                 black_box(sum)
             })
         });
-        c.bench_function(&format!("section/set_4096/{name}"), |b| {
+        c.bench_function(format!("section/set_4096/{name}"), |b| {
             b.iter_batched_ref(
                 || section.clone(),
                 |section| {
@@ -105,7 +105,7 @@ fn access(c: &mut Criterion) {
     });
 }
 
-fn encode(c: &mut Criterion) {
+fn encode(c: &mut Bench) {
     install();
     let chunk = terrain_chunk();
     let mut out = Vec::new();
@@ -118,5 +118,5 @@ fn encode(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, access, encode);
-criterion_main!(benches);
+bench_group!(benches, access, encode);
+bench_main!(benches);

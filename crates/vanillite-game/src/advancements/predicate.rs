@@ -66,6 +66,11 @@ pub trait World {
     fn block_entity_nbt(&self, _pos: BlockPos) -> Option<vanillite_nbt::Compound> {
         None
     }
+    /// `BlockEntity.collectComponents` of the block entity at a loaded `pos` (wire values by
+    /// component type); `None` without a block entity.
+    fn block_components(&self, _pos: BlockPos) -> Option<Vec<(u16, Box<[u8]>)>> {
+        None
+    }
     /// The progress of the player whose triggers run (`getAdvancements`), for the
     /// `advancements` of its player predicate.
     fn progress(&self) -> Option<&super::PlayerAdvancements> {
@@ -123,6 +128,8 @@ pub struct EntityView<'a> {
     pub fall_flying: bool,
     pub in_water: bool,
     pub baby: bool,
+    /// A `LivingEntity` (players, mobs, armor stands, mannequins).
+    pub living: bool,
     /// Head, chest, legs, feet, body, main hand, off hand.
     pub equipment: [Cow<'a, ItemStack>; 7],
     /// The team name.
@@ -157,6 +164,60 @@ pub struct EntityView<'a> {
     pub target: Option<Box<EntityView<'a>>>,
     /// The player's inventory slots 0-35 (`inventory.*`, `hotbar.*`), where known.
     pub inventory: Option<Cow<'a, [ItemStack]>>,
+    /// `NbtPredicate.getEntityTagToCompare`: kept only while a loaded predicate reads entity
+    /// data ([`entity_nbt_wanted`]).
+    pub nbt: Option<Box<vanillite_nbt::Compound>>,
+    /// `entityTags()`.
+    pub tags: Vec<String>,
+    /// `LightningBolt.getHitEntities` of a lightning bolt: the alive entities a flash struck.
+    pub struck: Vec<EntityView<'a>>,
+}
+
+/// Whether a parsed entity predicate reads entity data (`nbt`, data components): only then
+/// views keep [`EntityView::nbt`]. It only ever turns on.
+static ENTITY_NBT_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether entity views must carry [`EntityView::nbt`].
+pub fn entity_nbt_wanted() -> bool {
+    ENTITY_NBT_WANTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn want_entity_nbt() {
+    ENTITY_NBT_WANTED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+impl EntityView<'_> {
+    /// `Entity.get(type)` in the persistent form, for the components the views know:
+    /// `custom_data` (`CustomData.EMPTY` without data), `custom_name` and the variants.
+    fn component(&self, name: &str) -> Option<vanillite_nbt::Tag> {
+        use vanillite_nbt::{Compound, Tag};
+        match name {
+            "minecraft:custom_data" => Some(
+                self.nbt
+                    .as_ref()
+                    .and_then(|n| n.get("data").cloned())
+                    .unwrap_or_else(|| Tag::Compound(Compound::new())),
+            ),
+            "minecraft:custom_name" => self.nbt.as_ref().and_then(|n| n.get("CustomName").cloned()),
+            _ => self
+                .components
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| Tag::String(v.clone())),
+        }
+    }
+}
+
+/// A component value in the form a stack's wire value converts to (`None`: it does not
+/// convert); types without a codec keep their value.
+fn normalized_component(name: &str, tag: &vanillite_nbt::Tag) -> Option<vanillite_nbt::Tag> {
+    use crate::item_nbt::{component_from_nbt, component_to_nbt};
+    match vanillite_protocol::components_nbt::type_by_name(name) {
+        Some(t) if !name.contains('/') => {
+            component_from_nbt(t, tag).and_then(|w| component_to_nbt(t, &w))
+        }
+        _ => Some(tag.clone()),
+    }
 }
 
 impl<'a> EntityView<'a> {
@@ -174,6 +235,7 @@ impl<'a> EntityView<'a> {
             fall_flying: false,
             in_water: false,
             baby: false,
+            living: false,
             equipment: std::array::from_fn(|_| Cow::Owned(ItemStack::EMPTY)),
             team: None,
             player: None,
@@ -191,6 +253,9 @@ impl<'a> EntityView<'a> {
             open_water: None,
             target: None,
             inventory: None,
+            nbt: None,
+            tags: Vec::new(),
+            struck: Vec::new(),
         }
     }
 }
@@ -336,9 +401,43 @@ enum SubPredicate {
     VillagerVariant(IdSet),
     /// `AnyValue`: a component type without a predicate type is present.
     Present(u16),
+    /// `potion_contents` with `effects`: the potions and the collection of all effects.
+    PotionEffects(Option<IdSet>, CollectionPredicate<MobEffectsPredicate>),
+    /// `firework_explosion`.
+    FireworkExplosion(ExplosionTest),
+    /// `fireworks`: the explosions and the flight duration.
+    Fireworks(Option<CollectionPredicate<ExplosionTest>>, Bounds),
+    /// `writable_book_content`: the raw page texts.
+    WritableBook(Option<CollectionPredicate<String>>),
+    /// `written_book_content`: pages (raw text components), author, title, generation,
+    /// resolved.
+    WrittenBook {
+        pages: Option<CollectionPredicate<vanillite_nbt::Tag>>,
+        author: Option<String>,
+        title: Option<String>,
+        generation: Bounds,
+        resolved: Option<bool>,
+    },
+    /// `attribute_modifiers`: the modifier entries.
+    AttributeModifiers(Option<CollectionPredicate<ModifierTest>>),
+    /// `container` (`nonEmptyItems`) or `bundle_contents` (`items`).
+    Items {
+        bundle: bool,
+        items: Option<CollectionPredicate<ItemPredicate>>,
+    },
     /// The predicate types that are not evaluated (containers, bundles, fireworks, books,
     /// attribute modifiers, potion effects): never matches.
     Unsupported,
+}
+
+/// `NbtPredicate.CODEC` (`TagParser.LENIENT_CODEC`): SNBT or the compound itself.
+fn lenient_nbt(v: &Value) -> Res<vanillite_nbt::Tag> {
+    Ok(match v {
+        Value::String(s) => vanillite_nbt::snbt::parse_compound(s)
+            .map(vanillite_nbt::Tag::Compound)
+            .map_err(|e| format!("bad nbt {s}: {e:?}"))?,
+        other => crate::item_nbt::json_to_nbt(other),
+    })
 }
 
 /// The holder of a component in its persistent form: a registry id string (else `None`, e.g.
@@ -378,19 +477,22 @@ impl SubPredicate {
             }
             "minecraft:potion_contents" => {
                 let o = o()?;
-                if o.contains_key("effects") {
-                    SubPredicate::Unsupported
-                } else {
-                    SubPredicate::Potions(set(o, "potions")?)
+                match o.get("effects") {
+                    Some(e) => SubPredicate::PotionEffects(
+                        set(o, "potions")?,
+                        CollectionPredicate::parse(e, MobEffectsPredicate::parse)?,
+                    ),
+                    None => SubPredicate::Potions(set(o, "potions")?),
                 }
             }
-            "minecraft:custom_data" => SubPredicate::CustomData(match v {
-                // `TagParser.LENIENT_CODEC`: SNBT or the compound itself.
-                Value::String(s) => vanillite_nbt::snbt::parse_compound(s)
-                    .map(vanillite_nbt::Tag::Compound)
-                    .map_err(|e| format!("bad custom_data {s}: {e:?}"))?,
-                other => crate::item_nbt::json_to_nbt(other),
-            }),
+            "minecraft:container" | "minecraft:bundle_contents" => SubPredicate::Items {
+                bundle: name == "minecraft:bundle_contents",
+                items: o()?
+                    .get("items")
+                    .map(|v| CollectionPredicate::parse(v, ItemPredicate::parse))
+                    .transpose()?,
+            },
+            "minecraft:custom_data" => SubPredicate::CustomData(lenient_nbt(v)?),
             "minecraft:jukebox_playable" => SubPredicate::JukeboxPlayable(set(o()?, "song")?),
             "minecraft:trim" => {
                 let o = o()?;
@@ -400,18 +502,77 @@ impl SubPredicate {
                 }
             }
             "minecraft:villager/variant" => SubPredicate::VillagerVariant(IdSet::parse(v)?),
-            "minecraft:container"
-            | "minecraft:bundle_contents"
-            | "minecraft:firework_explosion"
-            | "minecraft:fireworks"
-            | "minecraft:writable_book_content"
-            | "minecraft:written_book_content"
-            | "minecraft:attribute_modifiers" => SubPredicate::Unsupported,
+            "minecraft:firework_explosion" => {
+                SubPredicate::FireworkExplosion(ExplosionTest::parse(v)?)
+            }
+            "minecraft:fireworks" => {
+                let o = o()?;
+                SubPredicate::Fireworks(
+                    o.get("explosions")
+                        .map(|e| CollectionPredicate::parse(e, ExplosionTest::parse))
+                        .transpose()?,
+                    Bounds::field(o, "flight_duration")?,
+                )
+            }
+            "minecraft:writable_book_content" => {
+                SubPredicate::WritableBook(
+                    o()?.get("pages")
+                        .map(|p| {
+                            CollectionPredicate::parse(p, |e| {
+                                Ok(string(object(e)?.get("contents").ok_or("no contents")?)?
+                                    .to_owned())
+                            })
+                        })
+                        .transpose()?,
+                )
+            }
+            "minecraft:written_book_content" => {
+                let o = o()?;
+                SubPredicate::WrittenBook {
+                    pages: o
+                        .get("pages")
+                        .map(|p| {
+                            CollectionPredicate::parse(p, |e| {
+                                Ok(text_nbt(&crate::item_nbt::json_to_nbt(
+                                    object(e)?.get("contents").ok_or("no contents")?,
+                                )))
+                            })
+                        })
+                        .transpose()?,
+                    author: o.get("author").map(string).transpose()?.map(str::to_owned),
+                    title: o.get("title").map(string).transpose()?.map(str::to_owned),
+                    generation: Bounds::field(o, "generation")?,
+                    resolved: o.get("resolved").and_then(Value::as_bool),
+                }
+            }
+            "minecraft:attribute_modifiers" => SubPredicate::AttributeModifiers(
+                o()?.get("modifiers")
+                    .map(|m| CollectionPredicate::parse(m, ModifierTest::parse))
+                    .transpose()?,
+            ),
             other => match vanillite_protocol::components_nbt::type_by_name(other) {
                 Some(t) => SubPredicate::Present(t),
                 None => return Err(format!("unknown item sub-predicate {other}")),
             },
         })
+    }
+
+    /// `matches(entity)`: an entity has only the components [`EntityView::component`] knows;
+    /// item-only predicates need a component it never has.
+    fn matches_entity(&self, e: &EntityView<'_>, world: &dyn World) -> bool {
+        match self {
+            SubPredicate::CustomData(expected) => e
+                .component("minecraft:custom_data")
+                .is_some_and(|actual| crate::item_nbt::compare_nbt(expected, &actual)),
+            SubPredicate::VillagerVariant(types) => {
+                holder_name(e.component("minecraft:villager/variant").as_ref())
+                    .is_some_and(|n| types.contains("minecraft:villager_type", n, world))
+            }
+            SubPredicate::Present(t) => vanillite_data::registry::DATA_COMPONENT_TYPE
+                .name(*t)
+                .is_some_and(|n| e.component(n).is_some()),
+            _ => false,
+        }
     }
 
     /// `matches(components)`: single component predicates need their component.
@@ -502,6 +663,134 @@ impl SubPredicate {
                     .is_some_and(|n| types.contains("minecraft:villager_type", n, world))
             }
             SubPredicate::Present(t) => effective_component(stack, *t).is_some(),
+            SubPredicate::PotionEffects(potions, effects) => {
+                let Some(contents) = effective_component(stack, ids::POTION_CONTENTS)
+                    .and_then(|v| crate::effect::potion::PotionContents::decode(&v))
+                else {
+                    return false;
+                };
+                // `PotionsPredicate.matches`: a set of potions needs a potion in it.
+                let potion_ok = potions.as_ref().is_none_or(|set| {
+                    contents
+                        .potion
+                        .and_then(|p| registry::POTION.name(p))
+                        .is_some_and(|n| set.contains("minecraft:potion", n, world))
+                });
+                let all: Vec<EffectView> = contents
+                    .all_effects()
+                    .iter()
+                    .map(|e| EffectView {
+                        effect: e.effect,
+                        amplifier: i32::from(e.amplifier),
+                        duration: e.duration,
+                        ambient: e.ambient,
+                        visible: e.visible,
+                    })
+                    .collect();
+                potion_ok && effects.test(&all, |p, e| p.test(e))
+            }
+            SubPredicate::FireworkExplosion(test) => {
+                matches!(nbt(ids::FIREWORK_EXPLOSION), Some(vanillite_nbt::Tag::Compound(c)) if test.test(&c))
+            }
+            SubPredicate::Fireworks(explosions, flight) => {
+                let Some(vanillite_nbt::Tag::Compound(c)) = nbt(ids::FIREWORKS) else {
+                    return false;
+                };
+                let list = compounds(c.get("explosions"));
+                let duration = c
+                    .get("flight_duration")
+                    .and_then(vanillite_nbt::Tag::as_i64)
+                    .and_then(|v| i32::try_from(v).ok())
+                    .map_or(0.0, f64::from);
+                explosions
+                    .as_ref()
+                    .is_none_or(|e| e.test(&list, |t, c| t.test(c)))
+                    && flight.matches(duration)
+            }
+            SubPredicate::WritableBook(pages) => {
+                let Some(vanillite_nbt::Tag::Compound(c)) = nbt(ids::WRITABLE_BOOK_CONTENT) else {
+                    return false;
+                };
+                let raw: Vec<String> = pages_of(c.get("pages"))
+                    .into_iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect();
+                pages
+                    .as_ref()
+                    .is_none_or(|p| p.test(&raw, |want, have| want == have))
+            }
+            SubPredicate::WrittenBook {
+                pages,
+                author,
+                title,
+                generation,
+                resolved,
+            } => {
+                let Some(vanillite_nbt::Tag::Compound(c)) = nbt(ids::WRITTEN_BOOK_CONTENT) else {
+                    return false;
+                };
+                let str_of = |k: &str| c.get(k).and_then(vanillite_nbt::Tag::as_str);
+                let title_raw = pages_of(
+                    c.get("title")
+                        .map(|t| vanillite_nbt::Tag::List(vanillite_nbt::List(vec![t.clone()])))
+                        .as_ref(),
+                )
+                .into_iter()
+                .next();
+                let raw: Vec<vanillite_nbt::Tag> =
+                    pages_of(c.get("pages")).iter().map(text_nbt).collect();
+                author
+                    .as_deref()
+                    .is_none_or(|a| str_of("author") == Some(a))
+                    && title.as_deref().is_none_or(|t| {
+                        title_raw.as_ref().and_then(vanillite_nbt::Tag::as_str) == Some(t)
+                    })
+                    && generation.matches(
+                        c.get("generation")
+                            .and_then(vanillite_nbt::Tag::as_i64)
+                            .and_then(|v| i32::try_from(v).ok())
+                            .map_or(0.0, f64::from),
+                    )
+                    && resolved.is_none_or(|r| {
+                        (c.get("resolved")
+                            .and_then(vanillite_nbt::Tag::as_i64)
+                            .unwrap_or(0)
+                            != 0)
+                            == r
+                    })
+                    && pages
+                        .as_ref()
+                        .is_none_or(|p| p.test(&raw, |want, have| want == have))
+            }
+            SubPredicate::AttributeModifiers(modifiers) => {
+                let Some(list) = nbt(ids::ATTRIBUTE_MODIFIERS) else {
+                    return false;
+                };
+                let entries = compounds(Some(&list));
+                modifiers
+                    .as_ref()
+                    .is_none_or(|m| m.test(&entries, |t, e| t.test(e, world)))
+            }
+            SubPredicate::Items { bundle, items } => {
+                let list = if *bundle {
+                    if effective_component(stack, ids::BUNDLE_CONTENTS).is_none() {
+                        return false;
+                    }
+                    crate::bundle::items(stack).unwrap_or_default()
+                } else {
+                    let Some(v) = effective_component(stack, ids::CONTAINER) else {
+                        return false;
+                    };
+                    vanillite_protocol::item::decode_container_contents(&v)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                };
+                items
+                    .as_ref()
+                    .is_none_or(|c| c.test(&list, |p, s| p.test(s, world)))
+            }
             SubPredicate::Unsupported => false,
         }
     }
@@ -573,7 +862,13 @@ impl ItemPredicate {
     /// Whether every part is evaluated.
     pub fn is_supported(&self) -> bool {
         self.exact.iter().all(|(_, v)| v.is_some())
-            && !self.predicates.contains(&SubPredicate::Unsupported)
+            && self.predicates.iter().all(|p| match p {
+                SubPredicate::Unsupported => false,
+                SubPredicate::Items { items: Some(c), .. } => {
+                    c.all().all(ItemPredicate::is_supported)
+                }
+                _ => true,
+            })
     }
 
     /// `test`.
@@ -597,6 +892,185 @@ impl ItemPredicate {
                 })
             })
             && self.predicates.iter().all(|p| p.matches(stack, world))
+    }
+}
+
+/// `CollectionPredicate`: `contains` (every test matched by some element), `count` (the
+/// number of matching elements per test) and `size`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollectionPredicate<P> {
+    contains: Vec<P>,
+    counts: Vec<(P, Bounds)>,
+    size: Bounds,
+}
+
+impl<P> CollectionPredicate<P> {
+    fn parse(v: &Value, element: impl Fn(&Value) -> Res<P>) -> Res<CollectionPredicate<P>> {
+        let o = object(v)?;
+        let list = |k: &str| -> Res<&[Value]> {
+            match o.get(k) {
+                None => Ok(&[]),
+                Some(Value::Array(a)) => Ok(a),
+                Some(other) => Err(format!("{k} is not a list: {other}")),
+            }
+        };
+        let contains = list("contains")?.iter().map(&element).collect::<Res<_>>()?;
+        let counts = list("count")?
+            .iter()
+            .map(|e| {
+                let e = object(e)?;
+                Ok((
+                    element(e.get("test").ok_or("count entry without test")?)?,
+                    Bounds::parse(e.get("count").ok_or("count entry without count")?)?,
+                ))
+            })
+            .collect::<Res<_>>()?;
+        Ok(CollectionPredicate {
+            contains,
+            counts,
+            size: Bounds::field(o, "size")?,
+        })
+    }
+
+    /// `test(values)`.
+    fn test<T>(&self, values: &[T], matches: impl Fn(&P, &T) -> bool) -> bool {
+        // `CollectionContentsPredicate.Multiple`: a test drops out once an element matches.
+        let mut left: Vec<&P> = self.contains.iter().collect();
+        let contains_ok = left.is_empty()
+            || values.iter().any(|v| {
+                left.retain(|p| !matches(p, v));
+                left.is_empty()
+            });
+        let count = |p: &P| values.iter().filter(|v| matches(p, v)).count();
+        contains_ok
+            && self.counts.iter().all(|(p, bounds)| {
+                bounds.matches(f64::from(u32::try_from(count(p)).unwrap_or(u32::MAX)))
+            })
+            && self
+                .size
+                .matches(f64::from(u32::try_from(values.len()).unwrap_or(u32::MAX)))
+    }
+
+    fn all(&self) -> impl Iterator<Item = &P> {
+        self.contains
+            .iter()
+            .chain(self.counts.iter().map(|(p, _)| p))
+    }
+}
+
+/// The compounds of a list tag.
+fn compounds(tag: Option<&vanillite_nbt::Tag>) -> Vec<vanillite_nbt::Compound> {
+    match tag {
+        Some(vanillite_nbt::Tag::List(l)) => {
+            l.0.iter()
+                .filter_map(|t| match t {
+                    vanillite_nbt::Tag::Compound(c) => Some(c.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The raw values of a list of `Filterable`s (a value, or `{raw, filtered}`).
+fn pages_of(tag: Option<&vanillite_nbt::Tag>) -> Vec<vanillite_nbt::Tag> {
+    match tag {
+        Some(vanillite_nbt::Tag::List(l)) => l
+            .0
+            .iter()
+            .filter_map(|t| match t {
+                vanillite_nbt::Tag::Compound(c) if c.get("raw").is_some() => c.get("raw").cloned(),
+                other => Some(other.clone()),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A text component in one comparable form: a plain string becomes `{text: ...}`.
+fn text_nbt(tag: &vanillite_nbt::Tag) -> vanillite_nbt::Tag {
+    match tag {
+        vanillite_nbt::Tag::String(s) => {
+            vanillite_nbt::Tag::Compound(vanillite_nbt::Compound::new().with("text", s.as_str()))
+        }
+        other => other.clone(),
+    }
+}
+
+/// `FireworkExplosionPredicate.FireworkPredicate` on an explosion in its persistent form.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExplosionTest {
+    shape: Option<String>,
+    twinkle: Option<bool>,
+    trail: Option<bool>,
+}
+
+impl ExplosionTest {
+    fn parse(v: &Value) -> Res<ExplosionTest> {
+        let o = object(v)?;
+        Ok(ExplosionTest {
+            shape: o.get("shape").map(string).transpose()?.map(str::to_owned),
+            twinkle: o.get("has_twinkle").and_then(Value::as_bool),
+            trail: o.get("has_trail").and_then(Value::as_bool),
+        })
+    }
+
+    fn test(&self, c: &vanillite_nbt::Compound) -> bool {
+        let flag = |k: &str| c.get(k).and_then(vanillite_nbt::Tag::as_i64).unwrap_or(0) != 0;
+        self.shape
+            .as_deref()
+            .is_none_or(|s| c.get("shape").and_then(vanillite_nbt::Tag::as_str) == Some(s))
+            && self.twinkle.is_none_or(|t| flag("has_twinkle") == t)
+            && self.trail.is_none_or(|t| flag("has_trail") == t)
+    }
+}
+
+/// `AttributeModifiersPredicate.EntryPredicate` on a modifier entry in its persistent form.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModifierTest {
+    attribute: Option<IdSet>,
+    id: Option<String>,
+    amount: Bounds,
+    operation: Option<String>,
+    slot: Option<String>,
+}
+
+impl ModifierTest {
+    fn parse(v: &Value) -> Res<ModifierTest> {
+        let o = object(v)?;
+        let s = |k: &str| -> Res<Option<String>> {
+            Ok(o.get(k).map(string).transpose()?.map(str::to_owned))
+        };
+        Ok(ModifierTest {
+            attribute: o.get("attribute").map(IdSet::parse).transpose()?,
+            id: s("id")?.map(|i| qualify(&i)),
+            amount: Bounds::field(o, "amount")?,
+            operation: s("operation")?,
+            slot: s("slot")?,
+        })
+    }
+
+    fn test(&self, e: &vanillite_nbt::Compound, world: &dyn World) -> bool {
+        let s = |k: &str| e.get(k).and_then(vanillite_nbt::Tag::as_str);
+        self.attribute.as_ref().is_none_or(|set| {
+            s("type").is_some_and(|a| set.contains("minecraft:attribute", &qualify(a), world))
+        }) && self
+            .id
+            .as_deref()
+            .is_none_or(|i| s("id").map(qualify).as_deref() == Some(i))
+            && self.amount.matches(match e.get("amount") {
+                Some(vanillite_nbt::Tag::Double(d)) => *d,
+                _ => 0.0,
+            })
+            && self
+                .operation
+                .as_deref()
+                .is_none_or(|o| s("operation") == Some(o))
+            && self
+                .slot
+                .as_deref()
+                .is_none_or(|slot| s("slot").unwrap_or("any") == slot)
     }
 }
 
@@ -625,6 +1099,19 @@ impl MobEffectsPredicate {
             ));
         }
         Ok(MobEffectsPredicate(out))
+    }
+
+    /// `test(instance)` (`Predicate<MobEffectInstance>`): the effect is listed and matches.
+    fn test(&self, e: &EffectView) -> bool {
+        self.0
+            .iter()
+            .find(|(effect, ..)| *effect == e.effect)
+            .is_some_and(|(_, [amp, dur], [ambient, visible])| {
+                amp.matches(f64::from(e.amplifier))
+                    && dur.matches(f64::from(e.duration))
+                    && ambient.is_none_or(|a| a == e.ambient)
+                    && visible.is_none_or(|v| v == e.visible)
+            })
     }
 
     /// `matches(activeEffects)`.
@@ -894,7 +1381,10 @@ pub struct BlockPredicate {
     state: Option<StateMatcher>,
     /// `nbt`: compared with the block entity's full data (`NbtPredicate.matches`).
     nbt: Option<vanillite_nbt::Compound>,
-    /// Block entity components are not evaluated: the predicate never matches.
+    /// `components` and `predicates` (`DataComponentMatchers`) against the block entity's
+    /// collected components, as an item predicate over them; `None` when both are empty.
+    components: Option<ItemPredicate>,
+    /// Every part is evaluated.
     supported: bool,
 }
 
@@ -914,17 +1404,33 @@ impl BlockPredicate {
             ),
             Some(other) => return Err(format!("bad nbt {other}")),
         };
+        let components = (non_empty("components") || non_empty("predicates"))
+            .then(|| {
+                let mut m = Map::new();
+                for k in ["components", "predicates"] {
+                    if let Some(v) = o.get(k) {
+                        m.insert(k.to_owned(), v.clone());
+                    }
+                }
+                ItemPredicate::parse(&Value::Object(m))
+            })
+            .transpose()?;
         Ok(BlockPredicate {
             blocks: o.get("blocks").map(IdSet::parse).transpose()?,
             state: o.get("state").map(StateMatcher::parse).transpose()?,
             nbt,
-            supported: !non_empty("components") && !non_empty("predicates"),
+            supported: components.as_ref().is_none_or(ItemPredicate::is_supported),
+            components,
         })
     }
 
-    /// `matchesState` (a predicate with `nbt` needs the block entity: [`Self::matches`]).
+    /// `matchesState` (a predicate with `nbt` or components needs the block entity:
+    /// [`Self::matches`]).
     pub fn matches_state(&self, state: BlockState, world: &dyn World) -> bool {
-        self.supported && self.nbt.is_none() && self.matches_state_only(state, world)
+        self.supported
+            && self.nbt.is_none()
+            && self.components.is_none()
+            && self.matches_state_only(state, world)
     }
 
     fn matches_state_only(&self, state: BlockState, world: &dyn World) -> bool {
@@ -945,8 +1451,28 @@ impl BlockPredicate {
                         .block_entity_nbt(pos)
                         .is_some_and(|actual| crate::item_nbt::compare_compounds(nbt, &actual))
                 })
+                && self.components.as_ref().is_none_or(|p| {
+                    world
+                        .block_components(pos)
+                        .is_some_and(|c| p.test(&component_carrier(&c), world))
+                })
         })
     }
+}
+
+/// A stack whose effective components are exactly `components` (every default of the
+/// carrier item removed), so item predicates test a block entity's `collectComponents`.
+fn component_carrier(components: &[(u16, Box<[u8]>)]) -> ItemStack {
+    let item = registry::ITEM.id("minecraft:stone").unwrap_or(1);
+    let mut stack = ItemStack::new(item, 1);
+    let types = u16::try_from(registry::DATA_COMPONENT_TYPE.len()).unwrap_or(u16::MAX);
+    for t in 0..types {
+        stack.remove_component(t);
+    }
+    for (t, v) in components {
+        stack.patch_mut().set(*t, v.clone());
+    }
+    stack
 }
 
 /// `FluidPredicate`: the fluids and the state properties of the fluid state.
@@ -1167,10 +1693,17 @@ enum EntityPart {
     Vehicle(Box<EntityPredicate>),
     Passenger(Box<EntityPredicate>),
     Effects(MobEffectsPredicate),
-    /// Exact entity components (variants) by name and expected value.
-    Components(Vec<(String, String)>),
-    /// `type_specific/lightning`: blocks set on fire (`entity_struck` is not evaluated).
-    Lightning(Bounds),
+    /// Exact entity components by name and expected value (normalised; `None`: a value that
+    /// does not convert never matches).
+    Components(Vec<(String, Option<vanillite_nbt::Tag>)>),
+    /// `predicates`: partial component predicates.
+    Predicates(Vec<SubPredicate>),
+    /// `nbt`.
+    Nbt(vanillite_nbt::Tag),
+    /// `entity_tags`: any of, all of, none of.
+    Tags([Option<Vec<String>>; 3]),
+    /// `type_specific/lightning`: blocks set on fire, `entity_struck`.
+    Lightning(Bounds, Option<Box<EntityPredicate>>),
     /// `movement`: x, y, z, speed, horizontal speed, vertical speed, fall distance.
     Movement([Bounds; 7]),
     /// `periodic_tick`.
@@ -1397,19 +1930,49 @@ impl EntityPredicate {
                 }
                 "minecraft:effects" => EntityPart::Effects(MobEffectsPredicate::parse(value)?),
                 "minecraft:components" => {
+                    want_entity_nbt();
                     let mut out = Vec::new();
-                    let mut supported = true;
                     for (k, v) in object(value)? {
-                        match v.as_str() {
-                            Some(s) => out.push((qualify(k), qualify(s))),
-                            None => supported = false,
-                        }
+                        let name = qualify(k);
+                        let expected = match v {
+                            // Registry holders (variants) by id.
+                            Value::String(s) if name.contains('/') => {
+                                Some(vanillite_nbt::Tag::String(qualify(s)))
+                            }
+                            other => {
+                                normalized_component(&name, &crate::item_nbt::json_to_nbt(other))
+                            }
+                        };
+                        out.push((name, expected));
                     }
-                    if supported {
-                        EntityPart::Components(out)
-                    } else {
-                        EntityPart::Unsupported
+                    EntityPart::Components(out)
+                }
+                "minecraft:predicates" => {
+                    want_entity_nbt();
+                    let mut out = Vec::new();
+                    for (k, v) in object(value)? {
+                        out.push(SubPredicate::parse(&qualify(k), v)?);
                     }
+                    EntityPart::Predicates(out)
+                }
+                "minecraft:nbt" => {
+                    want_entity_nbt();
+                    EntityPart::Nbt(lenient_nbt(value)?)
+                }
+                "minecraft:entity_tags" => {
+                    let o = object(value)?;
+                    let list = |k: &str| -> Res<Option<Vec<String>>> {
+                        o.get(k)
+                            .map(|l| {
+                                l.as_array()
+                                    .ok_or_else(|| format!("{k} is not a list"))?
+                                    .iter()
+                                    .map(|t| string(t).map(str::to_owned))
+                                    .collect()
+                            })
+                            .transpose()
+                    };
+                    EntityPart::Tags([list("any_of")?, list("all_of")?, list("none_of")?])
                 }
                 "minecraft:movement" => {
                     let o = object(value)?;
@@ -1471,11 +2034,12 @@ impl EntityPredicate {
                 }
                 "minecraft:type_specific/lightning" => {
                     let o = object(value)?;
-                    if o.contains_key("entity_struck") {
-                        EntityPart::Unsupported
-                    } else {
-                        EntityPart::Lightning(Bounds::field(o, "blocks_set_on_fire")?)
-                    }
+                    EntityPart::Lightning(
+                        Bounds::field(o, "blocks_set_on_fire")?,
+                        o.get("entity_struck")
+                            .map(|p| EntityPredicate::parse(p).map(Box::new))
+                            .transpose()?,
+                    )
                 }
                 _ => EntityPart::Unsupported,
             });
@@ -1492,6 +2056,9 @@ impl EntityPredicate {
             EntityPart::Vehicle(p) | EntityPart::Passenger(p) | EntityPart::TargetedEntity(p) => {
                 p.is_supported()
             }
+            EntityPart::Lightning(_, p) => p.as_deref().is_none_or(EntityPredicate::is_supported),
+            EntityPart::Predicates(p) => !p.contains(&SubPredicate::Unsupported),
+            EntityPart::Components(c) => c.iter().all(|(_, v)| v.is_some()),
             EntityPart::MovementAffectedBy(l) => l.is_supported(),
             EntityPart::Slots(slots) => slots.iter().all(|(_, p)| p.is_supported()),
             EntityPart::Player(p) => p
@@ -1609,6 +2176,9 @@ impl EntityPredicate {
             EntityPart::Type(types) => types.contains("minecraft:entity_type", e.kind, world),
             EntityPart::Location(l) => l.matches(world, e.pos),
             EntityPart::SteppingOn(l) => {
+                if !e.on_ground {
+                    return false;
+                }
                 let below =
                     crate::player::play::block_pos_of(Vec3::new(e.pos.x, e.pos.y - 0.2, e.pos.z));
                 let center = Vec3::new(
@@ -1626,7 +2196,11 @@ impl EntityPredicate {
                     "is_sneaking" => e.crouching,
                     "is_sprinting" => e.sprinting,
                     "is_swimming" => e.swimming,
-                    "is_flying" => e.flying || e.fall_flying,
+                    // `LivingEntity.isFallFlying` or `abilities.flying`.
+                    "is_flying" => e.living && (e.flying || e.fall_flying),
+                    // Not tested on entities that are not living.
+                    "is_fall_flying" if !e.living => return true,
+                    "is_baby" if !e.living => return true,
                     "is_fall_flying" => e.fall_flying,
                     "is_in_water" => e.in_water,
                     "is_baby" => e.baby,
@@ -1634,11 +2208,14 @@ impl EntityPredicate {
                 };
                 have == *want
             }),
-            EntityPart::Equipment(slots) => slots.iter().all(|(slot, p)| {
-                e.equipment
-                    .get(*slot)
-                    .is_some_and(|stack| p.test(stack, world))
-            }),
+            EntityPart::Equipment(slots) => {
+                e.living
+                    && slots.iter().all(|(slot, p)| {
+                        e.equipment
+                            .get(*slot)
+                            .is_some_and(|stack| p.test(stack, world))
+                    })
+            }
             EntityPart::Team(team) => e.team.as_deref() == Some(team.as_str()),
             EntityPart::Player(part) => e.player.is_some_and(|p| part.matches(&p, e.pos, world)),
             EntityPart::Vehicle(p) => e
@@ -1648,13 +2225,31 @@ impl EntityPredicate {
             EntityPart::Passenger(p) => e.passengers.iter().any(|v| p.matches(v, world, origin)),
             EntityPart::Effects(p) => p.matches(&e.effects),
             EntityPart::Components(expected) => expected.iter().all(|(name, value)| {
-                e.components
-                    .iter()
-                    .any(|(n, v)| *n == name.as_str() && v == value)
+                value.as_ref().is_some_and(|value| {
+                    e.component(name)
+                        .and_then(|actual| normalized_component(name, &actual))
+                        .is_some_and(|actual| actual == *value)
+                })
             }),
-            EntityPart::Lightning(fires) => e
-                .lightning_fires
-                .is_some_and(|n| fires.matches(f64::from(n))),
+            EntityPart::Predicates(predicates) => {
+                predicates.iter().all(|p| p.matches_entity(e, world))
+            }
+            EntityPart::Nbt(expected) => e.nbt.as_ref().is_some_and(|n| {
+                crate::item_nbt::compare_nbt(expected, &vanillite_nbt::Tag::Compound((**n).clone()))
+            }),
+            EntityPart::Tags([any, all, none]) => {
+                let has = |t: &String| e.tags.contains(t);
+                any.as_ref().is_none_or(|l| l.iter().any(has))
+                    && none.as_ref().is_none_or(|l| !l.iter().any(has))
+                    && all.as_ref().is_none_or(|l| l.iter().all(has))
+            }
+            EntityPart::Lightning(fires, struck) => {
+                e.lightning_fires
+                    .is_some_and(|n| fires.matches(f64::from(n)))
+                    && struck
+                        .as_ref()
+                        .is_none_or(|p| e.struck.iter().any(|s| p.matches(s, world, origin)))
+            }
             EntityPart::Movement([x, y, z, speed, horizontal, vertical, fall]) => {
                 let m = e.movement;
                 x.matches(m.x)
@@ -1963,5 +2558,208 @@ mod tests {
         let p = ItemPredicate::parse(&json!({"components": {"minecraft:damage": 0}})).unwrap();
         assert!(!p.test(&stack, &Flat));
         assert!(ItemPredicate::parse(&json!({"items": "minecraft:nope"})).is_err());
+    }
+
+    /// `EntityPredicate` `nbt`, `entity_tags`, `components`/`predicates` and lightning
+    /// `entity_struck`; item `potion_contents.effects` and `container` collection predicates
+    /// (codecs of `EntitySubPredicates`, `PotionsPredicate`, `CollectionPredicate`).
+    #[test]
+    fn entity_data_and_collection_sub_predicates() {
+        use vanillite_nbt::{Compound, Tag};
+        let p = EntityPredicate::parse(&json!({
+            "nbt": "{data:{quest:1},Tags:[\"a\"]}",
+            "entity_tags": {"all_of": ["a"], "none_of": ["b"]},
+            "predicates": {"minecraft:custom_data": {"quest": 1}},
+            "components": {"minecraft:custom_data": {"quest": 1}}
+        }))
+        .unwrap();
+        assert!(p.is_supported() && entity_nbt_wanted());
+        let mut v = EntityView::new("minecraft:pig", Vec3::ZERO);
+        let mut data = Compound::new();
+        data.insert("quest", Tag::Int(1));
+        let mut nbt = Compound::new();
+        nbt.insert("data", Tag::Compound(data));
+        nbt.insert(
+            "Tags",
+            Tag::List(vanillite_nbt::List(vec![Tag::String("a".into())])),
+        );
+        v.nbt = Some(Box::new(nbt));
+        v.tags = vec!["a".into()];
+        assert!(p.matches(&v, &Flat, None));
+        v.tags.push("b".into());
+        assert!(!p.matches(&v, &Flat, None));
+        v.tags.pop();
+        v.nbt = Some(Box::new(Compound::new()));
+        assert!(!p.matches(&v, &Flat, None));
+        // `custom_data` of an entity without data is `CustomData.EMPTY`.
+        let empty = EntityPredicate::parse(&json!({"components": {"custom_data": {}}})).unwrap();
+        assert!(empty.matches(&v, &Flat, None));
+
+        let bolt = EntityPredicate::parse(&json!({
+            "type_specific/lightning": {"entity_struck": {"entity_type": "minecraft:pig"}}
+        }))
+        .unwrap();
+        assert!(bolt.is_supported());
+        let mut b = EntityView::new("minecraft:lightning_bolt", Vec3::ZERO);
+        b.lightning_fires = Some(0);
+        assert!(!bolt.matches(&b, &Flat, None));
+        b.struck.push(EntityView::new("minecraft:pig", Vec3::ZERO));
+        assert!(bolt.matches(&b, &Flat, None));
+        assert!(!bolt.matches(&v, &Flat, None));
+
+        let potion = registry::POTION.id("minecraft:strong_swiftness").unwrap();
+        let mut stack = ItemStack::new(registry::ITEM.id("minecraft:potion").unwrap(), 1);
+        stack.set_component(
+            vanillite_protocol::components::ids::POTION_CONTENTS,
+            crate::effect::potion::PotionContents::of(potion).encode(),
+        );
+        let fx = |amp: i32, size: i32| {
+            ItemPredicate::parse(&json!({"predicates": {"potion_contents": {"effects": {
+                "contains": [{"minecraft:speed": {"amplifier": amp}}], "size": size
+            }}}}))
+            .unwrap()
+        };
+        assert!(fx(1, 1).is_supported());
+        assert!(fx(1, 1).test(&stack, &Flat));
+        assert!(!fx(0, 1).test(&stack, &Flat));
+        assert!(!fx(1, 2).test(&stack, &Flat));
+
+        let mut chest = ItemStack::new(registry::ITEM.id("minecraft:chest").unwrap(), 1);
+        let items = [
+            ItemStack::new(registry::ITEM.id("minecraft:stone").unwrap(), 3),
+            ItemStack::EMPTY,
+            ItemStack::new(registry::ITEM.id("minecraft:stone").unwrap(), 1),
+        ];
+        chest.set_component(
+            vanillite_protocol::components::ids::CONTAINER,
+            vanillite_protocol::item::encode_container_contents(&items).unwrap(),
+        );
+        let c = |count: i32, size: i32| {
+            ItemPredicate::parse(&json!({"predicates": {"container": {"items": {
+                "count": [{"test": {"items": "minecraft:stone"}, "count": count}], "size": size
+            }}}}))
+            .unwrap()
+        };
+        assert!(c(2, 2).test(&chest, &Flat));
+        assert!(!c(1, 2).test(&chest, &Flat));
+        assert!(!c(2, 3).test(&chest, &Flat));
+    }
+
+    /// `BlockPredicate` `components` and `predicates` against `collectComponents`.
+    #[test]
+    fn block_component_matchers() {
+        struct Named;
+        impl World for Named {
+            fn dimension(&self) -> &str {
+                "minecraft:overworld"
+            }
+            fn block(&self, pos: BlockPos) -> Option<BlockState> {
+                Flat.block(pos)
+            }
+            fn biome(&self, _pos: BlockPos) -> Option<String> {
+                None
+            }
+            fn in_tag(&self, _registry: &str, _tag: &str, _id: &str) -> bool {
+                false
+            }
+            fn block_components(&self, pos: BlockPos) -> Option<Vec<(u16, Box<[u8]>)>> {
+                use vanillite_protocol::components::ids::CUSTOM_DATA;
+                let mut c = vanillite_nbt::Compound::new();
+                c.insert("k", vanillite_nbt::Tag::Int(2));
+                let v = crate::item_nbt::component_from_nbt(
+                    CUSTOM_DATA,
+                    &vanillite_nbt::Tag::Compound(c),
+                )?;
+                (pos.y == -1).then(|| vec![(CUSTOM_DATA, v)])
+            }
+        }
+        let parse = |v: Value| BlockPredicate::parse(object(&v).unwrap()).unwrap();
+        let exact = parse(json!({"components": {"minecraft:custom_data": {"k": 2}}}));
+        let partial = parse(json!({"predicates": {"minecraft:custom_data": {"k": 2}}}));
+        let absent = parse(json!({"predicates": {"minecraft:damage": {}}}));
+        let at = BlockPos::new(0, -1, 0);
+        assert!(exact.supported && exact.matches(&Named, at));
+        assert!(partial.matches(&Named, at));
+        assert!(!absent.matches(&Named, at));
+        // No block entity.
+        assert!(!partial.matches(&Named, BlockPos::new(0, -2, 0)));
+        assert!(!partial.matches_state(Flat.block(at).unwrap(), &Named));
+    }
+
+    /// `EntityFlagsPredicate`, `EntityEquipmentPredicate` and `SteppingOnPredicate` on living and
+    /// other entities (A-18 of #272).
+    #[test]
+    fn flags_equipment_and_stepping_on_by_entity_kind() {
+        let flags =
+            EntityPredicate::parse(&json!({"flags": {"is_baby": true, "is_flying": false}}))
+                .unwrap();
+        let mut boat = EntityView::new("minecraft:oak_boat", Vec3::new(0.5, 0.0, 0.5));
+        // Not living: `is_baby` is not tested, and it never flies.
+        assert!(flags.matches(&boat, &Flat, None));
+        boat.flying = true;
+        assert!(flags.matches(&boat, &Flat, None));
+        let mut player = EntityView::new("minecraft:player", Vec3::ZERO);
+        player.living = true;
+        player.baby = true;
+        player.flying = true;
+        assert!(!flags.matches(&player, &Flat, None));
+        let equipment =
+            EntityPredicate::parse(&json!({"equipment": {"mainhand": {"count": 0}}})).unwrap();
+        assert!(equipment.matches(&player, &Flat, None));
+        assert!(!equipment.matches(&boat, &Flat, None));
+        let stepping = EntityPredicate::parse(
+            &json!({"stepping_on": {"block": {"blocks": "minecraft:stone"}}}),
+        )
+        .unwrap();
+        assert!(!stepping.matches(&player, &Flat, None));
+        player.on_ground = true;
+        assert!(stepping.matches(&player, &Flat, None));
+    }
+
+    /// The item sub-predicates `fireworks`, `firework_explosion`, `writable_book_content` and
+    /// `attribute_modifiers` (the rest of A-05 of #272).
+    #[test]
+    fn firework_book_and_modifier_sub_predicates() {
+        use vanillite_protocol::components::ids;
+        let with = |item: &str, t: u16, snbt: &str| {
+            let mut stack = ItemStack::new(registry::ITEM.id(item).unwrap(), 1);
+            let tag = vanillite_nbt::snbt::parse(snbt).unwrap();
+            stack.set_component(t, crate::item_nbt::component_from_nbt(t, &tag).unwrap());
+            stack
+        };
+        let rocket = with(
+            "minecraft:firework_rocket",
+            ids::FIREWORKS,
+            "{flight_duration:2b,explosions:[{shape:\"star\",has_trail:1b}]}",
+        );
+        let p = |v: Value| ItemPredicate::parse(&json!({"predicates": v})).unwrap();
+        let fw = p(
+            json!({"fireworks": {"flight_duration": 2, "explosions": {"contains": [{"shape": "star", "has_trail": true}]}}}),
+        );
+        assert!(fw.is_supported() && fw.test(&rocket, &Flat));
+        assert!(!p(json!({"fireworks": {"flight_duration": 1}})).test(&rocket, &Flat));
+        assert!(
+            !p(json!({"fireworks": {"explosions": {"contains": [{"has_twinkle": true}]}}}))
+                .test(&rocket, &Flat)
+        );
+        let book = with(
+            "minecraft:writable_book",
+            ids::WRITABLE_BOOK_CONTENT,
+            "{pages:[\"hello\",{raw:\"world\"}]}",
+        );
+        assert!(p(json!({"writable_book_content": {"pages": {"contains": [{"contents": "world"}], "size": 2}}})).test(&book, &Flat));
+        assert!(
+            !p(json!({"writable_book_content": {"pages": {"contains": [{"contents": "nope"}]}}}))
+                .test(&book, &Flat)
+        );
+        let sword = with(
+            "minecraft:stick",
+            ids::ATTRIBUTE_MODIFIERS,
+            "[{type:\"minecraft:attack_damage\",id:\"minecraft:test\",amount:3.0d,operation:\"add_value\",slot:\"mainhand\"}]",
+        );
+        let m = |v: Value| p(json!({"attribute_modifiers": {"modifiers": {"contains": [v]}}}));
+        assert!(m(json!({"attribute": "minecraft:attack_damage", "amount": {"min": 2.0}, "slot": "mainhand"})).test(&sword, &Flat));
+        assert!(!m(json!({"operation": "add_multiplied_base"})).test(&sword, &Flat));
+        assert!(!m(json!({"id": "other"})).test(&sword, &Flat));
     }
 }

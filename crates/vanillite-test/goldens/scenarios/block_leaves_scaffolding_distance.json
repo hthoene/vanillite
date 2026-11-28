@@ -1,0 +1,17 @@
+{"format":1,
+"region":[[0,-61,0],[5,-58,4]],
+"palette":[
+"minecraft:grass_block[snowy=false]",
+"minecraft:air",
+"minecraft:oak_leaves[distance=7,persistent=true,waterlogged=false]",
+"minecraft:scaffolding[bottom=false,distance=0,waterlogged=false]"],
+"frames":[
+{"tick":0,"blocks":[30,0,14,1,1,2,75,1],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":1,"changes":[[3,-60,2,3]],"block_ticks":[[3,-60,2,"minecraft:scaffolding",1,0],[2,-60,2,"minecraft:oak_leaves",1,0]],"fluid_ticks":[],"entities":[]},
+{"tick":2,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":3,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":4,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":5,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":6,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":7,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]},
+{"tick":8,"changes":[],"block_ticks":[],"fluid_ticks":[],"entities":[]}]}

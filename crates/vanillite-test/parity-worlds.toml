@@ -25,6 +25,13 @@
 # - actions, entities: scenario actions and entities (crates/vanillite-test/src/scenario.rs),
 #   e.g. {tick = 20, op = "place", pos = [3, 1, 0], block = "minecraft:redstone_block"} to
 #   press the input. For schematics `pos`, `from` and `to` are relative to the pasted corner.
+# - player: where the scripted player (survival, named "player") stands, [x, y, z] (relative
+#   for schematics), or "none". Default: a world's saved player position, or on a barrier block
+#   next to a schematic's minimum corner (out of the region). Actions use it by that name; the
+#   default trigger also makes it press every button of a schematic.
+# - Every world runs with random ticks (random_tick_speed 3) and mob spawning (spawn_mobs) like a
+#   server, unless rules say otherwise. summary.md flags a world in whose region nothing changes
+#   (no block, block entity or entity count) as inactive.
 
 [[world]]
 name = "qbradq_alu_v12"
@@ -108,6 +115,15 @@ sha256 = "8788bd700261023b87e3ea0a81b5c85e5e2cdfb9bc4452de8f3cf777691b6cf7"
 licence = "MIT"
 source = "https://github.com/NaCl-5844/redstone_schematics"
 contents = "16-bit carry-cancel adder (4 ticks), comparators, repeaters, dust"
+# Its operands are redstone blocks: they go and come back.
+actions = [
+  {tick = 20, op = "place", pos = [8, 3, 28], block = "minecraft:air"},
+  {tick = 20, op = "place", pos = [8, 4, 28], block = "minecraft:air"},
+  {tick = 20, op = "place", pos = [13, 5, 23], block = "minecraft:air"},
+  {tick = 300, op = "place", pos = [8, 3, 28], block = "minecraft:redstone_block"},
+  {tick = 300, op = "place", pos = [8, 4, 28], block = "minecraft:redstone_block"},
+  {tick = 300, op = "place", pos = [13, 5, 23], block = "minecraft:redstone_block"},
+]
 
 [[world]]
 name = "fibonacci_computer"
@@ -136,6 +152,20 @@ sha256 = "defe31b512a27d6b7e055e36b844fd52d7b47c3cdac064fbd626b06a89e47ae5"
 licence = "none stated"
 source = "https://github.com/colinwang05/minecraft-redstone-cpu"
 contents = "world with a redstone CPU and a loaded program (1.21.5), around the saved player"
+# The program levers flip, then the player presses the four control buttons one after another.
+actions = [
+  {tick = 10, op = "place", pos = [-108, -33, 77], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 79], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 81], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 83], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 85], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 87], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 10, op = "place", pos = [-108, -33, 89], block = "minecraft:lever[face=floor,facing=west,powered=true]"},
+  {tick = 20, op = "use", entity = "player", pos = [-103, -33, 74]},
+  {tick = 60, op = "use", entity = "player", pos = [-103, -33, 76]},
+  {tick = 100, op = "use", entity = "player", pos = [-103, -33, 78]},
+  {tick = 140, op = "use", entity = "player", pos = [-103, -33, 80]},
+]
 
 [[world]]
 name = "door_3x3_shinji"
@@ -283,6 +313,17 @@ sha256 = "e9a03a0d59e491dcb7ac4ea3269198d8a9b1339e2f49c299b47790bea8878b51"
 licence = "CC0-1.0"
 source = "https://github.com/DuskScorpio/Scorpio-File-Downloads"
 contents = "showcase world with four TNT duper designs, around the saved player"
+# The four levers (saved on) go off and on again.
+actions = [
+  {tick = 20, op = "place", pos = [-5, 1, 10], block = "minecraft:lever[face=wall,facing=west,powered=false]"},
+  {tick = 20, op = "place", pos = [-5, 3, 9], block = "minecraft:lever[face=floor,facing=south,powered=false]"},
+  {tick = 20, op = "place", pos = [3, 2, -7], block = "minecraft:lever[face=floor,facing=north,powered=false]"},
+  {tick = 20, op = "place", pos = [6, 4, 8], block = "minecraft:lever[face=wall,facing=north,powered=false]"},
+  {tick = 60, op = "place", pos = [-5, 1, 10], block = "minecraft:lever[face=wall,facing=west,powered=true]"},
+  {tick = 60, op = "place", pos = [-5, 3, 9], block = "minecraft:lever[face=floor,facing=south,powered=true]"},
+  {tick = 60, op = "place", pos = [3, 2, -7], block = "minecraft:lever[face=floor,facing=north,powered=true]"},
+  {tick = 60, op = "place", pos = [6, 4, 8], block = "minecraft:lever[face=wall,facing=north,powered=true]"},
+]
 
 [[world]]
 name = "tnt_duper_array"
@@ -437,6 +478,11 @@ sha256 = "153dfbd644afd9188bbeb126cf71c9f2a61bb22e9400c56bdca8ca45315b7509"
 licence = "MIT repository, Lithium gametest upstream (LGPL-3.0)"
 source = "https://github.com/Schem-at/Nucleation"
 contents = "hopper/comparator item sorter with pre-filled containers"
+# The gametest's start block becomes a redstone block for 4 ticks.
+actions = [
+  {tick = 20, op = "place", pos = [9, 5, 2], block = "minecraft:redstone_block"},
+  {tick = 24, op = "place", pos = [9, 5, 2], block = "minecraft:air"},
+]
 
 [[world]]
 name = "iron_farm_single"
@@ -465,6 +511,10 @@ sha256 = "ee79787e25793efb660aafa8af6c22d31f4b14c5ee1b401b45a103d4da1a6cfa"
 licence = "CC0-1.0"
 source = "https://github.com/DuskScorpio/Scorpio-File-Downloads"
 contents = "stacking raid farm with 10 villagers (no raid started)"
+# The player gets Bad Omen: a raid omen, then the raid starts in the farm.
+actions = [
+  {tick = 10, op = "effect", entity = "player", effect = "minecraft:bad_omen", duration = 2400, amplifier = 0},
+]
 
 [[world]]
 name = "guardian_farm_15k"

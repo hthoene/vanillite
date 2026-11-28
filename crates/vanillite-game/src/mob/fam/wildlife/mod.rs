@@ -953,8 +953,16 @@ impl FamilyHooks for Hooks {
     }
 
     fn look_control(t: &mut Tick<'_, '_>) -> bool {
-        // `BeeLookControl`: angry bees do not turn their heads.
-        t.mob_ref().kind == Kind::Bee && bee::is_angry(t)
+        if t.mob_ref().kind != Kind::Bee {
+            return false;
+        }
+        // `BeeLookControl`: angry bees do not turn their heads; a pollinating bee keeps its
+        // pitch (`resetXRotOnTick`).
+        if !bee::is_angry(t) {
+            let reset = !bee::is_pollinating(t.mob_ref());
+            crate::mob::nav::default_look_tick(t, reset);
+        }
+        true
     }
 
     fn do_hurt_target(t: &mut Tick<'_, '_>, target: EntityId) -> Option<bool> {
@@ -1445,7 +1453,7 @@ pub(crate) fn water_travel(t: &mut Tick<'_, '_>, input: Vec3, speed: f32, sink: 
     }
     let mut v = t.velocity() * 0.9;
     if t.mob_ref().target.is_none() && sink {
-        v.y -= 0.005;
+        v = v + Vec3::new(0.0, -0.005, 0.0);
     }
     t.set_velocity(v);
 }

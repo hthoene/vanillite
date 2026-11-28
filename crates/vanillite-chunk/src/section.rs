@@ -165,6 +165,12 @@ impl Section {
         self.blocks.get_at(x, y, z)
     }
 
+    /// Prefetch hint for the block at local coordinates (0..16).
+    #[inline(always)]
+    pub fn prefetch_block(&self, x: u32, y: u32, z: u32) {
+        self.blocks.prefetch_at(x, y, z);
+    }
+
     /// Sets a block state and returns the previous one; the summary follows.
     #[inline]
     pub fn set_block(&mut self, x: u32, y: u32, z: u32, state: BlockStateId) -> BlockStateId {

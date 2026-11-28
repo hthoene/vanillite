@@ -63,6 +63,9 @@ struct World {
     trigger_tick: u32,
     /// The world's own entities load with its chunks (`world.entities`).
     snapshot_entities: bool,
+    /// Where the scripted player stands (`player`; relative for schematics); `None` = the
+    /// default spot, `Some(None)` = no player (`player = "none"`).
+    player: Option<Option<[f64; 3]>>,
 }
 
 /// `cargo xtask parity worlds [--ticks N] [--jobs N] [--minutes N] [--prepare-only]
@@ -307,6 +310,20 @@ fn read_manifest(path: &Path) -> Result<Vec<World>> {
                 .get("snapshot_entities")
                 .and_then(toml::Value::as_bool)
                 .unwrap_or(true),
+            player: match e.get("player") {
+                None => None,
+                Some(toml::Value::String(s)) if s == "none" => Some(None),
+                Some(v) => {
+                    let p: Vec<f64> = v
+                        .clone()
+                        .try_into()
+                        .map_err(|e| format!("world {name}: player: {e}"))?;
+                    match p[..] {
+                        [x, y, z] => Some(Some([x, y, z])),
+                        _ => return Err(format!("world {name}: player is [x, y, z] or \"none\"")),
+                    }
+                }
+            },
             format,
             url,
             name,
@@ -328,6 +345,8 @@ struct Prepared {
     pasted: Option<[[i32; 3]; 2]>,
     /// The levers of a schematic (absolute) with their state flipped.
     levers: Vec<(BlockPos3, String)>,
+    /// The buttons of a schematic (absolute).
+    buttons: Vec<BlockPos3>,
     /// A world's player (or else spawn) position: the default region is around it.
     focus: Option<BlockPos3>,
 }
@@ -341,6 +360,9 @@ const PREPARATION: u32 = 2;
 fn world_prep(work_dir: &Path, classpath: &str, args: &[&Path]) -> Result<String> {
     let output = Command::new(java_tool("java"))
         .current_dir(work_dir)
+        // A bounded heap: the JVM's default (a quarter of the memory the host reports) is more
+        // than a container may have, and the system kills it as soon as others need memory.
+        .arg("-Xmx3G")
         .arg("-cp")
         .arg(classpath)
         .arg("dev.vanillite.extractor.golden.WorldPrep")
@@ -406,12 +428,25 @@ fn prepare(
     ));
     let marker = prepared.join("prepared.json");
     if let Ok(text) = std::fs::read_to_string(&marker) {
-        let v: Value =
+        let mut v: Value =
             serde_json::from_str(&text).map_err(|e| format!("{}: {e}", marker.display()))?;
+        let pasted: Option<[BlockPos3; 2]> = serde_json::from_value(v["pasted"].clone()).ok();
+        // Preparations from before the buttons were listed: only the schematic is read again.
+        if let Some([origin, _]) = pasted
+            && v.get("buttons").is_none()
+        {
+            let scratch = prepared.join("buttons.nbt");
+            let text = world_prep(work_dir, classpath, &[&file, &scratch])?;
+            let _ = std::fs::remove_file(&scratch);
+            v["buttons"] = json!(buttons(&text, origin));
+            std::fs::write(&marker, v.to_string())
+                .map_err(|e| format!("{}: {e}", marker.display()))?;
+        }
         return Ok(Prepared {
             snapshot: PathBuf::from(v["snapshot"].as_str().unwrap_or_default()),
-            pasted: serde_json::from_value(v["pasted"].clone()).ok(),
+            pasted,
             levers: serde_json::from_value(v["levers"].clone()).unwrap_or_default(),
+            buttons: serde_json::from_value(v["buttons"].clone()).unwrap_or_default(),
             focus: serde_json::from_value(v["focus"].clone()).ok(),
         });
     }
@@ -432,6 +467,7 @@ fn prepare(
     std::fs::create_dir_all(&run_dir).map_err(|e| format!("{}: {e}", run_dir.display()))?;
     let mut pasted = None;
     let mut levers = Vec::new();
+    let mut buttons_at = Vec::new();
     let mut focus = None;
     let mut commands = vec!["tick freeze".to_owned()];
     if w.format == "world" {
@@ -472,6 +508,7 @@ fn prepare(
                 )
             })
             .collect();
+        buttons_at = buttons(&text, origin);
         commands.extend(forceload(
             [origin[0] >> 4, origin[2] >> 4],
             [max[0] >> 4, max[2] >> 4],
@@ -520,6 +557,7 @@ fn prepare(
         "snapshot": snapshot.to_string_lossy(),
         "pasted": pasted,
         "levers": levers,
+        "buttons": buttons_at,
         "focus": focus,
     });
     std::fs::write(&marker, v.to_string()).map_err(|e| format!("{}: {e}", marker.display()))?;
@@ -527,8 +565,17 @@ fn prepare(
         snapshot,
         pasted,
         levers,
+        buttons: buttons_at,
         focus,
     })
+}
+
+/// The `button x y z` lines of WorldPrep's output, absolute for a paste at `origin`.
+fn buttons(text: &str, origin: BlockPos3) -> Vec<BlockPos3> {
+    positions(text, "button")
+        .into_iter()
+        .map(|(p, _)| [p[0] + origin[0], p[1] + origin[1], p[2] + origin[2]])
+        .collect()
 }
 
 /// `/forceload add` commands for the chunks `min..=max` and [`PREPARE_MARGIN`] around them,
@@ -722,7 +769,8 @@ fn vanilla_session(
                             "Failed",
                             "no template",
                         ],
-                        Duration::from_secs(120),
+                        // The largest schematics (p16_cpu) take minutes to place.
+                        Duration::from_secs(600),
                     )?;
                     if answer == "Loaded template" {
                         break;
@@ -806,17 +854,19 @@ fn scenario(w: &World, p: &Prepared, ticks: Option<u32>) -> Value {
         }
         v
     };
-    let rules: serde_json::Map<String, Value> = w
-        .rules
-        .iter()
-        .map(|(k, v)| {
-            let text = match v {
-                toml::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            (k.clone(), Value::String(text))
-        })
+    // A real server's random ticks. Natural spawning stays off unless a world turns it on: the
+    // scenario world without dimensions has no custom spawners (phantoms, cats, patrols).
+    let mut rules: serde_json::Map<String, Value> = [("random_tick_speed", "3")]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), json!(v)))
         .collect();
+    rules.extend(w.rules.iter().map(|(k, v)| {
+        let text = match v {
+            toml::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        (k.clone(), Value::String(text))
+    }));
     let mut s = json!({
         "description": format!("{} ({}, parity world corpus #244: {})", w.contents, w.group, w.source),
         "tier": "bulk",
@@ -830,20 +880,94 @@ fn scenario(w: &World, p: &Prepared, ticks: Option<u32>) -> Value {
         "ticks": ticks.or(w.ticks).unwrap_or(TICKS),
         "block_entities": true,
     });
+    // The scripted player (survival; the server moves it like Vanilla's mock player): by default
+    // at a world's saved player position, or on a barrier block next to a schematic's minimum
+    // corner, out of the observed region but in its forced chunks.
+    let mut platform = None;
+    let player = match w.player {
+        Some(Some(at)) => Some(shift(&json!({"pos": at}))["pos"].clone()),
+        Some(None) => None,
+        None => Some(match (p.pasted, p.focus) {
+            (Some([min, _]), _) => {
+                let at = [
+                    min[0] - REGION_MARGIN - 2,
+                    min[1],
+                    min[2] - REGION_MARGIN - 2,
+                ];
+                platform = Some(at);
+                json!([
+                    f64::from(at[0]) + 0.5,
+                    f64::from(at[1] + 1),
+                    f64::from(at[2]) + 0.5
+                ])
+            }
+            (None, f) => {
+                let f = f.unwrap_or([0, 64, 0]);
+                json!([
+                    f64::from(f[0]) + 0.5,
+                    f64::from(f[1]),
+                    f64::from(f[2]) + 0.5
+                ])
+            }
+        }),
+    };
+    if let Some(at) = platform {
+        s["setup"] = json!([{"op": "set", "pos": at, "block": "minecraft:barrier"}]);
+    }
+    let mut entities: Vec<Value> = w.entities.iter().map(shift).collect();
+    let has_player = entities.iter().any(|e| e["type"] == "minecraft:player");
+    let player_name = entities
+        .iter()
+        .find(|e| e["type"] == "minecraft:player")
+        .and_then(|e| e["name"].as_str())
+        .map_or_else(|| "player".to_owned(), str::to_owned);
+    let scripted = player.is_some() && !has_player;
+    if let (Some(pos), false) = (player, has_player) {
+        entities.insert(
+            0,
+            json!({"name": "player", "type": "minecraft:player", "pos": pos}),
+        );
+    }
+    let has_player = entities.iter().any(|e| e["type"] == "minecraft:player");
     if !w.actions.is_empty() {
         s["actions"] = Value::Array(w.actions.iter().map(shift).collect());
-    } else if w.trigger && !p.levers.is_empty() {
-        // The default trigger: every lever flips (`place`, with updates).
-        s["actions"] = p
+    } else if w.trigger {
+        // The default trigger: every lever flips (`place`, with updates), the player presses
+        // every button.
+        let mut actions: Vec<Value> = p
             .levers
             .iter()
             .map(|(pos, state)| {
                 json!({"tick": w.trigger_tick, "op": "place", "pos": pos, "block": state})
             })
             .collect();
+        if has_player {
+            actions.extend(p.buttons.iter().map(|pos| {
+                json!({"tick": w.trigger_tick, "op": "use", "entity": player_name, "pos": pos})
+            }));
+        }
+        if !actions.is_empty() {
+            s["actions"] = Value::Array(actions);
+        }
     }
-    if !w.entities.is_empty() {
-        s["entities"] = Value::Array(w.entities.iter().map(shift).collect());
+    if scripted {
+        // The scripted player survives what the machine does to it (a dead player would leave
+        // the recorder's mock connection): resistance V and fire resistance from the start.
+        let duration = s["ticks"].as_u64().unwrap_or(u64::from(TICKS)) + 100;
+        let mut actions: Vec<Value> = ["minecraft:resistance", "minecraft:fire_resistance"]
+            .into_iter()
+            .map(|effect| {
+                json!({"tick": 1, "op": "effect", "entity": "player", "effect": effect,
+                       "duration": duration, "amplifier": 4})
+            })
+            .collect();
+        if let Some(Value::Array(rest)) = s.get_mut("actions").map(Value::take) {
+            actions.extend(rest);
+        }
+        s["actions"] = Value::Array(actions);
+    }
+    if !entities.is_empty() {
+        s["entities"] = Value::Array(entities);
     }
     if let Some(d) = &w.difficulty {
         s["difficulty"] = json!(d);

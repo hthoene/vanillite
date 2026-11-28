@@ -3,7 +3,7 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use microbench::{Bench, bench_group, bench_main};
 use vanillite_base::ChunkPos;
 use vanillite_world::chunks::{BLOCK_TICKING_LEVEL, LevelChange, MAX_TICKET_LEVEL, TicketLevels};
 
@@ -40,7 +40,7 @@ fn levels(max: u8, others: usize, level: u8) -> TicketLevels {
     levels
 }
 
-fn bench(c: &mut Criterion, name: &str, max: u8, others: usize, level: u8) {
+fn bench(c: &mut Bench, name: &str, max: u8, others: usize, level: u8) {
     let path = walk();
     let mut changes: Vec<LevelChange> = Vec::new();
     let mut group = c.benchmark_group(name);
@@ -74,7 +74,7 @@ fn bench(c: &mut Criterion, name: &str, max: u8, others: usize, level: u8) {
     group.finish();
 }
 
-fn tickets(c: &mut Criterion) {
+fn tickets(c: &mut Bench) {
     bench(c, "player_ticket_alone", MAX_TICKET_LEVEL, 0, PLAYER);
     bench(c, "player_ticket_among_50", MAX_TICKET_LEVEL, 50, PLAYER);
     bench(
@@ -86,5 +86,5 @@ fn tickets(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, tickets);
-criterion_main!(benches);
+bench_group!(benches, tickets);
+bench_main!(benches);

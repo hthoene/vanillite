@@ -302,7 +302,8 @@ pub fn tick_entity(level: &mut Level, id: EntityId) {
         let rise = (v.y + f64::from(5.0e-4_f32)).min(f64::from(0.06_f32));
         v = Vec3::new(v.x * drag, rise, v.z * drag);
     } else if !colliding {
-        v.y -= GRAVITY;
+        // `applyGravity` adds a vector: a -0.0 of x or z becomes 0.0.
+        v = v + Vec3::new(0.0, -GRAVITY, 0.0);
     }
     let feet = BlockPos::new(floor(pos.x), floor(pos.y), floor(pos.z));
     if crate::block::fluid::is_lava(level.fluid(feet)) {
@@ -354,11 +355,12 @@ pub fn tick_entity(level: &mut Level, id: EntityId) {
     let hit_z = (v.z - movement.z).abs() >= 1.0e-5;
     let hit_y = v.y != movement.y;
     let below = hit_y && v.y < 0.0;
+    // `restituteMovementAfterCollisions` without bounciness: `-v * 0.0` keeps the sign bit.
     if hit_x {
-        v.x = 0.0;
+        v.x = -v.x * 0.0;
     }
     if hit_z {
-        v.z = 0.0;
+        v.z = -v.z * 0.0;
     }
     if hit_y {
         // `Block.updateEntityMovementAfterFallOn`.

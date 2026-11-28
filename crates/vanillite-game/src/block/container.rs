@@ -601,10 +601,16 @@ pub fn set_changed(level: &mut Level, pos: BlockPos) {
 /// `BlockEntity.preRemoveSideEffects` of containers: the stacks drop (`Containers
 /// .dropContents`); shulker boxes keep theirs (their item carries them); furnaces also pop
 /// the experience of their recipes.
-pub fn pre_remove_side_effects(level: &mut Level, pos: BlockPos, entity: &BlockEntity) {
+pub fn pre_remove_side_effects(
+    level: &mut Level,
+    pos: BlockPos,
+    old: BlockState,
+    entity: &BlockEntity,
+) {
     let items: &[ItemStack] = match entity {
         BlockEntity::Container(c) => {
-            if kind_of(level.block(pos).block()) == Some(Kind::ShulkerBox) {
+            // The removed block: the level may hold its replacement already.
+            if kind_of(old.block()) == Some(Kind::ShulkerBox) {
                 return;
             }
             &c.items

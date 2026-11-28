@@ -2122,7 +2122,7 @@ fn trade_tick(t: &mut Tick<'_, '_>, now: i64) {
         return;
     };
     if v::has_excess_food(t.mob_ref()) && (farmer || target_wants_food) {
-        throw_half_stack(t, |s| v::villager_food(s.item).is_some(), to);
+        throw_half_stack(t, |s| v::stack_villager_food(s).is_some(), to);
     }
     if farmer && v::count_item(&state(t.mob_ref()).merchant.inventory, items::WHEAT.0) > 32 {
         throw_half_stack(t, |s| s.item == items::WHEAT.0, to);

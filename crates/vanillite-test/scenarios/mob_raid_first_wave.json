@@ -1,0 +1,87 @@
+{
+  "description": "A raid: a player gets Bad Omen in a village (bell, beds, a workstation); once the villager has claimed its POIs the village counts and the omen becomes Raid Omen at the player's position. The Raid Omen is shortened at tick 100, so the raid starts at tick 120 at the centre of the claimed POIs, counts down 300 ticks while it looks for a wave spawn position, spawns the first wave (bonus spawns, finalizeSpawn, equipment, the leader with the banner) outside the observed region at tick 419, and the raiders path into the village. Draws of the level random cover the omen, the raid start and the wave spawn.",
+  "tier": "bulk",
+  "dimensions": true,
+  "region": [
+    [
+      -48,
+      -61,
+      -48
+    ],
+    [
+      48,
+      -57,
+      48
+    ]
+  ],
+  "ticks": 900,
+  "time": 6000,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        1.5,
+        -60.0,
+        1.5
+      ]
+    },
+    {
+      "name": "villager",
+      "type": "minecraft:villager",
+      "pos": [
+        3.5,
+        -60.0,
+        2.5
+      ],
+      "seed": 5
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 2 -60 0 minecraft:bell[attachment=floor,facing=north]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 4 -60 4 minecraft:red_bed[facing=south,part=foot]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 4 -60 5 minecraft:red_bed[facing=south,part=head]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 6 -60 4 minecraft:red_bed[facing=south,part=foot]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 6 -60 5 minecraft:red_bed[facing=south,part=head]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock -3 -60 3 minecraft:fletching_table"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "effect give steve minecraft:bad_omen 100 1"
+    },
+    {
+      "tick": 100,
+      "op": "command",
+      "command": "effect clear steve minecraft:raid_omen"
+    },
+    {
+      "tick": 100,
+      "op": "command",
+      "command": "effect give steve minecraft:raid_omen 1 1"
+    }
+  ]
+}

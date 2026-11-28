@@ -26,6 +26,7 @@ pub mod place;
 #[cfg(test)]
 pub(crate) use neighbors::STEPS as NEIGHBOR_STEPS;
 pub mod signal;
+pub mod structure_refs;
 mod tick;
 pub mod tiles;
 pub mod update;
@@ -44,6 +45,7 @@ use std::sync::Arc;
 use vanillite_base::hash::{FxHashMap, FxHashSet};
 use vanillite_base::random::{LegacyRandom, RandomSource};
 use vanillite_base::{BlockPos, ChunkPos, Direction, SectionPos};
+use vanillite_chunk::ProtoChunk;
 use vanillite_data::block::{BlockId, BlockState};
 use vanillite_data::fluid::FluidState;
 use vanillite_world::chunks::Chunks;
@@ -560,6 +562,8 @@ pub struct Level {
     pub test_instance_actions: Vec<crate::block::technical::test_instance::Action>,
     /// The server's maps (shared by all worlds).
     maps: Option<Arc<crate::map::Maps>>,
+    /// The references exploration maps added to structure starts.
+    structure_refs: Arc<structure_refs::StructureReferences>,
     /// The server's structure templates (`getStructureTemplateManager`, shared by all worlds).
     templates: Option<Arc<vanillite_worldgen::template::manager::StructureTemplateManager>>,
     /// The data packs loaded at start (template pools of jigsaw blocks).
@@ -679,6 +683,7 @@ impl Level {
             player_awards: Vec::new(),
             test_instance_actions: Vec::new(),
             maps: None,
+            structure_refs: Arc::default(),
             templates: None,
             packs: None,
             min_y,
@@ -752,6 +757,16 @@ impl Level {
     /// Uses the server's map store.
     pub fn set_maps(&mut self, maps: Arc<crate::map::Maps>) {
         self.maps = Some(maps);
+    }
+
+    /// Uses saved structure start references.
+    pub fn set_structure_refs(&mut self, refs: structure_refs::StructureReferences) {
+        self.structure_refs = Arc::new(refs);
+    }
+
+    /// The references exploration maps added to structure starts.
+    pub fn structure_refs(&self) -> &Arc<structure_refs::StructureReferences> {
+        &self.structure_refs
     }
 
     /// The server's map store.
@@ -896,6 +911,12 @@ impl Level {
     /// `getBiome(pos)`: the noise biome the biome manager picks for `pos`; the default biome
     /// outside live chunks.
     pub fn biome(&self, pos: BlockPos) -> u16 {
+        self.biome_near(pos, None)
+    }
+
+    /// [`Level::biome`] with a full chunk already looked up (`near`), used when the biome
+    /// lies in it.
+    pub fn biome_near(&self, pos: BlockPos, near: Option<&ProtoChunk>) -> u16 {
         let default = self.chunks.info().default_biome;
         let Some(climate) = &self.climate else {
             return default;
@@ -903,7 +924,12 @@ impl Level {
         climate
             .manager
             .get_biome(pos.x, pos.y, pos.z, &mut |qx: i32, qy: i32, qz: i32| {
-                let Some(chunk) = self.chunks.chunk(ChunkPos::new(qx >> 2, qz >> 2)) else {
+                let at = ChunkPos::new(qx >> 2, qz >> 2);
+                let found = match near {
+                    Some(c) if c.pos == at => Some(c),
+                    _ => self.chunks.chunk(at).map(|c| &**c),
+                };
+                let Some(chunk) = found else {
                     return default;
                 };
                 // `LevelChunk.getNoiseBiome`: the quart Y is clamped to the chunk.
@@ -938,6 +964,11 @@ impl Level {
     /// The level random (`level.getRandom()`).
     pub fn random(&mut self) -> &mut LegacyRandom {
         &mut self.random
+    }
+
+    /// The level random, to read (e.g. to draw ahead on a copy).
+    pub fn random_ref(&self) -> &LegacyRandom {
+        &self.random
     }
 
     /// Lends the level random out for an [`Env`](crate::survival::player::Env) while the level is
@@ -1778,6 +1809,10 @@ impl BlockLevel for Level {
     #[inline]
     fn block(&self, pos: BlockPos) -> BlockState {
         Level::block(self, pos)
+    }
+
+    fn moving_piston_boxes(&self, pos: BlockPos, out: &mut Vec<[f64; 6]>) {
+        block::piston::collision_boxes_at(&self.block_entities, pos, out);
     }
 
     fn min_y(&self) -> i32 {

@@ -3,6 +3,56 @@
 The changes of each Vanillite release for players and server owners; the GitHub release of a
 version shows its section.
 
+## 0.1.0-beta.3
+
+Minecraft Java Edition 26.3.
+
+### Gameplay
+
+- Mobs much closer to Vanilla 26.3: zombies and their reinforcements, skeletons, endermen,
+  charged creepers, creakings, the wither, the warden, breezes, striders, happy ghasts,
+  guardians, bats, raiders, ravagers, hoglins and piglins; leashes, tempting, panic, shoulder
+  riding, babies with their own size, mob riders steering their mounts, zombie horsemen.
+- Combat: melee and projectile hits on every entity, sweeping, spear stab and Lunge, critical
+  hits like Vanilla, end crystals hit by projectiles and melee, death messages with entity names.
+- Items: patched and normalised item components, spawn eggs with entity data, tridents,
+  throwables, firework rockets, debug stick, locks matching custom data, enchantments on mob
+  equipment drops, item entities and stuck arrows like Vanilla.
+- Blocks: mining, block physics, dispensers, spawners, copper chests, sculk, berries, beacons,
+  cauldrons and more; block contact of orbs, TNT, minecarts and boats; boats in bubble columns.
+- Fluids, light and world generation checked against Vanilla over many seeds, with fixes.
+- Advancements: effect sources, explosion causes, location, player and item predicates.
+- Death: the cursor stack, crafting grid and open menu drop like Vanilla.
+
+### Performance
+
+- Faster world generation (SIMD noise, shared aquifer cells, faster ores and features), still
+  bit-exact with Vanilla, and a faster chunk pipeline; the shared world generation caches stay
+  within a memory bound.
+- Crowds of players and mobs cost less: connections are written once per tick, effects and
+  advancement checks run in parallel, cheaper collisions, pushes and entity queries, faster
+  locator bar and entity tracking.
+- Faster spawning and random ticks; tile region mode is on in the `performance` profile.
+- Compute workers run at a lower priority by default, so the tick thread comes first; on weak
+  hardware the network threads and read cache follow the memory budget.
+
+### Server and plugins
+
+- Paper and Spigot plugins: drop the jars into `plugins/` and start. The server installs the
+  Bukkit layer and, if needed, a Java runtime by itself, also in Docker, on Windows and macOS.
+- New `/vanillite` (`/vl`) admin command: status, TPS, MSPT, profiler, chunks, entities,
+  memory, config reload and connection debug; `/plugins` and `/version` like Paper.
+- Console with a line editor, prompt and colours on every terminal; a clear message and a
+  console prompt when the EULA is not yet accepted (the Windows window stays open).
+- Bans, whitelist and a full server are refused during login like Vanilla.
+- `/give` accepts every item component.
+- Plugin ABI 1.12: entity network ids, plugin commands registered after load, read-only world
+  access in level hooks, explosion and piston block lists.
+- Protocol: the remaining packets of Vanilla 26.3, including locator bar waypoints.
+- Bedrock: anvil, enchanting, smithing, stonecutter, grindstone, beacon, loom, lectern and mount
+  menus, enchantments and potions on items, teams; NetherNet no longer stalls on large batches.
+- Older clients: respawn works, new mobs appear as stand-ins, related items are shown.
+
 ## 0.1.0-beta.2
 
 Minecraft Java Edition 26.3.

@@ -85,6 +85,10 @@ pub trait BlockLevel {
     /// `getBlockTicks().hasScheduledTick(pos, block)`.
     fn has_block_tick(&self, pos: BlockPos, block: BlockId) -> bool;
 
+    /// The collision boxes (relative to `pos`) of the moving piston at `pos`, from its block
+    /// entity (`PistonMovingBlockEntity.getCollisionShape`); none without one.
+    fn moving_piston_boxes(&self, _pos: BlockPos, _out: &mut Vec<[f64; 6]>) {}
+
     /// `ComparatorBlockEntity.getOutputSignal()` of the comparator at `pos`.
     fn comparator_output(&self, _pos: BlockPos) -> i32 {
         0
@@ -215,9 +219,33 @@ pub fn is_face_sturdy(state: BlockState, direction: Direction, support: SupportT
     faces & (1 << direction as u8) != 0
 }
 
+/// `state.isFaceSturdy(level, pos, direction, support)` of `state` at `pos`: like
+/// [`is_face_sturdy`], but a moving piston's support shape is the collision shape of its block
+/// entity (`MovingPistonBlock` has a dynamic shape).
+pub fn face_sturdy_at(
+    level: &impl BlockLevel,
+    pos: BlockPos,
+    state: BlockState,
+    direction: Direction,
+    support: SupportType,
+) -> bool {
+    if !state.is(ids::MOVING_PISTON) {
+        return is_face_sturdy(state, direction, support);
+    }
+    let mut boxes = Vec::new();
+    level.moving_piston_boxes(pos, &mut boxes);
+    geometry::boxes_support(&boxes, direction, support)
+}
+
 /// `Block.canSupportRigidBlock(level, pos)`: the top of the block at `pos` is rigid.
 pub fn can_support_rigid_block(level: &impl BlockLevel, pos: BlockPos) -> bool {
-    is_face_sturdy(level.block(pos), Direction::Up, SupportType::Rigid)
+    face_sturdy_at(
+        level,
+        pos,
+        level.block(pos),
+        Direction::Up,
+        SupportType::Rigid,
+    )
 }
 
 /// `Block.canSupportCenter(level, pos, direction)`.
@@ -227,7 +255,7 @@ pub fn can_support_center(level: &impl BlockLevel, pos: BlockPos, direction: Dir
     {
         return false;
     }
-    is_face_sturdy(state, direction, SupportType::Center)
+    face_sturdy_at(level, pos, state, direction, SupportType::Center)
 }
 
 /// `MultifaceBlock.canAttachTo(level, direction, neighbourPos, neighbourState)`: whether a

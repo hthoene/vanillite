@@ -531,7 +531,8 @@ pub fn fill_held(
     }
 }
 
-/// `hurtAndBreak(amount, player, hand)` of the stack in a hand.
+/// `hurtAndBreak(amount, player, hand)` of the stack in a hand: the `item_damage` effects
+/// (Unbreaking) from the level random, and the break event of the hand when it breaks.
 pub fn hurt_held(
     ents: &mut Entities,
     env: &mut Env<'_>,
@@ -539,23 +540,16 @@ pub fn hurt_held(
     hand: Hand,
     amount: i32,
 ) {
-    if infinite(ents, player) {
+    let n = crate::durability::change(
+        &held(ents, player, hand),
+        amount,
+        infinite(ents, player),
+        env.random,
+    );
+    if n == 0 {
         return;
     }
-    let unbreaking = crate::player::play::game_data().map_or(0, |d| {
-        d.enchantment_level(&held(ents, player, hand), "minecraft:unbreaking")
-    });
-    let mut n = 0;
-    for _ in 0..amount {
-        #[allow(clippy::cast_precision_loss)]
-        let level = unbreaking.max(0) as f32;
-        // `remove_binomial`: the draw removes the point below level / (level + 1).
-        if unbreaking <= 0 || env.random.next_float() >= level / (level + 1.0) {
-            n += 1;
-        }
-    }
     let i = hand_index(ents, player, hand);
-    let pos = ents.store.get(player).map(|e| e.pos());
     let Some(p) = ents.player_mut(player) else {
         return;
     };
@@ -568,24 +562,13 @@ pub fn hurt_held(
     let Some(s) = inventory.get_mut(i) else {
         return;
     };
-    if n == 0 || !item::is_damageable(s) {
-        return;
-    }
     let d = item::damage(s) + n;
-    if crate::advancements::view::apply_damage(Some(advancements), Some(stats), s, d)
-        && let Some(pos) = pos
-    {
-        let seed = crate::survival::sound_seed();
-        play_sound(
-            env.out,
-            None,
-            pos,
-            "minecraft:entity.item.break",
-            SoundSource::Players,
-            0.8,
-            0.8 + env.random.next_float() * 0.4,
-            seed,
-        );
+    if crate::advancements::view::apply_damage(Some(advancements), Some(stats), s, d) {
+        let slot = match hand {
+            Hand::MainHand => item::EquipmentSlot::MainHand,
+            Hand::OffHand => item::EquipmentSlot::OffHand,
+        };
+        crate::durability::broken_in_env(ents, env, player, slot);
     }
 }
 
@@ -1521,7 +1504,13 @@ pub fn use_spawn_egg_on(
     face: vanillite_base::Direction,
     stack: &mut ItemStack,
     infinite: bool,
+    player: EntityId,
 ) -> bool {
+    // `EntityType.canSpawn`: no monsters in Peaceful (FAIL, the egg is kept).
+    if env.difficulty == crate::survival::rules::Difficulty::Peaceful && !kind.allowed_in_peaceful()
+    {
+        return false;
+    }
     let state = level.block(pos);
     // An empty collision shape: spawn inside, else on the face.
     let spawn_pos = if state.collision_shape().is_empty() {
@@ -1564,6 +1553,17 @@ pub fn use_spawn_egg_on(
     if !infinite {
         stack.shrink(1);
     }
+    // `spawnMob`: `gameEvent(user, ENTITY_PLACE, spawnPos)`.
+    crate::survival::game_event(
+        env.out,
+        crate::level::game_event::events().entity_place,
+        Vec3::new(
+            f64::from(spawn_pos.x) + 0.5,
+            f64::from(spawn_pos.y) + 0.5,
+            f64::from(spawn_pos.z) + 0.5,
+        ),
+        Some(player),
+    );
     true
 }
 
@@ -1616,6 +1616,9 @@ pub fn spawn_from_item(
     let (ents, network_ids, _) = level.entity_parts();
     let id = super::spawn(ents, network_ids, uuid, p, rot, m);
     super::item_components::apply_spawn_item(ents, id, stack);
+    if reason == super::fam::SpawnReason::Bucket {
+        super::fam::load_bucket_flags(ents, id, stack);
+    }
     if !ents.spawned(id, reason.abi(), 0) {
         return None;
     }

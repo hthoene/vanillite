@@ -858,7 +858,7 @@ impl Session {
         self.show_menu_form();
     }
 
-    /// `block_event`: chest and shulker box lids.
+    /// `block_event`: chest and shulker box lids, pistons.
     pub(super) fn java_block_event(&mut self, r: &mut JReader<'_>) {
         let (Ok(pos), Ok(action), Ok(param), Ok(block)) = (
             <vanillite_protocol::types::BlockPos as vanillite_protocol::codec::Decode>::decode(r),
@@ -872,7 +872,14 @@ impl Session {
             .ok()
             .and_then(|b| vanillite_data::registry::BLOCK.name(b))
             .unwrap_or("");
-        if action == 1 && (name.ends_with("chest") || name.ends_with("shulker_box")) {
+        if matches!(name, "minecraft:piston" | "minecraft:sticky_piston") {
+            self.piston_event(
+                [pos.x, pos.y, pos.z],
+                action,
+                param,
+                name == "minecraft:sticky_piston",
+            );
+        } else if action == 1 && (name.ends_with("chest") || name.ends_with("shulker_box")) {
             self.send(
                 id::BLOCK_EVENT,
                 &bp::block_event([pos.x, pos.y, pos.z], 1, i32::from(param > 0)),

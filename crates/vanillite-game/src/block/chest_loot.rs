@@ -254,6 +254,7 @@ fn with_context(
     let holder_set = |registry: &str, entry: &str| data.holder_set(registry, entry);
     let generation = level.generation.clone();
     let maps = level.maps_shared();
+    let refs = std::sync::Arc::clone(level.structure_refs());
     let (min_y, height) = (level.min_y(), level.max_y() - level.min_y() + 1);
     let sea_level = generation.as_ref().map_or(63, |g| g.terrain().sea_level());
     let explore = |request: &crate::loot::ExplorationMap, origin: Vec3| {
@@ -265,6 +266,7 @@ fn with_context(
             sea_level,
             request,
             origin,
+            &refs,
         )
     };
     let ctx = LootContext {

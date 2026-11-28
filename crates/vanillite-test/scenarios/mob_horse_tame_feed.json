@@ -1,0 +1,34 @@
+{
+  "description": "A player mounts an untamed horse with an empty hand and is thrown off or tames it (temper and random), a second player feeds another horse (wheat, apple, golden carrot: heal, temper, love once tame), the tamed horse gets a saddle and is ridden, and a donkey gets a chest.",
+  "tier": "fast",
+  "time": 6000,
+  "region": [[0, -61, 0], [15, -56, 15]],
+  "ticks": 200,
+  "setup": [
+    {"op": "fill", "from": [0, -60, 0], "to": [15, -56, 0], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 15], "to": [15, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 0], "to": [0, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [15, -60, 0], "to": [15, -56, 15], "block": "minecraft:stone"}
+  ],
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [4.5, -60.0, 4.5]},
+    {"name": "alex", "type": "minecraft:player", "pos": [10.5, -60.0, 10.5]},
+    {"name": "horse", "type": "minecraft:horse", "pos": [6.5, -60.0, 4.5], "seed": 41},
+    {"name": "horse2", "type": "minecraft:horse", "pos": [10.5, -60.0, 8.5], "seed": 42},
+    {"name": "donkey", "type": "minecraft:donkey", "pos": [3.5, -60.0, 11.5], "seed": 43}
+  ],
+  "actions": [
+    {"tick": 2, "op": "interact", "entity": "steve", "target": "horse"},
+    {"tick": 10, "op": "command", "command": "effect give @e[type=minecraft:horse] minecraft:instant_damage 1 0"},
+    {"tick": 20, "op": "interact", "entity": "alex", "target": "horse2", "item": "minecraft:wheat", "count": 3},
+    {"tick": 25, "op": "interact", "entity": "alex", "target": "horse2", "item": "minecraft:apple", "count": 3},
+    {"tick": 30, "op": "interact", "entity": "alex", "target": "horse2", "item": "minecraft:golden_carrot", "count": 3},
+    {"tick": 40, "op": "command", "command": "data merge entity @e[type=minecraft:horse,limit=1,sort=nearest,x=10.5,y=-60,z=8.5] {Tame:1b}"},
+    {"tick": 41, "op": "interact", "entity": "alex", "target": "horse2", "item": "minecraft:golden_carrot", "count": 3},
+    {"tick": 45, "op": "interact", "entity": "alex", "target": "horse2", "item": "minecraft:saddle", "count": 1},
+    {"tick": 50, "op": "interact", "entity": "alex", "target": "horse2"},
+    {"tick": 60, "op": "command", "command": "data merge entity @e[type=minecraft:donkey,limit=1] {Tame:1b}"},
+    {"tick": 61, "op": "interact", "entity": "steve", "target": "donkey", "item": "minecraft:chest", "count": 1},
+    {"tick": 120, "op": "interact", "entity": "steve", "target": "horse"}
+  ]
+}

@@ -188,13 +188,8 @@ pub fn load_special(
     let data = super::boss::special::load(kind, tag)?;
     let pos = vec3_of(tag, "Pos")?;
     let velocity = entity_nbt::motion(tag.get("Motion")).unwrap_or(Vec3::ZERO);
-    let rot = entity_nbt::rotation(tag.get("Rotation")).map_or_else(Rotation::default, |(y, x)| {
-        Rotation {
-            y_rot: y,
-            x_rot: x,
-            y_head_rot: y,
-        }
-    });
+    let rot = entity_nbt::rotation(tag.get("Rotation"))
+        .map_or_else(Rotation::default, |(y, x)| loaded_rotation(y, x));
     // Generated entities (the pillars' crystals) have no UUID yet.
     let uuid = uuid_of(tag).unwrap_or_else(|| {
         let mut r = vanillite_base::random::LegacyRandom::new(seed);
@@ -327,7 +322,49 @@ pub fn save_mob(core: &EntityRef<'_>, m: &MobData) -> Compound {
         Kind::Spider => {}
         _ => super::fam::save(m, &mut out),
     }
+    // `LivingEntity.addAdditionalSaveData`: every living entity writes its brain (empty
+    // without memories), its attribute instances and the impulse grace time.
+    if out.get("Brain").is_none() {
+        let mut brain = Compound::new();
+        brain.insert("memories", Compound::new());
+        out.insert("Brain", brain);
+    }
+    if out.get("attributes").is_none() {
+        out.insert("attributes", vanillite_nbt::List(created_attributes(m)));
+    }
+    out.insert("current_impulse_context_reset_grace_time", 0);
     out
+}
+
+/// The attribute instances `AttributeMap.pack` has of a mob that nothing else touched: the
+/// follow range `Mob.finalizeSpawn` gave its `random_spawn_bonus` and the movement speed
+/// `LivingEntity.aiStep`'s `removeFrost` looks up from the first tick on.
+fn created_attributes(m: &MobData) -> Vec<Tag> {
+    let mut list = Vec::new();
+    if m.spawn_bonus != 0.0 {
+        let mut bonus = Compound::new();
+        bonus.insert("id", "minecraft:random_spawn_bonus");
+        bonus.insert("amount", m.spawn_bonus);
+        bonus.insert("operation", "add_multiplied_base");
+        let mut c = Compound::new();
+        c.insert("id", "minecraft:follow_range");
+        c.insert("base", super::Attrs::of(m.kind.type_id()).follow_range);
+        c.insert("modifiers", vanillite_nbt::List(vec![Tag::Compound(bonus)]));
+        list.push(Tag::Compound(c));
+    }
+    if m.tick_count > 0 {
+        let base = crate::effect::living::mob_attribute_base(
+            m,
+            crate::effect::attribute::Attribute::MOVEMENT_SPEED,
+        );
+        if let Some(base) = base {
+            let mut c = Compound::new();
+            c.insert("id", "minecraft:movement_speed");
+            c.insert("base", base);
+            list.push(Tag::Compound(c));
+        }
+    }
+    list
 }
 
 fn variant_name(v: i32) -> &'static str {
@@ -361,15 +398,12 @@ pub fn load_mob(tag: &Compound, seed: i64) -> Option<LoadedMob> {
     });
     let mut m = MobData::new(kind, seed);
     read_mob(&mut m, tag);
-    m.y_body_rot = y_rot;
+    // `setYBodyRot(getYRot())`: an armor stand's override sets the old rotations only.
+    m.y_body_rot = if kind == Kind::ArmorStand { 0.0 } else { y_rot };
     Some(LoadedMob {
         pos,
         velocity,
-        rot: Rotation {
-            y_rot,
-            x_rot,
-            y_head_rot: y_rot,
-        },
+        rot: loaded_rotation(y_rot, x_rot),
         uuid,
         on_ground: boolean(tag, "OnGround"),
         data: m,
@@ -584,17 +618,22 @@ pub struct LoadedEntity {
     pub on_ground: bool,
 }
 
+/// `Entity.load`: the head takes the stored yaw, then `setRot` keeps yaw and pitch `% 360`.
+fn loaded_rotation(y_rot: f32, x_rot: f32) -> Rotation {
+    Rotation {
+        y_rot: y_rot % 360.0,
+        x_rot: x_rot % 360.0,
+        y_head_rot: y_rot,
+    }
+}
+
 fn load_entity(tag: &Compound) -> Option<LoadedEntity> {
     let pos = vec3_of(tag, "Pos")?;
     let (y_rot, x_rot) = entity_nbt::rotation(tag.get("Rotation")).unwrap_or_default();
     Some(LoadedEntity {
         pos,
         velocity: entity_nbt::motion(tag.get("Motion")).unwrap_or(Vec3::ZERO),
-        rot: Rotation {
-            y_rot,
-            x_rot,
-            y_head_rot: y_rot,
-        },
+        rot: loaded_rotation(y_rot, x_rot),
         uuid: uuid_of(tag)?,
         on_ground: boolean(tag, "OnGround"),
     })
@@ -684,7 +723,7 @@ pub fn save_arrow(
     #[allow(clippy::cast_possible_wrap)]
     out.insert("PierceLevel", a.pierce_level as i8);
     out.insert("SoundEvent", hit_sound(a));
-    if let Some(o) = owner {
+    if let Some(o) = owner.or(a.owner_uuid) {
         out.insert("Owner", uuid_ints(o));
     }
     out.insert("HasBeenShot", a.has_been_shot);
@@ -739,6 +778,7 @@ pub fn load_arrow(
         e,
         super::projectile::ArrowData {
             owner: None,
+            owner_uuid: uuid_key(tag, "Owner"),
             base_damage: damage,
             in_ground: boolean(tag, "inGround"),
             life: int(tag, "life").unwrap_or(0),
@@ -827,6 +867,17 @@ pub fn load_boat(tag: &Compound, seed: i64) -> Option<(LoadedEntity, crate::vehi
         b.loot_table = load_chest_vehicle(tag, &mut b.items);
     }
     Some((e, b))
+}
+
+/// `Entity.load` on a boat (`/data`, `entity_data`): its name and chest contents from `tag`.
+pub fn apply_boat(b: &mut crate::vehicle::BoatData, tag: &Compound) {
+    b.custom_name = tag.get("CustomName").and_then(tag_component);
+    if b.kind.chest {
+        b.items
+            .iter_mut()
+            .for_each(|s| *s = crate::item::ItemStack::EMPTY);
+        b.loot_table = load_chest_vehicle(tag, &mut b.items);
+    }
 }
 
 /// `ContainerEntity.addChestVehicleSaveData`: the loot table, or the items.
@@ -986,5 +1037,32 @@ pub fn apply_minecart(m: &mut crate::minecart::MinecartData, tag: &Compound) {
             m.spawner = Some(Box::new(crate::block::spawner::MobSpawner::load(tag)));
         }
         MinecartKind::Plain => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `AbstractArrow` keeps its owner as an `EntityReference`: a loaded arrow knows the
+    /// owner's UUID (`Owner`) and saves it again even while the owner is not here (#272, I3-19).
+    #[test]
+    fn arrow_owner_uuid_round_trip() {
+        let owner = 0x5641_4e49_0000_0001_0000_0000_0000_0007_u128;
+        let mut tag = Compound::new();
+        tag.insert("id", "minecraft:arrow");
+        tag.insert(
+            "Pos",
+            Tag::List(vanillite_nbt::List(vec![
+                Tag::Double(0.5),
+                Tag::Double(64.0),
+                Tag::Double(0.5),
+            ])),
+        );
+        tag.insert("Owner", Tag::IntArray(uuid_ints(owner)));
+        tag.insert("UUID", Tag::IntArray(uuid_ints(9)));
+        let (_, arrow) = load_arrow(&tag, Some(1)).unwrap_or_else(|| panic!("arrow"));
+        assert_eq!(arrow.owner, None);
+        assert_eq!(arrow.owner_uuid, Some(owner));
     }
 }

@@ -1,0 +1,3 @@
+tick = 32
+cause = "when the fox starts FoxPounceGoal on the chicken, Vanilla draws two more values from the fox's random in that tick than Vanillite"
+owner = "game-systems-developer #281"

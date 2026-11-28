@@ -18,7 +18,7 @@ fn known_kind(kind: u32) -> bool {
     use abi::event;
     matches!(kind,
         event::PLAYER_JOIN..=event::PLAYER_FISH
-        | event::ENTITY_SPAWN..=event::ENTITY_DROP_ITEM
+        | event::ENTITY_SPAWN..=event::ENTITY_ATTRIBUTE_CHANGE
         | event::BLOCK_DROP..=event::WORLD_UNLOAD
         | event::INVENTORY_OPEN..=event::BREW)
 }

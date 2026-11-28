@@ -208,8 +208,9 @@ impl Level {
         let flags = 2 | if settings.strict { 816 } else { 0 };
         let bounds =
             template.bounding_box_with(pos, settings.rotation, BlockPos::ZERO, settings.mirror);
-        let min = BlockPos::new(bounds.min_x(), bounds.min_y(), bounds.min_z()).chunk();
-        let max = BlockPos::new(bounds.max_x(), bounds.max_y(), bounds.max_z()).chunk();
+        // One block around the box: the placed blocks update their neighbours.
+        let min = BlockPos::new(bounds.min_x() - 1, bounds.min_y(), bounds.min_z() - 1).chunk();
+        let max = BlockPos::new(bounds.max_x() + 1, bounds.max_y(), bounds.max_z() + 1).chunk();
         let mut area = PlaceArea::copy_plain(self, min, max);
         let seed = self.seed();
         let placed = area.run_plain(seed, |region| {

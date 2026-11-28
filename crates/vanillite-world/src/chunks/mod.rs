@@ -304,11 +304,16 @@ struct Holder {
     rank: u8,
     /// Whether it was queued with its next step running inline ([`Holder::inline_next`]).
     queued_inline: bool,
+    /// The [`ChunkStatus::reach`] of the next step it was queued with ([`urgency`]).
+    queued_reach: u8,
     /// Set while a queued generation step of this chunk is not needed any more (its level left
     /// [`MAX_LEVEL`]); the step is then skipped when it starts.
     unneeded: Option<Arc<AtomicBool>>,
     /// The step whose missing neighbours were last added as dependencies.
     planned: Option<ChunkStatus>,
+    /// Where the last check of the planned step stopped in its scan of the neighbours (index
+    /// into the square around the chunk): the next check resumes there.
+    scan_from: u16,
     /// The chunk's stored entities are live (`ChunkLoadStatus.LOADED`); set by the entity
     /// storage at the end of the level tick, required for scheduled ticks.
     entities_loaded: bool,
@@ -328,6 +333,14 @@ impl Holder {
     /// job slot and frees the chunks waiting for this one.
     fn inline_next(&self) -> bool {
         matches!(self.status(), Some(ChunkStatus::Light | ChunkStatus::Spawn))
+    }
+
+    /// The [`ChunkStatus::reach`] of the next step (a load: the first one).
+    fn next_reach(&self) -> u8 {
+        self.status()
+            .and_then(ChunkStatus::next)
+            .unwrap_or(ChunkStatus::Empty)
+            .reach()
     }
 
     fn status(&self) -> Option<ChunkStatus> {
@@ -572,8 +585,9 @@ pub struct Chunks {
     next_ticket: u64,
     level_changes: Vec<LevelChange>,
     /// Chunks to check: those whose next step runs inline first (`false` sorts first), then
-    /// the most urgent (lowest level), then by rank (nearest to a focus).
-    check: BTreeSet<(bool, u8, u8, ChunkPos)>,
+    /// the most urgent (lowest [`urgency`] of the next step), then the lowest level, then by
+    /// rank (nearest to a focus).
+    check: BTreeSet<(bool, u8, u8, u8, ChunkPos)>,
     /// Points the players' views move towards ([`Chunks::set_focus`]).
     focus: Vec<ChunkPos>,
     /// Chunks parked on a neighbour.
@@ -1063,8 +1077,12 @@ impl Chunks {
             });
             if holder.queued {
                 let job = !holder.queued_inline;
-                self.check.remove(&(job, holder.level, holder.rank, pos));
-                self.check.insert((job, new, holder.rank, pos));
+                let reach = holder.queued_reach;
+                let (level, rank) = (holder.level, holder.rank);
+                self.check
+                    .remove(&(job, urgency(level, reach), level, rank, pos));
+                self.check
+                    .insert((job, urgency(new, reach), new, rank, pos));
             }
             if let Some(unneeded) = &holder.unneeded {
                 unneeded.store(false, Ordering::Relaxed);
@@ -1080,7 +1098,10 @@ impl Chunks {
         } else if let Some(holder) = self.holders.map_mut().get_mut(&pos) {
             if holder.queued {
                 let job = !holder.queued_inline;
-                self.check.remove(&(job, holder.level, holder.rank, pos));
+                let reach = holder.queued_reach;
+                let (level, rank) = (holder.level, holder.rank);
+                self.check
+                    .remove(&(job, urgency(level, reach), level, rank, pos));
                 holder.queued = false;
             }
             // A generation step nobody needs any more is skipped if it did not start.
@@ -1126,8 +1147,14 @@ impl Chunks {
             holder.queued = true;
             holder.rank = rank;
             holder.queued_inline = holder.inline_next();
-            self.check
-                .insert((!holder.queued_inline, holder.level, rank, pos));
+            holder.queued_reach = holder.next_reach();
+            self.check.insert((
+                !holder.queued_inline,
+                urgency(holder.level, holder.queued_reach),
+                holder.level,
+                rank,
+                pos,
+            ));
         }
     }
 
@@ -1142,7 +1169,7 @@ impl Chunks {
     }
 
     /// Sets the points the players' views move towards (a flying player's view centre ahead in
-    /// its direction; at most [`MAX_FOCUS`]). Within one level, chunks nearer to a focus point
+    /// its direction; at most [`MAX_FOCUS`]). Within one urgency, chunks nearer to a focus point
     /// are loaded and generated first, so a moving view fills ahead first. Only the order of
     /// the work changes, never its result.
     pub fn set_focus(&mut self, focus: &[ChunkPos]) {
@@ -1532,12 +1559,13 @@ impl Chunks {
                 }
                 let codec = Arc::clone(&self.slots.codec);
                 let tx = self.done_tx.clone();
-                let priority = self
-                    .holders
-                    .get(&pos)
-                    .map_or(job_priority(MAX_LEVEL, 0), |h| {
-                        job_priority(h.level, h.rank)
-                    });
+                let priority =
+                    self.holders
+                        .get(&pos)
+                        .map_or(job_priority(MAX_LEVEL, MAX_LEVEL, 0), |h| {
+                            let reach = ChunkStatus::Empty.reach();
+                            job_priority(urgency(h.level, reach), h.level, h.rank)
+                        });
                 self.slots.executor.spawn(
                     priority,
                     Box::new(move || {
@@ -1842,14 +1870,14 @@ impl Chunks {
 
     fn dispatch(&mut self) -> bool {
         let mut progress = false;
-        while let Some(&(job, level, rank, pos)) = self.check.first() {
+        while let Some(&(job, urgency, level, rank, pos)) = self.check.first() {
             // Spawn and full steps (first in the queue) need no job slot: they must not wait
             // until the generation of the whole area is through, or every chunk of a new area
             // would become full in the same tick.
             if job && self.in_flight >= self.settings.max_jobs {
                 break;
             }
-            self.check.remove(&(job, level, rank, pos));
+            self.check.remove(&(job, urgency, level, rank, pos));
             if let Some(holder) = self.holders.map_mut().get_mut(&pos) {
                 holder.queued = false;
             }
@@ -1892,44 +1920,62 @@ impl Chunks {
             self.due_next_tick.insert(pos);
             return Check::Done;
         }
-        // Requirements by radius.
+        // Requirements by radius. A later check resumes at the neighbour the last one was
+        // blocked on and wraps around, so every neighbour is still checked once before the
+        // step runs, but a chunk woken by each of its neighbours in turn does not scan the
+        // whole square every time.
         let radius = next.requirement_radius() as i32;
+        let side = 2 * radius + 1;
+        let cells = (side * side) as usize;
+        let resume = if plan {
+            0
+        } else {
+            usize::from(holder.scan_from).min(cells)
+        };
+        let mut needs = [None; 16];
+        for (distance, need) in needs.iter_mut().enumerate().take(radius as usize + 1) {
+            *need = next.direct_requirement_at(distance as u32);
+        }
         let mut blocked = None;
-        for dz in -radius..=radius {
-            for dx in -radius..=radius {
-                if dx == 0 && dz == 0 {
-                    continue;
-                }
-                let distance = dx.unsigned_abs().max(dz.unsigned_abs());
-                let Some(needed) = next.direct_requirement_at(distance) else {
-                    continue;
-                };
-                let other = ChunkPos::new(pos.x + dx, pos.z + dz);
-                let other_holder = self.holders.get(&other);
-                if other_holder
-                    .and_then(Holder::status)
-                    .is_some_and(|status| status >= needed)
-                {
-                    continue;
-                }
-                match other_holder {
-                    None => self.add_dependency(pos, other),
-                    // Kept only by a generation ticket that is gone: this chunk's own
-                    // ticket keeps it.
-                    Some(other) if required_status(other.level) < Some(needed) => {
-                        self.add_generation_ticket(pos);
-                    }
-                    Some(_) => {}
-                }
-                if !plan {
-                    return Check::Blocked(other);
-                }
-                blocked.get_or_insert(other);
+        for i in (resume..cells).chain(0..resume) {
+            let (dz, dx) = (i as i32 / side - radius, i as i32 % side - radius);
+            if dx == 0 && dz == 0 {
+                continue;
             }
+            let distance = dx.unsigned_abs().max(dz.unsigned_abs());
+            let Some(needed) = needs[distance as usize] else {
+                continue;
+            };
+            let other = ChunkPos::new(pos.x + dx, pos.z + dz);
+            let other_holder = self.holders.get(&other);
+            if other_holder
+                .and_then(Holder::status)
+                .is_some_and(|status| status >= needed)
+            {
+                continue;
+            }
+            match other_holder {
+                None => self.add_dependency(pos, other),
+                // Kept only by a generation ticket that is gone: this chunk's own
+                // ticket keeps it.
+                Some(other) if required_status(other.level) < Some(needed) => {
+                    self.add_generation_ticket(pos);
+                }
+                Some(_) => {}
+            }
+            if !plan {
+                if let Some(holder) = self.holders.map_mut().get_mut(&pos) {
+                    holder.scan_from = i as u16;
+                }
+                return Check::Blocked(other);
+            }
+            blocked.get_or_insert((i, other));
         }
         if let Some(holder) = self.holders.map_mut().get_mut(&pos) {
             holder.planned = Some(next);
+            holder.scan_from = blocked.map_or(0, |(i, _)| i as u16);
         }
+        let blocked = blocked.map(|(_, other)| other);
         if let Some(other) = blocked {
             return Check::Blocked(other);
         }
@@ -2077,7 +2123,7 @@ impl Chunks {
         }
         self.in_flight += 1;
         let tx = self.done_tx.clone();
-        let priority = job_priority(level, rank);
+        let priority = job_priority(urgency(level, next.reach()), level, rank);
         match next {
             ChunkStatus::InitializeLight => {
                 let light = Arc::clone(&self.slots.light);
@@ -2500,7 +2546,7 @@ impl Chunks {
             self.encode_jobs += 1;
             self.round_jobs += usize::from(round);
             self.slots.executor.spawn(
-                job_priority(MAX_LEVEL + 1, 0),
+                job_priority(MAX_LEVEL + 1, MAX_LEVEL + 1, 0),
                 Box::new(move || {
                     let mut ops = Vec::with_capacity(batch.len());
                     let mut errors = Vec::new();
@@ -2771,7 +2817,8 @@ impl Chunks {
 
     /// Prefetch hint ahead of a loop over chunks, in stages a few chunks apart: stage 0 starts
     /// loading the chunk (its holder is read now), stage 1 its list of sections, stage 2 the
-    /// sections that may tick randomly. No effect on anything but the caches.
+    /// sections that may tick randomly; stage 3 (natural spawning) the whole list of sections
+    /// and the `WORLD_SURFACE` heightmap. No effect on anything but the caches.
     #[inline]
     pub fn prefetch(&self, pos: ChunkPos, stage: u8) {
         let Some(c) = self.holders.get(&pos).and_then(|h| h.chunk.as_ref()) else {
@@ -2780,7 +2827,10 @@ impl Chunks {
         match stage {
             0 => vanillite_base::prefetch::read(&raw const c.chunk),
             1 => c.chunk.prefetch_sections(),
-            _ => c.chunk.prefetch_ticking_sections(),
+            2 => c.chunk.prefetch_ticking_sections(),
+            _ => c
+                .chunk
+                .prefetch_sections_and(vanillite_chunk::heightmap::HeightmapKind::WorldSurface),
         }
     }
 
@@ -3256,13 +3306,24 @@ impl Chunks {
     }
 }
 
-/// The level of the generation ticket of a chunk with this ticket level: the pyramid of a
-/// full chunk (or of the ring around full chunks); `None` above [`MAX_TICKET_LEVEL`].
-/// The compute-pool priority of a chunk job: by level, then by rank ([`Chunks::set_focus`]).
-fn job_priority(level: u8, rank: u8) -> u32 {
-    u32::from(level) << 8 | u32::from(rank)
+/// The order of a chunk's next step (lower first): the level of the most urgent chunk that
+/// may wait for it, its own level less the step's [`ChunkStatus::reach`]. The chunk under a
+/// player and everything its way to full needs (the structure starts eleven chunks away
+/// included) then come before the chunks around it, whose own levels are higher. Steps of the
+/// same urgency go by level: where a view moves, the chunks entering it finish before the
+/// work for the chunks after them.
+fn urgency(level: u8, reach: u8) -> u8 {
+    level.saturating_sub(reach)
 }
 
+/// The compute-pool priority of a chunk job: by urgency ([`urgency`]), then by level, then by
+/// rank ([`Chunks::set_focus`]). Below `1 << 20`, where the plugins' background jobs start.
+fn job_priority(urgency: u8, level: u8, rank: u8) -> u32 {
+    u32::from(urgency.min(63)) << 14 | u32::from(level.min(63)) << 8 | u32::from(rank)
+}
+
+/// The level of the generation ticket of a chunk with this ticket level: the pyramid of a
+/// full chunk (or of the ring around full chunks); `None` above [`MAX_TICKET_LEVEL`].
 fn generation_ticket_level(ticket: u8) -> Option<u8> {
     (ticket <= MAX_TICKET_LEVEL).then_some(ticket.max(FULL_LEVEL))
 }

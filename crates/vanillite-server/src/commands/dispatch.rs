@@ -429,7 +429,7 @@ pub(crate) fn execute(
                 _ => survival::Weather::Thunder,
             };
             let duration = parsed.args.time("duration").copied();
-            Ok(survival::weather(source, global, kind, duration))
+            Ok(survival::weather(source, env, kind, duration))
         }
         CommandId::Op => {
             let profiles = profiles(env, source, parsed)?;

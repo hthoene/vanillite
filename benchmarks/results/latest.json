@@ -8,60 +8,112 @@
         "unit": "MiB",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T175529Z",
+      "commit": "5b96e7b75b36",
       "results": {
-        "vanillite": {
-          "version": "26.3",
-          "protocol": 777,
-          "cold_start_s": 9.695,
-          "warm_start_s": 3.889,
-          "idle_rss_mib": 281.66,
-          "idle_cpu_percent": 0.4,
-          "status": "ok",
-          "headline": 281.66
-        },
         "paper": {
           "version": "Paper 26.3",
           "protocol": 777,
-          "cold_start_s": 19.079,
-          "warm_start_s": 11.69,
-          "idle_rss_mib": 1385.49,
-          "idle_cpu_percent": 2.4,
+          "cold_start_s": 18.25,
+          "warm_start_s": 12.825,
+          "idle_rss_mib": 1388.69,
+          "idle_cpu_percent": 4.43,
           "status": "ok",
-          "headline": 1385.49,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "version": "26.3",
-          "protocol": 777,
-          "cold_start_s": 9.348,
-          "warm_start_s": 7.979,
-          "idle_rss_mib": 1002.91,
-          "idle_cpu_percent": 0.9,
-          "status": "ok",
-          "headline": 1002.91,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 113.02,
+            "host_load": 2.03,
+            "host_load_per_cpu": 0.34,
+            "cpu_pressure_percent": 1.94,
+            "steal_percent": 0.74,
+            "unreliable": false
+          },
+          "headline": 1388.69
         },
         "pumpkin": {
           "version": "26.3",
           "protocol": 777,
-          "cold_start_s": 0.45,
-          "warm_start_s": 0.279,
-          "idle_rss_mib": 41.4,
-          "idle_cpu_percent": 0.87,
+          "cold_start_s": 0.329,
+          "warm_start_s": 0.331,
+          "idle_rss_mib": 59.7,
+          "idle_cpu_percent": 1.43,
           "status": "ok",
-          "headline": 41.4,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 81.99,
+            "host_load": 1.22,
+            "host_load_per_cpu": 0.2,
+            "cpu_pressure_percent": 0.54,
+            "steal_percent": 0.42,
+            "unreliable": false
+          },
+          "headline": 59.7
+        },
+        "vanilla": {
+          "version": "26.3",
+          "protocol": 777,
+          "cold_start_s": 14.706,
+          "warm_start_s": 12.707,
+          "idle_rss_mib": 1016.99,
+          "idle_cpu_percent": 1.27,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 109.28,
+            "host_load": 1.62,
+            "host_load_per_cpu": 0.27,
+            "cpu_pressure_percent": 3.22,
+            "steal_percent": 1.16,
+            "unreliable": false
+          },
+          "headline": 1016.99
+        },
+        "vanillite": {
+          "version": "26.3",
+          "protocol": 777,
+          "cold_start_s": 4.992,
+          "warm_start_s": 1.164,
+          "idle_rss_mib": 81.35,
+          "idle_cpu_percent": 0.53,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 88.67,
+            "host_load": 3.86,
+            "host_load_per_cpu": 0.64,
+            "cpu_pressure_percent": 0.14,
+            "steal_percent": 0.36,
+            "unreliable": false
+          },
+          "headline": 81.35
         }
       }
     },
@@ -73,76 +125,128 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T180230Z",
+      "commit": "5b96e7b75b36",
       "results": {
-        "vanillite": {
-          "commands": 466,
-          "mspt": {
-            "source": "tick log",
-            "ticks": 1200,
-            "mean": 21.09,
-            "p50": 9.25,
-            "p95": 74.16,
-            "p99": 106.47,
-            "max": 321.2
-          },
-          "rss_mib": 448.76,
-          "cpu_percent": 289.98,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 21.09
-        },
         "paper": {
           "commands": 466,
           "mspt": {
             "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 14.17,
-            "p50": 9.91,
-            "p95": 32.63,
-            "p99": 41.9,
-            "max": 55.7
+            "windows": 11,
+            "mean": 23.62,
+            "p50": 24.11,
+            "p95": 36.49,
+            "p99": 49.75,
+            "max": 73.4
           },
-          "rss_mib": 1594.73,
-          "cpu_percent": 43.64,
+          "rss_mib": 1549.16,
+          "cpu_percent": 71.52,
           "observer_online": 1,
           "status": "ok",
-          "headline": 14.17,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 115.82,
+            "host_load": 1.37,
+            "host_load_per_cpu": 0.23,
+            "cpu_pressure_percent": 2.18,
+            "steal_percent": 1.39,
+            "unreliable": false
+          },
+          "headline": 23.62
+        },
+        "pumpkin": {
+          "status": "unsupported",
+          "note": "command not supported: ...cky_piston[facing=up]<--[HERE]",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 23.99,
+            "host_load": 1.54,
+            "host_load_per_cpu": 0.26,
+            "cpu_pressure_percent": 1.41,
+            "steal_percent": 1.27,
+            "unreliable": false
+          },
+          "headline": null
         },
         "vanilla": {
           "commands": 466,
           "mspt": {
             "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 16.63,
-            "p50": 15.16,
-            "p95": 33.0,
-            "p99": 40.73,
-            "max": 48.6
+            "windows": 11,
+            "mean": 27.07,
+            "p50": 22.64,
+            "p95": 51.38,
+            "p99": 57.77,
+            "max": 65.1
           },
-          "rss_mib": 1324.86,
-          "cpu_percent": 46.25,
+          "rss_mib": 1290.1,
+          "cpu_percent": 72.96,
           "observer_online": 1,
           "status": "ok",
-          "headline": 16.63,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 111.72,
+            "host_load": 1.28,
+            "host_load_per_cpu": 0.21,
+            "cpu_pressure_percent": 8.09,
+            "steal_percent": 1.37,
+            "unreliable": false
+          },
+          "headline": 27.07
         },
-        "pumpkin": {
-          "status": "unsupported",
-          "note": "command not supported: ...cky_piston[facing=up]<--[HERE]",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+        "vanillite": {
+          "commands": 466,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1200,
+            "mean": 11.54,
+            "p50": 4.26,
+            "p95": 40.69,
+            "p99": 47.06,
+            "max": 66.49
+          },
+          "rss_mib": 189.21,
+          "cpu_percent": 31.77,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 99.01,
+            "host_load": 1.22,
+            "host_load_per_cpu": 0.2,
+            "cpu_pressure_percent": 0.3,
+            "steal_percent": 0.93,
+            "unreliable": false
+          },
+          "headline": 11.54
         }
       }
     },
@@ -154,82 +258,116 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T180832Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.3,
+            "host_load": 0.95,
+            "host_load_per_cpu": 0.16,
+            "cpu_pressure_percent": 15.68,
+            "steal_percent": 1.37,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 505,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 24,
+            "mean": 1.12,
+            "p50": 0.98,
+            "p95": 2.04,
+            "p99": 3.41,
+            "max": 5.63
+          },
+          "rss_mib": 223.57,
+          "cpu_percent": 4.78,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 93.95,
+            "host_load": 1.24,
+            "host_load_per_cpu": 0.21,
+            "cpu_pressure_percent": 0.43,
+            "steal_percent": 0.75,
+            "unreliable": false
+          },
+          "headline": 1.12
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.35,
+            "host_load": 1.31,
+            "host_load_per_cpu": 0.22,
+            "cpu_pressure_percent": 26.9,
+            "steal_percent": 1.54,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
           "commands": 505,
           "mspt": {
             "source": "tick log",
             "ticks": 1200,
-            "mean": 6.69,
-            "p50": 6.12,
-            "p95": 10.56,
-            "p99": 16.37,
-            "max": 53.32
+            "mean": 7.41,
+            "p50": 7.23,
+            "p95": 9.24,
+            "p99": 11.32,
+            "max": 15.7
           },
-          "rss_mib": 468.07,
-          "cpu_percent": 15.74,
+          "rss_mib": 181.51,
+          "cpu_percent": 15.73,
           "observer_online": 1,
           "status": "ok",
-          "headline": 6.69
-        },
-        "paper": {
-          "commands": 505,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 10.4,
-            "p50": 10.03,
-            "p95": 14.05,
-            "p99": 25.4,
-            "max": 51.5
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1535.89,
-          "cpu_percent": 29.07,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 10.4,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 505,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 11.3,
-            "p50": 10.66,
-            "p95": 16.44,
-            "p99": 31.07,
-            "max": 46.3
+          "load": {
+            "seconds": 104.71,
+            "host_load": 1.23,
+            "host_load_per_cpu": 0.2,
+            "cpu_pressure_percent": 0.52,
+            "steal_percent": 1.17,
+            "unreliable": false
           },
-          "rss_mib": 1292.72,
-          "cpu_percent": 28.82,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 11.3,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "pumpkin": {
-          "commands": 505,
-          "mspt": {
-            "source": "none"
-          },
-          "rss_mib": 201.83,
-          "cpu_percent": 3.29,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": 7.41
         }
       }
     },
@@ -241,82 +379,116 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T182432Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.39,
+            "host_load": 0.67,
+            "host_load_per_cpu": 0.11,
+            "cpu_pressure_percent": 24.29,
+            "steal_percent": 1.87,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 2001,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 84,
+            "mean": 1.45,
+            "p50": 1.3,
+            "p95": 2.61,
+            "p99": 4.46,
+            "max": 5.7
+          },
+          "rss_mib": 227.43,
+          "cpu_percent": 7.24,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 93.78,
+            "host_load": 0.9,
+            "host_load_per_cpu": 0.15,
+            "cpu_pressure_percent": 0.56,
+            "steal_percent": 0.76,
+            "unreliable": false
+          },
+          "headline": 1.45
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.38,
+            "host_load": 0.79,
+            "host_load_per_cpu": 0.13,
+            "cpu_pressure_percent": 29.31,
+            "steal_percent": 2.07,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
           "commands": 2001,
           "mspt": {
             "source": "tick log",
             "ticks": 1200,
-            "mean": 5.96,
-            "p50": 5.44,
-            "p95": 9.94,
-            "p99": 16,
-            "max": 69.42
+            "mean": 7.17,
+            "p50": 7.01,
+            "p95": 8.74,
+            "p99": 10.15,
+            "max": 17.11
           },
-          "rss_mib": 472.9,
-          "cpu_percent": 13.76,
+          "rss_mib": 179.23,
+          "cpu_percent": 15.2,
           "observer_online": 1,
           "status": "ok",
-          "headline": 5.96
-        },
-        "paper": {
-          "commands": 2001,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 8.27,
-            "p50": 7.93,
-            "p95": 11.52,
-            "p99": 17.93,
-            "max": 34.5
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1592.93,
-          "cpu_percent": 23.32,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 8.27,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 2001,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 12.44,
-            "p50": 12.11,
-            "p95": 15.68,
-            "p99": 22.24,
-            "max": 36.2
+          "load": {
+            "seconds": 99.56,
+            "host_load": 0.6,
+            "host_load_per_cpu": 0.1,
+            "cpu_pressure_percent": 0.5,
+            "steal_percent": 0.89,
+            "unreliable": false
           },
-          "rss_mib": 1304.97,
-          "cpu_percent": 30.75,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 12.44,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "pumpkin": {
-          "commands": 2001,
-          "mspt": {
-            "source": "none"
-          },
-          "rss_mib": 203.35,
-          "cpu_percent": 3.02,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": 7.17
         }
       }
     },
@@ -328,76 +500,104 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T182757Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.31,
+            "host_load": 0.65,
+            "host_load_per_cpu": 0.11,
+            "cpu_pressure_percent": 23.31,
+            "steal_percent": 1.41,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "status": "unsupported",
+          "note": "command not supported: ...aft:hopper[facing=east]{Items:[{Slot:0b,id:\"minecraft:cobblestone\",count:64}]}<--[HERE]",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 24.01,
+            "host_load": 1.08,
+            "host_load_per_cpu": 0.18,
+            "cpu_pressure_percent": 1.33,
+            "steal_percent": 1.53,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.34,
+            "host_load": 0.73,
+            "host_load_per_cpu": 0.12,
+            "cpu_pressure_percent": 27.57,
+            "steal_percent": 1.9,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
           "commands": 1025,
           "mspt": {
             "source": "tick log",
             "ticks": 1200,
-            "mean": 4.5,
-            "p50": 3.72,
-            "p95": 8.65,
-            "p99": 18.85,
-            "max": 60.67
+            "mean": 4.23,
+            "p50": 4.15,
+            "p95": 5.33,
+            "p99": 6.07,
+            "max": 8.02
           },
-          "rss_mib": 478.28,
-          "cpu_percent": 10.54,
+          "rss_mib": 182.25,
+          "cpu_percent": 9.29,
           "observer_online": 1,
           "status": "ok",
-          "headline": 4.5
-        },
-        "paper": {
-          "commands": 1025,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 5.33,
-            "p50": 5.1,
-            "p95": 6.97,
-            "p99": 20.19,
-            "max": 39.1
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1561.82,
-          "cpu_percent": 18.11,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 5.33,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 1025,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 4.78,
-            "p50": 4.62,
-            "p95": 6.53,
-            "p99": 10.65,
-            "max": 20.8
+          "load": {
+            "seconds": 99.82,
+            "host_load": 0.73,
+            "host_load_per_cpu": 0.12,
+            "cpu_pressure_percent": 0.44,
+            "steal_percent": 0.83,
+            "unreliable": false
           },
-          "rss_mib": 1319.65,
-          "cpu_percent": 16.25,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 4.78,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "pumpkin": {
-          "status": "unsupported",
-          "note": "command not supported: ...aft:hopper[facing=east]{Items:[{Slot:0b,id:\"minecraft:cobblestone\",count:64}]}<--[HERE]",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": 4.23
         }
       }
     },
@@ -409,82 +609,116 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T183012Z",
+      "commit": "5b96e7b75b36",
       "results": {
-        "vanillite": {
-          "commands": 6,
-          "mspt": {
-            "source": "tick log",
-            "ticks": 1160,
-            "mean": 12.92,
-            "p50": 3.62,
-            "p95": 90.56,
-            "p99": 171.2,
-            "max": 317.56
-          },
-          "rss_mib": 462.29,
-          "cpu_percent": 27.41,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 12.92
-        },
         "paper": {
-          "commands": 6,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 7.98,
-            "p50": 6.92,
-            "p95": 15.98,
-            "p99": 32.62,
-            "max": 98.3
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1617.27,
-          "cpu_percent": 29.61,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 7.98,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 6,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 19.08,
-            "p50": 3.01,
-            "p95": 81.86,
-            "p99": 241.97,
-            "max": 538.6
+          "load": {
+            "seconds": 3.33,
+            "host_load": 0.87,
+            "host_load_per_cpu": 0.15,
+            "cpu_pressure_percent": 22.34,
+            "steal_percent": 1.7,
+            "unreliable": false
           },
-          "rss_mib": 1319.77,
-          "cpu_percent": 43.87,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 19.08,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": null
         },
         "pumpkin": {
           "commands": 6,
           "mspt": {
-            "source": "none"
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 107,
+            "mean": 0.55,
+            "p50": 0.46,
+            "p95": 1.13,
+            "p99": 2.02,
+            "max": 3.62
           },
-          "rss_mib": 198.09,
-          "cpu_percent": 1.7,
+          "rss_mib": 222.31,
+          "cpu_percent": 3.09,
           "observer_online": 1,
           "status": "ok",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 93.61,
+            "host_load": 0.96,
+            "host_load_per_cpu": 0.16,
+            "cpu_pressure_percent": 0.52,
+            "steal_percent": 0.95,
+            "unreliable": false
+          },
+          "headline": 0.55
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.43,
+            "host_load": 1.16,
+            "host_load_per_cpu": 0.19,
+            "cpu_pressure_percent": 27.05,
+            "steal_percent": 5.01,
+            "unreliable": true
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "commands": 6,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1200,
+            "mean": 8.26,
+            "p50": 3.66,
+            "p95": 47.98,
+            "p99": 91.34,
+            "max": 193.18
+          },
+          "rss_mib": 194.5,
+          "cpu_percent": 17.29,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 98.67,
+            "host_load": 1.05,
+            "host_load_per_cpu": 0.17,
+            "cpu_pressure_percent": 0.55,
+            "steal_percent": 0.95,
+            "unreliable": false
+          },
+          "headline": 8.26
         }
       }
     },
@@ -496,82 +730,116 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T183336Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.63,
+            "host_load": 2.91,
+            "host_load_per_cpu": 0.49,
+            "cpu_pressure_percent": 16.81,
+            "steal_percent": 3.39,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 204,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 12,
+            "mean": 0.49,
+            "p50": 0.42,
+            "p95": 0.96,
+            "p99": 1.71,
+            "max": 3.19
+          },
+          "rss_mib": 219.08,
+          "cpu_percent": 2.78,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 93.44,
+            "host_load": 1.79,
+            "host_load_per_cpu": 0.3,
+            "cpu_pressure_percent": 0.48,
+            "steal_percent": 0.75,
+            "unreliable": false
+          },
+          "headline": 0.49
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.3,
+            "host_load": 2.84,
+            "host_load_per_cpu": 0.47,
+            "cpu_pressure_percent": 27.86,
+            "steal_percent": 1.16,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
           "commands": 204,
           "mspt": {
             "source": "tick log",
             "ticks": 1200,
-            "mean": 4.06,
-            "p50": 3.18,
-            "p95": 9,
-            "p99": 23.07,
-            "max": 33.86
+            "mean": 3.91,
+            "p50": 3.57,
+            "p95": 5.06,
+            "p99": 12.85,
+            "max": 26.78
           },
-          "rss_mib": 478.4,
-          "cpu_percent": 24.92,
+          "rss_mib": 188.24,
+          "cpu_percent": 9.17,
           "observer_online": 1,
           "status": "ok",
-          "headline": 4.06
-        },
-        "paper": {
-          "commands": 204,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 5.05,
-            "p50": 4.55,
-            "p95": 9.44,
-            "p99": 21.05,
-            "max": 46.4
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1530.86,
-          "cpu_percent": 18.92,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 5.05,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 204,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 5.28,
-            "p50": 4.68,
-            "p95": 8.53,
-            "p99": 20.83,
-            "max": 50.5
+          "load": {
+            "seconds": 98.97,
+            "host_load": 0.64,
+            "host_load_per_cpu": 0.11,
+            "cpu_pressure_percent": 0.56,
+            "steal_percent": 0.8,
+            "unreliable": false
           },
-          "rss_mib": 1280.88,
-          "cpu_percent": 19.23,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 5.28,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "pumpkin": {
-          "commands": 204,
-          "mspt": {
-            "source": "none"
-          },
-          "rss_mib": 197.54,
-          "cpu_percent": 2.11,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": 3.91
         }
       }
     },
@@ -583,82 +851,116 @@
         "unit": "ms",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T190303Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.34,
+            "host_load": 2.08,
+            "host_load_per_cpu": 0.35,
+            "cpu_pressure_percent": 22.11,
+            "steal_percent": 1.4,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 30,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 12,
+            "mean": 0.45,
+            "p50": 0.38,
+            "p95": 0.85,
+            "p99": 1.95,
+            "max": 6.66
+          },
+          "rss_mib": 218.77,
+          "cpu_percent": 2.58,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 93.47,
+            "host_load": 1.31,
+            "host_load_per_cpu": 0.22,
+            "cpu_pressure_percent": 0.43,
+            "steal_percent": 0.59,
+            "unreliable": false
+          },
+          "headline": 0.45
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.3,
+            "host_load": 2.06,
+            "host_load_per_cpu": 0.34,
+            "cpu_pressure_percent": 26.41,
+            "steal_percent": 1.31,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
           "commands": 30,
           "mspt": {
             "source": "tick log",
             "ticks": 1200,
-            "mean": 4.87,
-            "p50": 2.55,
-            "p95": 8.38,
-            "p99": 77.54,
-            "max": 129.82
+            "mean": 4.28,
+            "p50": 3.4,
+            "p95": 4.82,
+            "p99": 33.94,
+            "max": 47.23
           },
-          "rss_mib": 461.32,
-          "cpu_percent": 14.37,
+          "rss_mib": 208.98,
+          "cpu_percent": 12.09,
           "observer_online": 1,
           "status": "ok",
-          "headline": 4.87
-        },
-        "paper": {
-          "commands": 30,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 4.18,
-            "p50": 3.78,
-            "p95": 6.88,
-            "p99": 12.73,
-            "max": 37.7
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
           },
-          "rss_mib": 1617.5,
-          "cpu_percent": 22.38,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 4.18,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "vanilla": {
-          "commands": 30,
-          "mspt": {
-            "source": "/tick query, mean of 100-tick windows",
-            "windows": 12,
-            "mean": 5.76,
-            "p50": 5.17,
-            "p95": 9.23,
-            "p99": 23.97,
-            "max": 47.5
+          "load": {
+            "seconds": 101.64,
+            "host_load": 0.81,
+            "host_load_per_cpu": 0.14,
+            "cpu_pressure_percent": 0.56,
+            "steal_percent": 0.95,
+            "unreliable": false
           },
-          "rss_mib": 1302.59,
-          "cpu_percent": 36.82,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": 5.76,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
-        },
-        "pumpkin": {
-          "commands": 30,
-          "mspt": {
-            "source": "none"
-          },
-          "rss_mib": 196.44,
-          "cpu_percent": 1.97,
-          "observer_online": 1,
-          "status": "ok",
-          "headline": null,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "headline": 4.28
         }
       }
     },
@@ -670,81 +972,155 @@
         "unit": "s",
         "better": "lower"
       },
-      "date": "20261127T044240Z",
-      "commit": "24e7176e9b65",
+      "date": "20261127T192258Z",
+      "commit": "5b96e7b75b36",
       "results": {
-        "vanillite": {
-          "save_s": 2.768,
-          "chunks_on_disk": 19788,
-          "chunks_on_disk_per_save_s": 7148.84,
-          "flight_chunks_per_s": 520.7,
-          "flight_mspt_p95": 1405.87,
-          "status": "ok",
-          "headline": 2.768,
-          "note": "chunks on disk counted after the run (the count did not know the .vwr format yet)"
-        },
         "paper": {
-          "save_s": 1.855,
-          "chunks_on_disk": 4373,
-          "chunks_on_disk_per_save_s": 2357.41,
-          "flight_chunks_per_s": 4.12,
-          "flight_mspt_p95": null,
-          "status": "ok",
-          "headline": 1.855,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "status": "error",
+          "note": "\"ssh\" \"local\" \"vanillite-bench 'timed' 'paper' '600' '-' 'save-all' 'flush'\" failed: Traceback (most recent call last):",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 64.29,
+            "host_load": 3.18,
+            "host_load_per_cpu": 0.53,
+            "cpu_pressure_percent": 23.97,
+            "steal_percent": 1.73,
+            "unreliable": false
+          },
+          "headline": null
         },
         "vanilla": {
-          "save_s": 5.489,
-          "chunks_on_disk": 5806,
-          "chunks_on_disk_per_save_s": 1057.75,
-          "flight_chunks_per_s": 181.05,
-          "flight_mspt_p95": 105.39,
+          "status": "error",
+          "note": "\"ssh\" \"local\" \"vanillite-bench 'timed' 'vanilla' '600' '-' 'save-all' 'flush'\" failed: Traceback (most recent call last):",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 86.33,
+            "host_load": 3.01,
+            "host_load_per_cpu": 0.5,
+            "cpu_pressure_percent": 18.8,
+            "steal_percent": 2.15,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "save_s": 0.654,
+          "chunks_on_disk": 83666,
+          "chunks_on_disk_per_save_s": 127929.66,
+          "flight_chunks_per_s": 467.09,
+          "flight_mspt_p95": 38.65,
           "status": "ok",
-          "headline": 5.489,
-          "measured": {
-            "date": "20261125T040943Z",
-            "commit": null
-          }
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 70.7,
+            "host_load": 1.84,
+            "host_load_per_cpu": 0.31,
+            "cpu_pressure_percent": 7.46,
+            "steal_percent": 2.37,
+            "unreliable": false
+          },
+          "headline": 0.654
         }
       }
     },
     "pregen": {
       "title": "World pre-generation",
-      "what": "Generate the 101 × 101 chunks (10 201) around 0, 0 on 4 cores (Vanillite also on 1 and 2 threads), median of 3 runs. Vanillite: the chunk pipeline benchmark (`chunk_bench`: generation, light, storage, then loading the same chunks from disk). Paper: the Chunky plugin (radius 800, square) in the running server.",
+      "what": "Generate the 101 × 101 chunks (10 201) around 0, 0 on 4 cores (Vanillite also on 1 and 2 threads), median of 3 runs. Vanillite: the chunk pipeline benchmark (`chunk_bench`: generation, light, storage, then loading the same chunks from disk). Paper: the Chunky plugin (radius 800, square) in the running server. Pumpkin has no pre-generation command (its chunk generation under load: Flying players).",
       "headline": {
         "label": "chunks generated per second",
         "unit": "chunks/s",
         "better": "higher"
       },
-      "date": "20261125T040943Z",
-      "commit": null,
+      "date": "20261127T192643Z",
+      "commit": "5b96e7b75b36",
       "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 4.05,
+            "host_load": 2.98,
+            "host_load_per_cpu": 0.5,
+            "cpu_pressure_percent": 1.97,
+            "steal_percent": 2.72,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "status": "unsupported",
+          "note": "no pre-generation command",
+          "limits": null,
+          "load": {
+            "seconds": 0.03,
+            "host_load": 2.2,
+            "host_load_per_cpu": 0.37,
+            "cpu_pressure_percent": 0.95,
+            "steal_percent": 0.0,
+            "unreliable": false
+          },
+          "headline": null
+        },
         "vanillite": {
-          "method": "chunk_bench --radius 32 --threads 4 --pump --load",
+          "method": "chunk_bench --radius 50 --threads 4 --pump --load",
           "chunks_per_s_by_threads": {
-            "1": 59.1,
-            "2": 112.9,
-            "4": 248.5
+            "1": 111.8,
+            "2": 232.5,
+            "4": 416.1
           },
           "runs": 3,
-          "chunks_per_s": 248.5,
-          "first_chunk_ms": 1868.0,
-          "cpu_ms_per_chunk": 14.75,
-          "peak_rss_mib": 357.0,
-          "load_chunks_per_s": 11830.3,
+          "chunks_per_s": 416.1,
+          "first_chunk_ms": 7277.0,
+          "cpu_ms_per_chunk": 9.42,
+          "peak_rss_mib": 630.0,
+          "load_chunks_per_s": 14347.2,
           "status": "ok",
-          "headline": 248.5
-        },
-        "paper": {
-          "method": "Chunky 1.5.66: chunky radius 512, shape square, start",
-          "runs": 3,
-          "chunks_per_s": 60.96,
-          "cpu_ms_per_chunk": 24.54,
-          "status": "ok",
-          "headline": 60.96
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 593.39,
+            "host_load": 2.76,
+            "host_load_per_cpu": 0.46,
+            "cpu_pressure_percent": 2.13,
+            "steal_percent": 0.8,
+            "unreliable": false
+          },
+          "headline": 416.1
         }
       }
     },
@@ -756,10 +1132,65 @@
         "unit": "%",
         "better": "lower"
       },
-      "date": "20261125T040943Z",
-      "commit": null,
+      "date": "20261127T202914Z",
+      "commit": "5b96e7b75b36",
       "results": {
         "vanillite-proxy": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "random",
+              "ramp_s": 12.0,
+              "ramp_mspt_max": null,
+              "mspt": {
+                "mean": null,
+                "p50": null,
+                "p95": null,
+                "p99": null,
+                "max": null
+              },
+              "rss_mib": 0.0,
+              "rss_net_per_player_kib": null,
+              "cpu_percent": null,
+              "net_tx_mbps": null,
+              "in_kbps_per_bot": 84.08,
+              "join_ms_p95": 968.88,
+              "rtt_ms_p95": 48.35,
+              "chunks_per_s_per_bot": 7.67,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 7142.18,
+              "full_view_ms_p95": 9959.53,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 100 players (100 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 83.02,
+            "host_load": 1.74,
+            "host_load_per_cpu": 0.29,
+            "cpu_pressure_percent": 18.48,
+            "steal_percent": 2.43,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "velocity": {
           "max_players_under_50ms": 0,
           "steps": [
             {
@@ -775,19 +1206,21 @@
                 "p99": null,
                 "max": null
               },
-              "rss_mib": 14.93,
-              "rss_net_per_player_kib": 108.64,
-              "cpu_percent": 11.78,
-              "net_tx_mbps": 6.25,
-              "in_kbps_per_bot": 60.83,
-              "join_ms_p95": 122.53,
-              "rtt_ms_p95": 0.21,
-              "chunks_per_s_per_bot": 7.6,
+              "rss_mib": 168.91,
+              "rss_net_per_player_kib": 0.12,
+              "cpu_percent": 0.7,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 86.06,
+              "join_ms_p95": 521.12,
+              "rtt_ms_p95": 48.73,
+              "chunks_per_s_per_bot": 7.71,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 306.47,
-              "full_view_ms_p95": 2143.32,
+              "full_view_ms_p50": 1219.48,
+              "full_view_ms_p95": 1514.09,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.16,
+              "cpu_ms_per_chunk": 0.01,
               "failed": 0,
               "disconnected": 0
             },
@@ -795,7 +1228,7 @@
               "target": 500,
               "players": 500,
               "movement": "random",
-              "ramp_s": 22.0,
+              "ramp_s": 33.01,
               "ramp_mspt_max": null,
               "mspt": {
                 "mean": null,
@@ -804,27 +1237,1232 @@
                 "p99": null,
                 "max": null
               },
-              "rss_mib": 54.61,
-              "rss_net_per_player_kib": 102.99,
-              "cpu_percent": 78.02,
-              "net_tx_mbps": 69.07,
-              "in_kbps_per_bot": 136.14,
-              "join_ms_p95": 69.87,
-              "rtt_ms_p95": 12.36,
-              "chunks_per_s_per_bot": 7.63,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 311.74,
-              "full_view_ms_p95": 323.79,
+              "rss_mib": 168.92,
+              "rss_net_per_player_kib": 0.04,
+              "cpu_percent": 0.51,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 104.52,
+              "join_ms_p95": 922.6,
+              "rtt_ms_p95": 37095.53,
+              "chunks_per_s_per_bot": 7.25,
+              "near_missing_percent": 8.31,
+              "full_view_ms_p50": 9309.83,
+              "full_view_ms_p95": 67770.48,
+              "chunk_ms_p50": 3631.45,
+              "chunk_ms_p95": 14249.12,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.2,
+              "cpu_ms_per_chunk": 0.0,
+              "failed": 0,
+              "disconnected": 350
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 173.64,
+            "host_load": 7.52,
+            "host_load_per_cpu": 1.25,
+            "cpu_pressure_percent": 50.4,
+            "steal_percent": 2.34,
+            "unreliable": true
+          },
+          "headline": 0.51
+        }
+      }
+    },
+    "flight": {
+      "title": "Flying players: chunk delivery",
+      "what": "Bots fly straight at y 300 in random directions, first 50 with elytra speed (33.5 blocks/s), then 100 at boat speed (72.7 blocks/s): new terrain is generated and sent all the time; the movement check game rule is off on every server. Holes: chunks within 2 chunks of a bot that it does not have, sampled every 5 s. Full view: from connecting until every chunk within the view distance (circle) is there. Server CPU per chunk: CPU time of the server process divided by the chunks the bots received.",
+      "headline": {
+        "label": "holes near players at 100 boats",
+        "unit": "%",
+        "better": "lower"
+      },
+      "date": "20261127T203209Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 1.62,
+            "host_load": 4.1,
+            "host_load_per_cpu": 0.68,
+            "cpu_pressure_percent": 2.77,
+            "steal_percent": 4.84,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "max_players_under_50ms": 100,
+          "steps": [
+            {
+              "target": 50,
+              "players": 50,
+              "movement": "straight:elytra",
+              "ramp_s": 4.0,
+              "ramp_mspt_max": 40.73,
+              "mspt": {
+                "mean": 8.05,
+                "p50": 7.6,
+                "p95": 12.95,
+                "p99": 21.43,
+                "max": 31.2
+              },
+              "rss_mib": 720.41,
+              "rss_net_per_player_kib": 13315.2,
+              "cpu_percent": 220.91,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 0.05,
+              "join_ms_p95": 484.03,
+              "rtt_ms_p95": 42.3,
+              "chunks_per_s_per_bot": 0.0,
+              "near_missing_percent": 100.0,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "straight:boat",
+              "ramp_s": 4.0,
+              "ramp_mspt_max": 36.73,
+              "mspt": {
+                "mean": 22.1,
+                "p50": 21.7,
+                "p95": 30.09,
+                "p99": 33.8,
+                "max": 39.69
+              },
+              "rss_mib": 1223.79,
+              "rss_net_per_player_kib": 11812.21,
+              "cpu_percent": 227.9,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 0.08,
+              "join_ms_p95": 24.45,
+              "rtt_ms_p95": 45.24,
+              "chunks_per_s_per_bot": 0.0,
+              "near_missing_percent": 100.0,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 7858.62,
               "failed": 0,
               "disconnected": 0
             }
           ],
           "status": "ok",
-          "headline": 78.02
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 134.97,
+            "host_load": 3.34,
+            "host_load_per_cpu": 0.56,
+            "cpu_pressure_percent": 19.25,
+            "steal_percent": 2.26,
+            "unreliable": false
+          },
+          "headline": 100.0
         },
-        "velocity": {
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 1.35,
+            "host_load": 4.04,
+            "host_load_per_cpu": 0.67,
+            "cpu_pressure_percent": 2.18,
+            "steal_percent": 3.34,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "max_players_under_50ms": 50,
+          "steps": [
+            {
+              "target": 50,
+              "players": 50,
+              "movement": "straight:elytra",
+              "ramp_s": 4.0,
+              "ramp_mspt_max": 36.17,
+              "mspt": {
+                "mean": 29.64,
+                "p50": 28.33,
+                "p95": 45.07,
+                "p99": 53.39,
+                "max": 75.33
+              },
+              "rss_mib": 757.3,
+              "rss_net_per_player_kib": 13527.34,
+              "cpu_percent": 352.75,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 111.77,
+              "join_ms_p95": 334.51,
+              "rtt_ms_p95": 1.49,
+              "chunks_per_s_per_bot": 16.36,
+              "near_missing_percent": 79.81,
+              "full_view_ms_p50": 689.13,
+              "full_view_ms_p95": 2039.18,
+              "chunk_ms_p50": 5800.68,
+              "chunk_ms_p95": 9549.81,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 4.31,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 100,
+              "players": 50,
+              "movement": "straight:boat",
+              "ramp_s": 31.02,
+              "ramp_mspt_max": 318.98,
+              "mspt": {
+                "mean": 44.45,
+                "p50": 42.63,
+                "p95": 69.24,
+                "p99": 86.07,
+                "max": 108.17
+              },
+              "rss_mib": 1282.03,
+              "rss_net_per_player_kib": 24273.81,
+              "cpu_percent": 276.11,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 13.94,
+              "join_ms_p95": null,
+              "rtt_ms_p95": 1.55,
+              "chunks_per_s_per_bot": 2.34,
+              "near_missing_percent": 98.66,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": 3349.41,
+              "chunk_ms_p95": 4450.04,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 23.61,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 100 players (50 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 167.56,
+            "host_load": 7.52,
+            "host_load_per_cpu": 1.25,
+            "cpu_pressure_percent": 8.83,
+            "steal_percent": 2.36,
+            "unreliable": true
+          },
+          "headline": null
+        }
+      }
+    },
+    "spread": {
+      "title": "Players spread out",
+      "what": "Bots fly to random points within 1 500 blocks of the spawn and stay there: every player has its own chunks.",
+      "headline": {
+        "label": "MSPT p95 at 500 players",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T203723Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 1.16,
+            "host_load": 2.73,
+            "host_load_per_cpu": 0.46,
+            "cpu_pressure_percent": 2.04,
+            "steal_percent": 1.58,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "max_players_under_50ms": 250,
+          "steps": [
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "spread:1500",
+              "ramp_s": 7.0,
+              "ramp_mspt_max": 71.47,
+              "mspt": {
+                "mean": 9.76,
+                "p50": 9.32,
+                "p95": 13.87,
+                "p99": 19.54,
+                "max": 27.7
+              },
+              "rss_mib": 1611.49,
+              "rss_net_per_player_kib": 15796.46,
+              "cpu_percent": 243.22,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 0.79,
+              "join_ms_p95": 349.3,
+              "rtt_ms_p95": 50.43,
+              "chunks_per_s_per_bot": 0.16,
+              "near_missing_percent": 96.65,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 154.33,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 250,
+              "players": 250,
+              "movement": "spread:1500",
+              "ramp_s": 13.0,
+              "ramp_mspt_max": 215.75,
+              "mspt": {
+                "mean": 32.56,
+                "p50": 31.67,
+                "p95": 43.99,
+                "p99": 60.66,
+                "max": 146.07
+              },
+              "rss_mib": 2813.04,
+              "rss_net_per_player_kib": 11240.13,
+              "cpu_percent": 322.18,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 5.1,
+              "join_ms_p95": 533.07,
+              "rtt_ms_p95": 51.64,
+              "chunks_per_s_per_bot": 1.11,
+              "near_missing_percent": 77.37,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 11.57,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 500,
+              "players": 500,
+              "movement": "spread:1500",
+              "ramp_s": 55.01,
+              "ramp_mspt_max": 789.38,
+              "mspt": {
+                "mean": 153.83,
+                "p50": 127.07,
+                "p95": 353.68,
+                "p99": 631.7,
+                "max": 1175.91
+              },
+              "rss_mib": 5265.79,
+              "rss_net_per_player_kib": 10643.3,
+              "cpu_percent": 382.4,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 19.08,
+              "join_ms_p95": 1905.58,
+              "rtt_ms_p95": 3248.54,
+              "chunks_per_s_per_bot": 3.93,
+              "near_missing_percent": 22.31,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 1.95,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 321.43,
+            "host_load": 7.9,
+            "host_load_per_cpu": 1.32,
+            "cpu_pressure_percent": 46.51,
+            "steal_percent": 1.86,
+            "unreliable": true
+          },
+          "headline": 353.68
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 1.11,
+            "host_load": 2.73,
+            "host_load_per_cpu": 0.46,
+            "cpu_pressure_percent": 1.7,
+            "steal_percent": 1.36,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite-paper": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "spread:1500",
+              "ramp_s": 7.0,
+              "ramp_mspt_max": 58.45,
+              "mspt": {
+                "mean": 113.1,
+                "p50": 110.49,
+                "p95": 159.82,
+                "p99": 192.48,
+                "max": 224.84
+              },
+              "rss_mib": 1055.84,
+              "rss_net_per_player_kib": 9826.6,
+              "cpu_percent": 249.9,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 19.14,
+              "join_ms_p95": 163.82,
+              "rtt_ms_p95": 1.21,
+              "chunks_per_s_per_bot": 2.82,
+              "near_missing_percent": 49.38,
+              "full_view_ms_p50": 396.39,
+              "full_view_ms_p95": 2046.52,
+              "chunk_ms_p50": 34944.66,
+              "chunk_ms_p95": 62347.02,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 8.87,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 250,
+              "players": 250,
+              "movement": "spread:1500",
+              "ramp_s": 27.01,
+              "ramp_mspt_max": 322.17,
+              "mspt": {
+                "mean": 269.11,
+                "p50": 267.57,
+                "p95": 309.94,
+                "p99": 351.62,
+                "max": 352.59
+              },
+              "rss_mib": 1684.94,
+              "rss_net_per_player_kib": 6507.43,
+              "cpu_percent": 189.56,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 8.26,
+              "join_ms_p95": 874.18,
+              "rtt_ms_p95": 1.2,
+              "chunks_per_s_per_bot": 1.12,
+              "near_missing_percent": 23.76,
+              "full_view_ms_p50": 2059.15,
+              "full_view_ms_p95": 2499.47,
+              "chunk_ms_p50": 63708.82,
+              "chunk_ms_p95": 162742.84,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 6.75,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 500,
+              "players": 500,
+              "movement": "spread:1500",
+              "ramp_s": 80.02,
+              "ramp_mspt_max": 597.94,
+              "mspt": {
+                "mean": 451.87,
+                "p50": 450.81,
+                "p95": 500.73,
+                "p99": 557.15,
+                "max": 574.8
+              },
+              "rss_mib": 2339.75,
+              "rss_net_per_player_kib": 4594.77,
+              "cpu_percent": 176.42,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 4.07,
+              "join_ms_p95": 1557.62,
+              "rtt_ms_p95": 1.1,
+              "chunks_per_s_per_bot": 0.44,
+              "near_missing_percent": 5.81,
+              "full_view_ms_p50": 3592.35,
+              "full_view_ms_p95": 11925.95,
+              "chunk_ms_p50": 187349.4,
+              "chunk_ms_p95": 320536.23,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 8.06,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 365.76,
+            "host_load": 2.78,
+            "host_load_per_cpu": 0.46,
+            "cpu_pressure_percent": 4.92,
+            "steal_percent": 2.16,
+            "unreliable": false
+          },
+          "headline": 500.73
+        },
+        "vanillite": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "spread:1500",
+              "ramp_s": 7.0,
+              "ramp_mspt_max": 53.08,
+              "mspt": {
+                "mean": 104.22,
+                "p50": 101.99,
+                "p95": 153.12,
+                "p99": 182.54,
+                "max": 227.72
+              },
+              "rss_mib": 1033.23,
+              "rss_net_per_player_kib": 9596.76,
+              "cpu_percent": 249.49,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 19.19,
+              "join_ms_p95": 161.42,
+              "rtt_ms_p95": 1.38,
+              "chunks_per_s_per_bot": 2.66,
+              "near_missing_percent": 51.57,
+              "full_view_ms_p50": 387.18,
+              "full_view_ms_p95": 1665.28,
+              "chunk_ms_p50": 33923.48,
+              "chunk_ms_p95": 63355.42,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 9.36,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 250,
+              "players": 250,
+              "movement": "spread:1500",
+              "ramp_s": 25.01,
+              "ramp_mspt_max": 291.85,
+              "mspt": {
+                "mean": 254.79,
+                "p50": 251.19,
+                "p95": 304.57,
+                "p99": 349.41,
+                "max": 360.29
+              },
+              "rss_mib": 1641.45,
+              "rss_net_per_player_kib": 6329.97,
+              "cpu_percent": 190.56,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 9.15,
+              "join_ms_p95": 787.72,
+              "rtt_ms_p95": 1.42,
+              "chunks_per_s_per_bot": 1.18,
+              "near_missing_percent": 25.4,
+              "full_view_ms_p50": 1886.93,
+              "full_view_ms_p95": 2300.22,
+              "chunk_ms_p50": 60744.13,
+              "chunk_ms_p95": 161645.8,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 6.47,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 500,
+              "players": 500,
+              "movement": "spread:1500",
+              "ramp_s": 75.03,
+              "ramp_mspt_max": 590.86,
+              "mspt": {
+                "mean": 442.44,
+                "p50": 444.01,
+                "p95": 489.27,
+                "p99": 512.51,
+                "max": 588.33
+              },
+              "rss_mib": 2294.13,
+              "rss_net_per_player_kib": 4501.67,
+              "cpu_percent": 177.48,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 4.27,
+              "join_ms_p95": 1387.54,
+              "rtt_ms_p95": 1.31,
+              "chunks_per_s_per_bot": 0.43,
+              "near_missing_percent": 9.14,
+              "full_view_ms_p50": 3604.53,
+              "full_view_ms_p95": 9716.47,
+              "chunk_ms_p50": 129856.68,
+              "chunk_ms_p95": 308173.85,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 8.24,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 361.05,
+            "host_load": 2.73,
+            "host_load_per_cpu": 0.46,
+            "cpu_pressure_percent": 5.26,
+            "steal_percent": 2.49,
+            "unreliable": false
+          },
+          "headline": 489.27
+        }
+      }
+    },
+    "join-storm": {
+      "title": "Join storm",
+      "what": "1 000 bots join at 20 per second; then 1 000 more connect at once (up to 256 logins at the same time).",
+      "headline": {
+        "label": "time until the 1 000 more are in",
+        "unit": "s",
+        "better": "lower"
+      },
+      "date": "20261127T205519Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 1000,
+              "players": 187,
+              "movement": "random",
+              "ramp_s": 419.11,
+              "ramp_mspt_max": null,
+              "mspt": {
+                "mean": null,
+                "p50": null,
+                "p95": null,
+                "p99": null,
+                "max": null
+              },
+              "rss_mib": 0.0,
+              "rss_net_per_player_kib": 0.0,
+              "cpu_percent": null,
+              "net_tx_mbps": null,
+              "in_kbps_per_bot": 205.81,
+              "join_ms_p95": 4781.86,
+              "rtt_ms_p95": 33225.95,
+              "chunks_per_s_per_bot": 17.91,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 49635.28,
+              "full_view_ms_p95": 75486.6,
+              "chunk_ms_p50": 1799.13,
+              "chunk_ms_p95": 7701.17,
+              "teleports": 0,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
+              "disconnected": 827
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 1000 players (187 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 435.35,
+            "host_load": 9.47,
+            "host_load_per_cpu": 1.58,
+            "cpu_pressure_percent": 66.32,
+            "steal_percent": 1.66,
+            "unreliable": true
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 1000,
+              "players": 332,
+              "movement": "random",
+              "ramp_s": 124.03,
+              "ramp_mspt_max": 10778.75,
+              "mspt": {
+                "mean": 1128.37,
+                "p50": 203.18,
+                "p95": 8044.98,
+                "p99": 10778.75,
+                "max": 10778.75
+              },
+              "rss_mib": 2889.66,
+              "rss_net_per_player_kib": 8699.59,
+              "cpu_percent": 397.89,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 119.53,
+              "join_ms_p95": 1330.71,
+              "rtt_ms_p95": 48078.11,
+              "chunks_per_s_per_bot": 13.09,
+              "near_missing_percent": 39.0,
+              "full_view_ms_p50": 9380.86,
+              "full_view_ms_p95": 40550.06,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 1.12,
+              "failed": 0,
+              "disconnected": 795
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 1000 players (332 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 140.53,
+            "host_load": 13.1,
+            "host_load_per_cpu": 2.18,
+            "cpu_pressure_percent": 78.75,
+            "steal_percent": 2.01,
+            "unreliable": true
+          },
+          "headline": null
+        },
+        "vanilla": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 1000,
+              "players": 349,
+              "movement": "random",
+              "ramp_s": 614.16,
+              "ramp_mspt_max": null,
+              "mspt": {
+                "mean": null,
+                "p50": null,
+                "p95": null,
+                "p99": null,
+                "max": null
+              },
+              "rss_mib": 0.0,
+              "rss_net_per_player_kib": 0.0,
+              "cpu_percent": null,
+              "net_tx_mbps": null,
+              "in_kbps_per_bot": 80.57,
+              "join_ms_p95": 14552.0,
+              "rtt_ms_p95": 25490.82,
+              "chunks_per_s_per_bot": 5.22,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 2215.65,
+              "full_view_ms_p95": 43635.01,
+              "chunk_ms_p50": 4254.92,
+              "chunk_ms_p95": 13839.39,
+              "teleports": 0,
+              "cpu_ms_per_chunk": null,
+              "failed": 8,
+              "disconnected": 643
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 1000 players (349 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 630.27,
+            "host_load": 12.22,
+            "host_load_per_cpu": 2.04,
+            "cpu_pressure_percent": 65.24,
+            "steal_percent": 1.66,
+            "unreliable": true
+          },
+          "headline": null
+        },
+        "vanillite-paper": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 1000,
+              "players": 1000,
+              "movement": "random",
+              "ramp_s": 60.02,
+              "ramp_mspt_max": 71.45,
+              "mspt": {
+                "mean": 55.89,
+                "p50": 51.49,
+                "p95": 79.46,
+                "p99": 123.63,
+                "max": 125.86
+              },
+              "rss_mib": 456.9,
+              "rss_net_per_player_kib": 370.06,
+              "cpu_percent": 258.81,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 304.71,
+              "join_ms_p95": 352.52,
+              "rtt_ms_p95": 92.2,
+              "chunks_per_s_per_bot": 6.37,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 381.93,
+              "full_view_ms_p95": 705.62,
+              "chunk_ms_p50": 4167.26,
+              "chunk_ms_p95": 5978.92,
+              "teleports": 167,
+              "cpu_ms_per_chunk": 0.41,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 2000,
+              "players": 1804,
+              "movement": "random",
+              "ramp_s": 114.05,
+              "ramp_mspt_max": 144.78,
+              "mspt": {
+                "mean": 91.81,
+                "p50": 88.95,
+                "p95": 109.71,
+                "p99": 154.83,
+                "max": 186.18
+              },
+              "rss_mib": 686.02,
+              "rss_net_per_player_kib": 335.19,
+              "cpu_percent": 268.68,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 221.6,
+              "join_ms_p95": 1508.91,
+              "rtt_ms_p95": 511.88,
+              "chunks_per_s_per_bot": 2.06,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 1267.65,
+              "full_view_ms_p95": 2122.31,
+              "chunk_ms_p50": 17472.48,
+              "chunk_ms_p95": 41332.91,
+              "teleports": 98,
+              "cpu_ms_per_chunk": 0.72,
+              "failed": 196,
+              "disconnected": 0
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 2000 players (1804 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 205.61,
+            "host_load": 5.41,
+            "host_load_per_cpu": 0.9,
+            "cpu_pressure_percent": 3.84,
+            "steal_percent": 2.06,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "max_players_under_50ms": 0,
+          "steps": [
+            {
+              "target": 1000,
+              "players": 1000,
+              "movement": "random",
+              "ramp_s": 61.03,
+              "ramp_mspt_max": 76.32,
+              "mspt": {
+                "mean": 50.5,
+                "p50": 50.0,
+                "p95": 61.18,
+                "p99": 68.59,
+                "max": 73.12
+              },
+              "rss_mib": 473.27,
+              "rss_net_per_player_kib": 385.45,
+              "cpu_percent": 258.59,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 350.15,
+              "join_ms_p95": 336.34,
+              "rtt_ms_p95": 73.9,
+              "chunks_per_s_per_bot": 7.01,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 385.47,
+              "full_view_ms_p95": 713.03,
+              "chunk_ms_p50": 1889.56,
+              "chunk_ms_p95": 6575.99,
+              "teleports": 942,
+              "cpu_ms_per_chunk": 0.37,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 2000,
+              "players": 1730,
+              "movement": "random",
+              "ramp_s": 104.05,
+              "ramp_mspt_max": 146.74,
+              "mspt": {
+                "mean": 81.14,
+                "p50": 78.63,
+                "p95": 101.89,
+                "p99": 113.73,
+                "max": 114.01
+              },
+              "rss_mib": 673.73,
+              "rss_net_per_player_kib": 341.46,
+              "cpu_percent": 264.78,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 237.86,
+              "join_ms_p95": 1452.6,
+              "rtt_ms_p95": 352.58,
+              "chunks_per_s_per_bot": 1.97,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 1249.3,
+              "full_view_ms_p95": 2061.42,
+              "chunk_ms_p50": 20637.31,
+              "chunk_ms_p95": 81822.93,
+              "teleports": 499,
+              "cpu_ms_per_chunk": 0.78,
+              "failed": 270,
+              "disconnected": 0
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 2000 players (1730 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 198.56,
+            "host_load": 7.64,
+            "host_load_per_cpu": 1.27,
+            "cpu_pressure_percent": 3.81,
+            "steal_percent": 1.51,
+            "unreliable": true
+          },
+          "headline": null
+        }
+      }
+    },
+    "weak": {
+      "title": "Weak hardware: 1 core, 1 GiB",
+      "what": "The server in a cgroup with a CPU quota of one core and a memory limit of 1 GiB, like a small Pterodactyl server: idle RSS, then one player walks (sprint speed) and flies (10 blocks/s) straight through new terrain with the movement checks on. Rubber-banding: server teleports of the bot.",
+      "headline": {
+        "label": "MSPT max with one moving player",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T202129Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "pumpkin": {
+          "cpu_quota_percent": 100,
+          "memory_limit_mib": 1024,
+          "start_s": 0.317,
+          "idle_rss_mib": 58.66,
+          "idle_cpu_percent": 0.5,
+          "max_mspt": 19.61,
+          "teleports": 0,
+          "steps": [
+            {
+              "target": 1,
+              "players": 1,
+              "movement": "straight:sprint",
+              "ramp_s": 3.0,
+              "ramp_mspt_max": 1.55,
+              "mspt": {
+                "mean": 5.27,
+                "p50": 3.98,
+                "p95": 12.12,
+                "p99": 15.74,
+                "max": 19.56
+              },
+              "rss_mib": 264.86,
+              "rss_net_per_player_kib": 211148.64,
+              "cpu_percent": 38.07,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 65.54,
+              "join_ms_p95": 1147.38,
+              "rtt_ms_p95": 57.76,
+              "chunks_per_s_per_bot": 14.12,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 11767.0,
+              "full_view_ms_p95": 11767.0,
+              "chunk_ms_p50": 141.65,
+              "chunk_ms_p95": 141.65,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 26.96,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 1,
+              "players": 1,
+              "movement": "straight:10",
+              "ramp_s": 1.0,
+              "ramp_mspt_max": null,
+              "mspt": {
+                "mean": 5.17,
+                "p50": 3.5,
+                "p95": 11.82,
+                "p99": 14.44,
+                "max": 19.61
+              },
+              "rss_mib": 304.45,
+              "rss_net_per_player_kib": 251688.8,
+              "cpu_percent": 36.25,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 69.57,
+              "join_ms_p95": null,
+              "rtt_ms_p95": 80.18,
+              "chunks_per_s_per_bot": 16.78,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 21.6,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "1c1g",
+            "cpus": 1,
+            "cpu_list": "0",
+            "cpu_quota_percent": 100,
+            "memory_max_mib": 1024,
+            "swap": false
+          },
+          "load": {
+            "seconds": 186.92,
+            "host_load": 0.96,
+            "host_load_per_cpu": 0.16,
+            "cpu_pressure_percent": 23.52,
+            "steal_percent": 0.44,
+            "unreliable": false
+          },
+          "headline": 19.61
+        },
+        "vanillite": {
+          "cpu_quota_percent": 100,
+          "memory_limit_mib": 1024,
+          "start_s": 5.681,
+          "idle_rss_mib": 89.47,
+          "idle_cpu_percent": 0.47,
+          "max_mspt": 12.82,
+          "teleports": 0,
+          "steps": [
+            {
+              "target": 1,
+              "players": 1,
+              "movement": "straight:sprint",
+              "ramp_s": 2.0,
+              "ramp_mspt_max": 15.56,
+              "mspt": {
+                "mean": 4.21,
+                "p50": 3.92,
+                "p95": 6.59,
+                "p99": 8.15,
+                "max": 12.82
+              },
+              "rss_mib": 160.47,
+              "rss_net_per_player_kib": 75661.28,
+              "cpu_percent": 20.66,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 70.05,
+              "join_ms_p95": 997.93,
+              "rtt_ms_p95": 2.79,
+              "chunks_per_s_per_bot": 10.58,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 6492.69,
+              "full_view_ms_p95": 6492.69,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 19.53,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 1,
+              "players": 1,
+              "movement": "straight:10",
+              "ramp_s": 1.0,
+              "ramp_mspt_max": 10.95,
+              "mspt": {
+                "mean": 3.97,
+                "p50": 3.67,
+                "p95": 6.3,
+                "p99": 7.8,
+                "max": 10.26
+              },
+              "rss_mib": 174.5,
+              "rss_net_per_player_kib": 90028.0,
+              "cpu_percent": 21.11,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 86.87,
+              "join_ms_p95": null,
+              "rtt_ms_p95": 1.05,
+              "chunks_per_s_per_bot": 16.75,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": null,
+              "full_view_ms_p95": null,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 12.6,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "ok",
+          "limits": {
+            "profile": "1c1g",
+            "cpus": 1,
+            "cpu_list": "0",
+            "cpu_quota_percent": 100,
+            "memory_max_mib": 1024,
+            "swap": false
+          },
+          "load": {
+            "seconds": 191.47,
+            "host_load": 1.41,
+            "host_load_per_cpu": 0.24,
+            "cpu_pressure_percent": 4.19,
+            "steal_percent": 0.48,
+            "unreliable": false
+          },
+          "headline": 12.82
+        }
+      }
+    },
+    "dense": {
+      "title": "Many players close together",
+      "what": "Bots walk randomly within 48 blocks of the spawn, 60 s per step (measured over the last 50 s), up to 5 000. A server that stops answering or drops the bots ends its ramp there.",
+      "headline": {
+        "label": "most players with MSPT p95 under 50 ms",
+        "unit": "players",
+        "better": "higher"
+      },
+      "date": "20261127T212229Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
           "max_players_under_50ms": 0,
           "steps": [
             {
@@ -840,19 +2478,76 @@
                 "p99": null,
                 "max": null
               },
-              "rss_mib": 646.94,
-              "rss_net_per_player_kib": 4867.35,
-              "cpu_percent": 47.9,
-              "net_tx_mbps": 5.99,
-              "in_kbps_per_bot": 57.86,
-              "join_ms_p95": 2221.77,
-              "rtt_ms_p95": 6.48,
-              "chunks_per_s_per_bot": 7.57,
+              "rss_mib": 0.0,
+              "rss_net_per_player_kib": 0.0,
+              "cpu_percent": null,
+              "net_tx_mbps": null,
+              "in_kbps_per_bot": 84.72,
+              "join_ms_p95": 1202.6,
+              "rtt_ms_p95": 49.65,
+              "chunks_per_s_per_bot": 7.69,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 2685.13,
-              "full_view_ms_p95": 9749.47,
+              "full_view_ms_p50": 2049.48,
+              "full_view_ms_p95": 3126.29,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.63,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
+              "disconnected": 0
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 100 players (100 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 83.17,
+            "host_load": 2.92,
+            "host_load_per_cpu": 0.49,
+            "cpu_pressure_percent": 29.1,
+            "steal_percent": 2.0,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "max_players_under_50ms": 100,
+          "steps": [
+            {
+              "target": 100,
+              "players": 100,
+              "movement": "random",
+              "ramp_s": 12.0,
+              "ramp_mspt_max": 158.01,
+              "mspt": {
+                "mean": 22.23,
+                "p50": 21.17,
+                "p95": 34.05,
+                "p99": 42.84,
+                "max": 57.55
+              },
+              "rss_mib": 645.43,
+              "rss_net_per_player_kib": 5901.8,
+              "cpu_percent": 153.08,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 83.89,
+              "join_ms_p95": 1123.67,
+              "rtt_ms_p95": 45.98,
+              "chunks_per_s_per_bot": 7.67,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 12122.57,
+              "full_view_ms_p95": 15346.2,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": 2.0,
               "failed": 0,
               "disconnected": 0
             },
@@ -860,1145 +2555,171 @@
               "target": 500,
               "players": 500,
               "movement": "random",
-              "ramp_s": 60.01,
-              "ramp_mspt_max": null,
+              "ramp_s": 36.01,
+              "ramp_mspt_max": 4485.04,
               "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
+                "mean": 587.96,
+                "p50": 129.76,
+                "p95": 4443.61,
+                "p99": 6226.8,
+                "max": 7342.98
               },
-              "rss_mib": 1033.53,
-              "rss_net_per_player_kib": 1765.21,
-              "cpu_percent": 257.03,
-              "net_tx_mbps": 45.37,
-              "in_kbps_per_bot": 89.0,
-              "join_ms_p95": 1764.81,
-              "rtt_ms_p95": 758.47,
-              "chunks_per_s_per_bot": 7.35,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 825.86,
-              "full_view_ms_p95": 2743.16,
+              "rss_mib": 2006.1,
+              "rss_net_per_player_kib": 3967.01,
+              "cpu_percent": 372.83,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 97.28,
+              "join_ms_p95": 980.69,
+              "rtt_ms_p95": 39124.46,
+              "chunks_per_s_per_bot": 7.62,
+              "near_missing_percent": 12.25,
+              "full_view_ms_p50": 16537.65,
+              "full_view_ms_p95": 59943.53,
+              "chunk_ms_p50": 4075.89,
+              "chunk_ms_p95": 15529.03,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.7,
+              "cpu_ms_per_chunk": 1.55,
               "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": 257.03
-        }
-      }
-    },
-    "flight": {
-      "title": "Flying players: chunk delivery",
-      "what": "Bots fly straight at y 300 in random directions, first 50 with elytra speed (33.5 blocks/s), then 100 at boat speed (72.7 blocks/s): new terrain is generated and sent all the time; the movement check game rule is off on every server. Holes: chunks within 2 chunks of a bot that it does not have, sampled every 5 s. Full view: from connecting until every chunk within the view distance (circle) is there. Server CPU per chunk: CPU time of the server process divided by the chunks the bots received.",
-      "headline": {
-        "label": "holes near players at 100 boats",
-        "unit": "%",
-        "better": "lower"
-      },
-      "date": "20261125T040943Z",
-      "commit": null,
-      "results": {
-        "vanillite": {
-          "max_players_under_50ms": 50,
-          "steps": [
-            {
-              "target": 50,
-              "players": 50,
-              "movement": "straight:elytra",
-              "ramp_s": 4.0,
-              "ramp_mspt_max": 27.89,
-              "mspt": {
-                "mean": 7.45,
-                "p50": 6.05,
-                "p95": 17.22,
-                "p99": 24.1,
-                "max": 222.77
-              },
-              "rss_mib": 844.32,
-              "rss_net_per_player_kib": 10763.59,
-              "cpu_percent": 302.96,
-              "net_tx_mbps": 0.15,
-              "in_kbps_per_bot": 1.44,
-              "join_ms_p95": 75.63,
-              "rtt_ms_p95": 3.09,
-              "chunks_per_s_per_bot": 0.12,
-              "near_missing_percent": 99.98,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 522.34,
-              "failed": 0,
-              "disconnected": 0
+              "disconnected": 408
             },
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "straight:boat",
-              "ramp_s": 4.0,
-              "ramp_mspt_max": 37.65,
-              "mspt": {
-                "mean": 34.82,
-                "p50": 31.63,
-                "p95": 61.7,
-                "p99": 83.66,
-                "max": 131.86
-              },
-              "rss_mib": 1469.52,
-              "rss_net_per_player_kib": 11783.84,
-              "cpu_percent": 269.18,
-              "net_tx_mbps": 0.5,
-              "in_kbps_per_bot": 3.24,
-              "join_ms_p95": 72.34,
-              "rtt_ms_p95": 3.41,
-              "chunks_per_s_per_bot": 0.5,
-              "near_missing_percent": 99.01,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 53.9,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": 99.01
-        },
-        "paper": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 50,
-              "players": 0,
-              "movement": "straight:elytra",
-              "ramp_s": 101.04,
-              "ramp_mspt_max": 121.5,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 0.0,
-              "rss_net_per_player_kib": null,
-              "cpu_percent": null,
-              "net_tx_mbps": null,
-              "in_kbps_per_bot": null,
-              "join_ms_p95": 3521.8,
-              "rtt_ms_p95": null,
-              "chunks_per_s_per_bot": null,
-              "near_missing_percent": null,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 5,
-              "disconnected": 45
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 50 players (0 online)",
-          "headline": null
-        },
-        "vanilla": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 50,
-              "players": 50,
-              "movement": "straight:elytra",
-              "ramp_s": 8.0,
-              "ramp_mspt_max": 84.3,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 2586.43,
-              "rss_net_per_player_kib": 31225.53,
-              "cpu_percent": 292.41,
-              "net_tx_mbps": 0.51,
-              "in_kbps_per_bot": 3.73,
-              "join_ms_p95": 2012.68,
-              "rtt_ms_p95": 3.02,
-              "chunks_per_s_per_bot": 0.0,
-              "near_missing_percent": 100.0,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 100,
-              "players": 0,
-              "movement": "straight:boat",
-              "ramp_s": 43.01,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 0.0,
-              "rss_net_per_player_kib": null,
-              "cpu_percent": null,
-              "net_tx_mbps": null,
-              "in_kbps_per_bot": null,
-              "join_ms_p95": null,
-              "rtt_ms_p95": null,
-              "chunks_per_s_per_bot": null,
-              "near_missing_percent": null,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 50,
-              "disconnected": 50
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 100 players (0 online)",
-          "headline": null
-        },
-        "pumpkin": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 50,
-              "players": 50,
-              "movement": "straight:elytra",
-              "ramp_s": 4.0,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 936.61,
-              "rss_net_per_player_kib": 18108.41,
-              "cpu_percent": 208.25,
-              "net_tx_mbps": 0.19,
-              "in_kbps_per_bot": 3.25,
-              "join_ms_p95": 313.84,
-              "rtt_ms_p95": 52.36,
-              "chunks_per_s_per_bot": 0.68,
-              "near_missing_percent": 98.46,
-              "full_view_ms_p50": 3842.58,
-              "full_view_ms_p95": 3842.58,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 61.21,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "straight:boat",
-              "ramp_s": 3.0,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 1281.85,
-              "rss_net_per_player_kib": 12589.46,
-              "cpu_percent": 182.57,
-              "net_tx_mbps": 0.2,
-              "in_kbps_per_bot": 0.33,
-              "join_ms_p95": 101.24,
-              "rtt_ms_p95": 52.54,
-              "chunks_per_s_per_bot": 0.05,
-              "near_missing_percent": 99.94,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 336.22,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": 99.94
-        }
-      }
-    },
-    "spread": {
-      "title": "Players spread out",
-      "what": "Bots fly to random points within 1 500 blocks of the spawn and stay there: every player has its own chunks.",
-      "headline": {
-        "label": "MSPT p95 at 500 players",
-        "unit": "ms",
-        "better": "lower"
-      },
-      "date": "20261125T040943Z",
-      "commit": null,
-      "results": {
-        "vanillite": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "spread:1500",
-              "ramp_s": 7.0,
-              "ramp_mspt_max": 58.01,
-              "mspt": {
-                "mean": 44.41,
-                "p50": 42.0,
-                "p95": 70.71,
-                "p99": 97.52,
-                "max": 124.23
-              },
-              "rss_mib": 929.09,
-              "rss_net_per_player_kib": 6280.24,
-              "cpu_percent": 351.38,
-              "net_tx_mbps": 0.67,
-              "in_kbps_per_bot": 4.94,
-              "join_ms_p95": 164.25,
-              "rtt_ms_p95": 2.76,
-              "chunks_per_s_per_bot": 0.79,
-              "near_missing_percent": 75.62,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 44.58,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 250,
-              "players": 250,
-              "movement": "spread:1500",
-              "ramp_s": 9.0,
-              "ramp_mspt_max": 196.96,
-              "mspt": {
-                "mean": 135.86,
-                "p50": 128.58,
-                "p95": 211.09,
-                "p99": 272.11,
-                "max": 304.26
-              },
-              "rss_mib": 1287.42,
-              "rss_net_per_player_kib": 3979.82,
-              "cpu_percent": 363.55,
-              "net_tx_mbps": 1.66,
-              "in_kbps_per_bot": 4.95,
-              "join_ms_p95": 301.74,
-              "rtt_ms_p95": 2.98,
-              "chunks_per_s_per_bot": 0.8,
-              "near_missing_percent": 61.7,
-              "full_view_ms_p50": 739.45,
-              "full_view_ms_p95": 1135.83,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 18.26,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 500,
-              "players": 500,
-              "movement": "spread:1500",
-              "ramp_s": 31.07,
-              "ramp_mspt_max": 469.88,
-              "mspt": {
-                "mean": 337.03,
-                "p50": 291.13,
-                "p95": 552.16,
-                "p99": 600.18,
-                "max": 729.65
-              },
-              "rss_mib": 1693.63,
-              "rss_net_per_player_kib": 2821.83,
-              "cpu_percent": 319.92,
-              "net_tx_mbps": 3.61,
-              "in_kbps_per_bot": 5.54,
-              "join_ms_p95": 695.23,
-              "rtt_ms_p95": 7.05,
-              "chunks_per_s_per_bot": 0.72,
-              "near_missing_percent": 44.03,
-              "full_view_ms_p50": 2102.58,
-              "full_view_ms_p95": 185361.65,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 8.89,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": 552.16
-        },
-        "vanillite-paper": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "spread:1500",
-              "ramp_s": 8.01,
-              "ramp_mspt_max": 68.12,
-              "mspt": {
-                "mean": 42.93,
-                "p50": 41.36,
-                "p95": 71.51,
-                "p99": 92.32,
-                "max": 149.79
-              },
-              "rss_mib": 846.65,
-              "rss_net_per_player_kib": 5449.14,
-              "cpu_percent": 281.73,
-              "net_tx_mbps": 0.52,
-              "in_kbps_per_bot": 2.71,
-              "join_ms_p95": 116.12,
-              "rtt_ms_p95": 5.67,
-              "chunks_per_s_per_bot": 0.4,
-              "near_missing_percent": 80.97,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 70.95,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 250,
-              "players": 250,
-              "movement": "spread:1500",
-              "ramp_s": 9.02,
-              "ramp_mspt_max": 162.1,
-              "mspt": {
-                "mean": 122.94,
-                "p50": 117.49,
-                "p95": 198.0,
-                "p99": 240.56,
-                "max": 272.23
-              },
-              "rss_mib": 1155.47,
-              "rss_net_per_player_kib": 3444.58,
-              "cpu_percent": 323.14,
-              "net_tx_mbps": 1.32,
-              "in_kbps_per_bot": 3.68,
-              "join_ms_p95": 279.18,
-              "rtt_ms_p95": 5.28,
-              "chunks_per_s_per_bot": 0.56,
-              "near_missing_percent": 68.49,
-              "full_view_ms_p50": 746.9,
-              "full_view_ms_p95": 8275.21,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 23.24,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 500,
-              "players": 500,
-              "movement": "spread:1500",
-              "ramp_s": 27.02,
-              "ramp_mspt_max": 542.28,
-              "mspt": {
-                "mean": 206.29,
-                "p50": 180.9,
-                "p95": 348.62,
-                "p99": 435.97,
-                "max": 496.07
-              },
-              "rss_mib": 1500.02,
-              "rss_net_per_player_kib": 2427.93,
-              "cpu_percent": 343.29,
-              "net_tx_mbps": 3.14,
-              "in_kbps_per_bot": 4.86,
-              "join_ms_p95": 658.02,
-              "rtt_ms_p95": 3.61,
-              "chunks_per_s_per_bot": 0.69,
-              "near_missing_percent": 54.84,
-              "full_view_ms_p50": 1709.78,
-              "full_view_ms_p95": 3097.63,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 9.98,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": 348.62
-        },
-        "paper": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 100,
-              "players": 0,
-              "movement": "spread:1500",
-              "ramp_s": 107.01,
-              "ramp_mspt_max": 59.4,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 0.0,
-              "rss_net_per_player_kib": null,
-              "cpu_percent": null,
-              "net_tx_mbps": null,
-              "in_kbps_per_bot": null,
-              "join_ms_p95": 2250.24,
-              "rtt_ms_p95": null,
-              "chunks_per_s_per_bot": null,
-              "near_missing_percent": null,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 64,
-              "disconnected": 36
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 100 players (0 online)",
-          "headline": null
-        },
-        "vanilla": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 100,
-              "players": 0,
-              "movement": "spread:1500",
-              "ramp_s": 108.01,
-              "ramp_mspt_max": 103.3,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 0.0,
-              "rss_net_per_player_kib": null,
-              "cpu_percent": null,
-              "net_tx_mbps": null,
-              "in_kbps_per_bot": null,
-              "join_ms_p95": 1981.92,
-              "rtt_ms_p95": null,
-              "chunks_per_s_per_bot": null,
-              "near_missing_percent": null,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 50,
-              "disconnected": 50
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 100 players (0 online)",
-          "headline": null
-        },
-        "pumpkin": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "spread:1500",
-              "ramp_s": 7.0,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 1984.75,
-              "rss_net_per_player_kib": 19787.4,
-              "cpu_percent": 177.56,
-              "net_tx_mbps": 0.46,
-              "in_kbps_per_bot": 3.11,
-              "join_ms_p95": 407.79,
-              "rtt_ms_p95": 50.16,
-              "chunks_per_s_per_bot": 0.69,
-              "near_missing_percent": 85.15,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 25.59,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 250,
-              "players": 250,
-              "movement": "spread:1500",
-              "ramp_s": 15.0,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 3668.84,
-              "rss_net_per_player_kib": 14812.99,
-              "cpu_percent": 315.53,
-              "net_tx_mbps": 5.26,
-              "in_kbps_per_bot": 19.6,
-              "join_ms_p95": 891.9,
-              "rtt_ms_p95": 112.76,
-              "chunks_per_s_per_bot": 4.2,
-              "near_missing_percent": 26.36,
-              "full_view_ms_p50": 3098.13,
-              "full_view_ms_p95": 4314.88,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 3.0,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 500,
-              "players": 500,
-              "movement": "spread:1500",
-              "ramp_s": 56.01,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 5509.98,
-              "rss_net_per_player_kib": 11177.15,
-              "cpu_percent": 336.02,
-              "net_tx_mbps": 3.61,
-              "in_kbps_per_bot": 5.65,
-              "join_ms_p95": 2302.05,
-              "rtt_ms_p95": 233.51,
-              "chunks_per_s_per_bot": 1.11,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 96124.5,
-              "full_view_ms_p95": 284813.94,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 6.04,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "headline": null
-        }
-      }
-    },
-    "join-storm": {
-      "title": "Join storm",
-      "what": "1 000 bots join at 20 per second; then 1 000 more connect at once (up to 256 logins at the same time).",
-      "headline": {
-        "label": "time until the 1 000 more are in",
-        "unit": "s",
-        "better": "lower"
-      },
-      "date": "20261125T040943Z",
-      "commit": null,
-      "results": {
-        "vanillite": {
-          "max_players_under_50ms": 1000,
-          "steps": [
             {
               "target": 1000,
-              "players": 1000,
+              "players": 187,
               "movement": "random",
-              "ramp_s": 51.01,
-              "ramp_mspt_max": 56.42,
+              "ramp_s": 75.02,
+              "ramp_mspt_max": 10655.87,
               "mspt": {
-                "mean": 22.31,
-                "p50": 21.82,
-                "p95": 28.59,
-                "p99": 33.58,
-                "max": 35.63
+                "mean": 197.71,
+                "p50": 52.6,
+                "p95": 1239.24,
+                "p99": 2162.73,
+                "max": 10655.87
               },
-              "rss_mib": 569.44,
-              "rss_net_per_player_kib": 260.22,
-              "cpu_percent": 130.2,
-              "net_tx_mbps": 238.8,
-              "in_kbps_per_bot": 237.18,
-              "join_ms_p95": 59.08,
-              "rtt_ms_p95": 12.47,
-              "chunks_per_s_per_bot": 7.56,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 296.16,
-              "full_view_ms_p95": 353.63,
+              "rss_mib": 2648.84,
+              "rss_net_per_player_kib": 14126.59,
+              "cpu_percent": 169.71,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 146.92,
+              "join_ms_p95": 1059.45,
+              "rtt_ms_p95": 46282.71,
+              "chunks_per_s_per_bot": 16.87,
+              "near_missing_percent": 2.51,
+              "full_view_ms_p50": 36099.24,
+              "full_view_ms_p95": 59931.73,
+              "chunk_ms_p50": 1348.64,
+              "chunk_ms_p95": 13847.98,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.17,
+              "cpu_ms_per_chunk": 1.34,
               "failed": 0,
-              "disconnected": 0
-            },
+              "disconnected": 934
+            }
+          ],
+          "status": "failed",
+          "note": "failed at 1000 players (187 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 309.69,
+            "host_load": 5.74,
+            "host_load_per_cpu": 0.96,
+            "cpu_pressure_percent": 54.88,
+            "steal_percent": 2.29,
+            "unreliable": false
+          },
+          "headline": 100
+        },
+        "vanilla": {
+          "max_players_under_50ms": 0,
+          "steps": [
             {
-              "target": 2000,
-              "players": 1744,
+              "target": 100,
+              "players": 100,
               "movement": "random",
-              "ramp_s": 39.08,
-              "ramp_mspt_max": 108.09,
+              "ramp_s": 17.01,
+              "ramp_mspt_max": null,
               "mspt": {
-                "mean": 56.34,
-                "p50": 55.43,
-                "p95": 68.72,
-                "p99": 86.45,
-                "max": 93.12
+                "mean": null,
+                "p50": null,
+                "p95": null,
+                "p99": null,
+                "max": null
               },
-              "rss_mib": 801.55,
-              "rss_net_per_player_kib": 285.49,
-              "cpu_percent": 261.96,
-              "net_tx_mbps": 601.37,
-              "in_kbps_per_bot": 340.35,
-              "join_ms_p95": 3298.56,
+              "rss_mib": 0.0,
+              "rss_net_per_player_kib": 0.0,
+              "cpu_percent": null,
+              "net_tx_mbps": null,
+              "in_kbps_per_bot": 83.44,
+              "join_ms_p95": 1083.8,
               "rtt_ms_p95": 48.18,
-              "chunks_per_s_per_bot": 7.57,
+              "chunks_per_s_per_bot": 7.83,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 2846.45,
-              "full_view_ms_p95": 3642.45,
+              "full_view_ms_p50": 2160.16,
+              "full_view_ms_p95": 3614.78,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
               "teleports": 0,
-              "cpu_ms_per_chunk": 0.2,
-              "failed": 256,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
               "disconnected": 0
             }
           ],
           "status": "failed",
-          "note": "failed at 2000 players (1744 online)",
+          "note": "failed at 100 players (100 online)",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 83.1,
+            "host_load": 3.35,
+            "host_load_per_cpu": 0.56,
+            "cpu_pressure_percent": 30.03,
+            "steal_percent": 3.39,
+            "unreliable": false
+          },
           "headline": null
         },
         "vanillite-paper": {
-          "max_players_under_50ms": 1000,
-          "steps": [
-            {
-              "target": 1000,
-              "players": 1000,
-              "movement": "random",
-              "ramp_s": 52.01,
-              "ramp_mspt_max": 54.72,
-              "mspt": {
-                "mean": 21.75,
-                "p50": 21.11,
-                "p95": 27.33,
-                "p99": 33.46,
-                "max": 44.91
-              },
-              "rss_mib": 573.05,
-              "rss_net_per_player_kib": 261.84,
-              "cpu_percent": 127.8,
-              "net_tx_mbps": 239.34,
-              "in_kbps_per_bot": 236.78,
-              "join_ms_p95": 45.3,
-              "rtt_ms_p95": 1.74,
-              "chunks_per_s_per_bot": 7.5,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 281.88,
-              "full_view_ms_p95": 480.44,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 0.17,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 2000,
-              "players": 1814,
-              "movement": "random",
-              "ramp_s": 41.01,
-              "ramp_mspt_max": 117.48,
-              "mspt": {
-                "mean": 47.76,
-                "p50": 48.12,
-                "p95": 62.24,
-                "p99": 71.61,
-                "max": 73.24
-              },
-              "rss_mib": 813.16,
-              "rss_net_per_player_kib": 279.89,
-              "cpu_percent": 273.18,
-              "net_tx_mbps": 638.45,
-              "in_kbps_per_bot": 346.08,
-              "join_ms_p95": 4096.82,
-              "rtt_ms_p95": 121.97,
-              "chunks_per_s_per_bot": 5.55,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 2862.78,
-              "full_view_ms_p95": 4497.53,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 0.27,
-              "failed": 186,
-              "disconnected": 0
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 2000 players (1814 online)",
-          "headline": null
-        },
-        "paper": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 1000,
-              "players": 256,
-              "movement": "random",
-              "ramp_s": 664.07,
-              "ramp_mspt_max": 391.2,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 3860.49,
-              "rss_net_per_player_kib": 9812.44,
-              "cpu_percent": 372.99,
-              "net_tx_mbps": 34.44,
-              "in_kbps_per_bot": 93.05,
-              "join_ms_p95": 58787.47,
-              "rtt_ms_p95": 950.09,
-              "chunks_per_s_per_bot": 1.32,
-              "near_missing_percent": 0.67,
-              "full_view_ms_p50": 9753.2,
-              "full_view_ms_p95": 61315.55,
-              "teleports": 163,
-              "cpu_ms_per_chunk": 11.07,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 1000 players (256 online)",
-          "headline": null
-        },
-        "vanilla": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 1000,
-              "players": 0,
-              "movement": "random",
-              "ramp_s": 158.02,
-              "ramp_mspt_max": 176.8,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 0.0,
-              "rss_net_per_player_kib": null,
-              "cpu_percent": null,
-              "net_tx_mbps": null,
-              "in_kbps_per_bot": null,
-              "join_ms_p95": 6447.98,
-              "rtt_ms_p95": null,
-              "chunks_per_s_per_bot": null,
-              "near_missing_percent": null,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": null,
-              "failed": 808,
-              "disconnected": 192
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 1000 players (0 online)",
-          "headline": null
-        },
-        "pumpkin": {
-          "max_players_under_50ms": 0,
-          "steps": [
-            {
-              "target": 1000,
-              "players": 310,
-              "movement": "random",
-              "ramp_s": 219.02,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": null,
-                "p50": null,
-                "p95": null,
-                "p99": null,
-                "max": null
-              },
-              "rss_mib": 3809.32,
-              "rss_net_per_player_kib": 12436.27,
-              "cpu_percent": 382.74,
-              "net_tx_mbps": 64.14,
-              "in_kbps_per_bot": 207.48,
-              "join_ms_p95": 2810.75,
-              "rtt_ms_p95": 34088.12,
-              "chunks_per_s_per_bot": 9.51,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 29721.88,
-              "full_view_ms_p95": 62232.27,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 1.33,
-              "failed": 0,
-              "disconnected": 704
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 1000 players (310 online)",
-          "headline": null
-        }
-      }
-    },
-    "weak": {
-      "title": "Weak hardware: 1 core, 1 GiB",
-      "what": "The server in a cgroup with a CPU quota of one core and a memory limit of 1 GiB, like a small Pterodactyl server: idle RSS, then one player walks (sprint speed) and flies (10 blocks/s) straight through new terrain with the movement checks on. Rubber-banding: server teleports of the bot.",
-      "headline": {
-        "label": "MSPT max with one moving player",
-        "unit": "ms",
-        "better": "lower"
-      },
-      "date": "20261127T165721Z",
-      "commit": "eabe8d614ba2",
-      "results": {
-        "vanillite": {
-          "cpu_quota_percent": 100,
-          "memory_limit_mib": 1024,
-          "start_s": 5.044,
-          "idle_rss_mib": 84.01,
-          "idle_cpu_percent": 0.5,
-          "max_mspt": 13.83,
-          "teleports": 0,
-          "steps": [
-            {
-              "target": 1,
-              "players": 1,
-              "movement": "straight:sprint",
-              "ramp_s": 2.0,
-              "ramp_mspt_max": 15.92,
-              "mspt": {
-                "mean": 4.75,
-                "p50": 4.28,
-                "p95": 7.75,
-                "p99": 9.65,
-                "max": 13.39
-              },
-              "rss_mib": 157.01,
-              "rss_net_per_player_kib": 77718.24,
-              "cpu_percent": 23.99,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 73.43,
-              "join_ms_p95": 1030.17,
-              "rtt_ms_p95": 1.77,
-              "chunks_per_s_per_bot": 11.12,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 7425.07,
-              "full_view_ms_p95": 7425.07,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 21.57,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 1,
-              "players": 1,
-              "movement": "straight:10",
-              "ramp_s": 1.01,
-              "ramp_mspt_max": 8.2,
-              "mspt": {
-                "mean": 4.34,
-                "p50": 3.96,
-                "p95": 7.16,
-                "p99": 9.55,
-                "max": 13.83
-              },
-              "rss_mib": 170.46,
-              "rss_net_per_player_kib": 91491.04,
-              "cpu_percent": 23.27,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 85.36,
-              "join_ms_p95": null,
-              "rtt_ms_p95": 2.39,
-              "chunks_per_s_per_bot": 16.61,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 14.01,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "limits": {
-            "profile": "1c1g",
-            "cpus": 1,
-            "cpu_list": "0",
-            "cpu_quota_percent": 100,
-            "memory_max_mib": 1024,
-            "swap": false
-          },
-          "load": {
-            "seconds": 193.97,
-            "host_load": 0.36,
-            "host_load_per_cpu": 0.06,
-            "cpu_pressure_percent": 4.22,
-            "steal_percent": 0.64,
-            "unreliable": false
-          },
-          "headline": 13.83
-        },
-        "pumpkin": {
-          "cpu_quota_percent": 100,
-          "memory_limit_mib": 1024,
-          "start_s": 0.524,
-          "idle_rss_mib": 59.57,
-          "idle_cpu_percent": 0.53,
-          "max_mspt": 26.03,
-          "teleports": 0,
-          "steps": [
-            {
-              "target": 1,
-              "players": 1,
-              "movement": "straight:sprint",
-              "ramp_s": 2.0,
-              "ramp_mspt_max": 6.07,
-              "mspt": {
-                "mean": 5.31,
-                "p50": 4.02,
-                "p95": 12.08,
-                "p99": 15.18,
-                "max": 18.43
-              },
-              "rss_mib": 260.16,
-              "rss_net_per_player_kib": 205407.84,
-              "cpu_percent": 40.97,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 65.36,
-              "join_ms_p95": 1278.76,
-              "rtt_ms_p95": 73.46,
-              "chunks_per_s_per_bot": 14.1,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 12039.99,
-              "full_view_ms_p95": 12039.99,
-              "chunk_ms_p50": 160.83,
-              "chunk_ms_p95": 160.83,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 29.06,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 1,
-              "players": 1,
-              "movement": "straight:10",
-              "ramp_s": 1.0,
-              "ramp_mspt_max": null,
-              "mspt": {
-                "mean": 6.18,
-                "p50": 4.62,
-                "p95": 13.51,
-                "p99": 18.63,
-                "max": 26.03
-              },
-              "rss_mib": 302.86,
-              "rss_net_per_player_kib": 249132.64,
-              "cpu_percent": 40.67,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 70.03,
-              "join_ms_p95": null,
-              "rtt_ms_p95": 127.82,
-              "chunks_per_s_per_bot": 16.92,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": null,
-              "full_view_ms_p95": null,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 24.04,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "ok",
-          "limits": {
-            "profile": "1c1g",
-            "cpus": 1,
-            "cpu_list": "0",
-            "cpu_quota_percent": 100,
-            "memory_max_mib": 1024,
-            "swap": false
-          },
-          "load": {
-            "seconds": 188.44,
-            "host_load": 1.25,
-            "host_load_per_cpu": 0.21,
-            "cpu_pressure_percent": 25.62,
-            "steal_percent": 0.77,
-            "unreliable": false
-          },
-          "headline": 26.03
-        }
-      }
-    },
-    "dense": {
-      "title": "Many players close together",
-      "what": "Bots walk randomly within 48 blocks of the spawn, 60 s per step (measured over the last 50 s), up to 5 000. A server that stops answering or drops the bots ends its ramp there.",
-      "headline": {
-        "label": "most players with MSPT p95 under 50 ms",
-        "unit": "players",
-        "better": "higher"
-      },
-      "date": "20261127T165721Z",
-      "commit": "eabe8d614ba2",
-      "results": {
-        "vanillite": {
           "max_players_under_50ms": 500,
           "steps": [
             {
               "target": 100,
               "players": 100,
               "movement": "random",
-              "ramp_s": 6.0,
-              "ramp_mspt_max": 39.96,
+              "ramp_s": 7.0,
+              "ramp_mspt_max": 60.16,
               "mspt": {
-                "mean": 10.48,
-                "p50": 10.13,
-                "p95": 13.42,
-                "p99": 16.73,
-                "max": 20.21
+                "mean": 9.01,
+                "p50": 8.69,
+                "p95": 11.69,
+                "p99": 15.35,
+                "max": 21.29
               },
-              "rss_mib": 218.76,
-              "rss_net_per_player_kib": 1309.54,
-              "cpu_percent": 46.55,
+              "rss_mib": 242.29,
+              "rss_net_per_player_kib": 1489.57,
+              "cpu_percent": 37.89,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 48.33,
-              "join_ms_p95": 160.47,
-              "rtt_ms_p95": 1.08,
-              "chunks_per_s_per_bot": 3.15,
+              "in_kbps_per_bot": 74.35,
+              "join_ms_p95": 134.55,
+              "rtt_ms_p95": 1.25,
+              "chunks_per_s_per_bot": 7.9,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 324.98,
-              "full_view_ms_p95": 1605.74,
+              "full_view_ms_p50": 357.75,
+              "full_view_ms_p95": 1805.11,
               "chunk_ms_p50": null,
               "chunk_ms_p95": null,
-              "teleports": 57711,
-              "cpu_ms_per_chunk": 1.48,
+              "teleports": 110,
+              "cpu_ms_per_chunk": 0.48,
               "failed": 0,
               "disconnected": 0
             },
@@ -2006,30 +2727,30 @@
               "target": 500,
               "players": 500,
               "movement": "random",
-              "ramp_s": 21.02,
-              "ramp_mspt_max": 39.79,
+              "ramp_s": 22.0,
+              "ramp_mspt_max": 52.93,
               "mspt": {
-                "mean": 28.15,
-                "p50": 27.01,
-                "p95": 37.09,
-                "p99": 47.4,
-                "max": 61.88
+                "mean": 24.92,
+                "p50": 24.54,
+                "p95": 30.14,
+                "p99": 34.16,
+                "max": 45.96
               },
-              "rss_mib": 294.77,
-              "rss_net_per_player_kib": 417.58,
-              "cpu_percent": 145.46,
+              "rss_mib": 308.32,
+              "rss_net_per_player_kib": 433.14,
+              "cpu_percent": 125.14,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 124.48,
-              "join_ms_p95": 132.22,
-              "rtt_ms_p95": 3.59,
-              "chunks_per_s_per_bot": 2.75,
+              "in_kbps_per_bot": 192.34,
+              "join_ms_p95": 136.19,
+              "rtt_ms_p95": 1.74,
+              "chunks_per_s_per_bot": 7.81,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 364.63,
-              "full_view_ms_p95": 389.57,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 302981,
-              "cpu_ms_per_chunk": 1.06,
+              "full_view_ms_p50": 372.04,
+              "full_view_ms_p95": 435.19,
+              "chunk_ms_p50": 3850.15,
+              "chunk_ms_p95": 13650.07,
+              "teleports": 494,
+              "cpu_ms_per_chunk": 0.32,
               "failed": 0,
               "disconnected": 0
             },
@@ -2037,30 +2758,30 @@
               "target": 1000,
               "players": 1000,
               "movement": "random",
-              "ramp_s": 32.03,
-              "ramp_mspt_max": 125.82,
+              "ramp_s": 33.01,
+              "ramp_mspt_max": 67.61,
               "mspt": {
-                "mean": 48.11,
-                "p50": 46.78,
-                "p95": 59.32,
-                "p99": 77.4,
-                "max": 143.79
+                "mean": 47.78,
+                "p50": 47.11,
+                "p95": 58.26,
+                "p99": 68.99,
+                "max": 85.35
               },
-              "rss_mib": 442.72,
-              "rss_net_per_player_kib": 360.29,
-              "cpu_percent": 256.43,
+              "rss_mib": 457.42,
+              "rss_net_per_player_kib": 369.25,
+              "cpu_percent": 246.32,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 230.89,
-              "join_ms_p95": 358.94,
-              "rtt_ms_p95": 54.64,
-              "chunks_per_s_per_bot": 2.66,
+              "in_kbps_per_bot": 344.85,
+              "join_ms_p95": 345.69,
+              "rtt_ms_p95": 67.3,
+              "chunks_per_s_per_bot": 7.27,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 442.72,
-              "full_view_ms_p95": 795.66,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 466711,
-              "cpu_ms_per_chunk": 0.96,
+              "full_view_ms_p50": 441.46,
+              "full_view_ms_p95": 654.56,
+              "chunk_ms_p50": 4274.36,
+              "chunk_ms_p95": 22204.55,
+              "teleports": 1149,
+              "cpu_ms_per_chunk": 0.34,
               "failed": 0,
               "disconnected": 0
             },
@@ -2068,30 +2789,30 @@
               "target": 2000,
               "players": 2000,
               "movement": "random",
-              "ramp_s": 233.08,
-              "ramp_mspt_max": 203.85,
+              "ramp_s": 220.09,
+              "ramp_mspt_max": 203.51,
               "mspt": {
-                "mean": 83.73,
-                "p50": 82.92,
-                "p95": 98.5,
-                "p99": 112.33,
-                "max": 158.02
+                "mean": 87.8,
+                "p50": 86.64,
+                "p95": 102.4,
+                "p99": 119.78,
+                "max": 188.04
               },
-              "rss_mib": 771.59,
-              "rss_net_per_player_kib": 348.53,
-              "cpu_percent": 259.65,
+              "rss_mib": 808.22,
+              "rss_net_per_player_kib": 364.23,
+              "cpu_percent": 268.08,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 166.56,
-              "join_ms_p95": 1878.89,
-              "rtt_ms_p95": 590.81,
-              "chunks_per_s_per_bot": 0.42,
+              "in_kbps_per_bot": 200.83,
+              "join_ms_p95": 1796.11,
+              "rtt_ms_p95": 662.3,
+              "chunks_per_s_per_bot": 1.53,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 1308.28,
-              "full_view_ms_p95": 2565.39,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 143603,
-              "cpu_ms_per_chunk": 3.13,
+              "full_view_ms_p50": 1231.37,
+              "full_view_ms_p95": 2489.31,
+              "chunk_ms_p50": 22768.14,
+              "chunk_ms_p95": 151874.28,
+              "teleports": 483,
+              "cpu_ms_per_chunk": 0.88,
               "failed": 0,
               "disconnected": 0
             },
@@ -2099,26 +2820,26 @@
               "target": 5000,
               "players": 0,
               "movement": "random",
-              "ramp_s": 733.37,
-              "ramp_mspt_max": 3811.82,
+              "ramp_s": 496.19,
+              "ramp_mspt_max": 2952.5,
               "mspt": {
-                "mean": 0.24,
-                "p50": 0.18,
-                "p95": 0.24,
-                "p99": 0.36,
-                "max": 38.66
+                "mean": 0.39,
+                "p50": 0.22,
+                "p95": 0.51,
+                "p99": 1.27,
+                "max": 93.03
               },
-              "rss_mib": 291.8,
+              "rss_mib": 270.11,
               "rss_net_per_player_kib": null,
-              "cpu_percent": 0.63,
+              "cpu_percent": 1.27,
               "net_tx_mbps": 0.0,
               "in_kbps_per_bot": null,
-              "join_ms_p95": 5832.7,
+              "join_ms_p95": 5481.55,
               "rtt_ms_p95": null,
               "chunks_per_s_per_bot": null,
               "near_missing_percent": null,
-              "full_view_ms_p50": 4190.3,
-              "full_view_ms_p95": 7258.8,
+              "full_view_ms_p50": 3646.05,
+              "full_view_ms_p95": 6807.27,
               "chunk_ms_p50": null,
               "chunk_ms_p95": null,
               "teleports": 0,
@@ -2138,132 +2859,46 @@
             "swap": false
           },
           "load": {
-            "seconds": 1339.16,
-            "host_load": 2.53,
-            "host_load_per_cpu": 0.42,
-            "cpu_pressure_percent": 4.63,
-            "steal_percent": 3.57,
+            "seconds": 1089.8,
+            "host_load": 2.47,
+            "host_load_per_cpu": 0.41,
+            "cpu_pressure_percent": 4.22,
+            "steal_percent": 1.69,
             "unreliable": false
           },
           "headline": 500
         },
-        "paper": {
-          "max_players_under_50ms": 100,
+        "vanillite": {
+          "max_players_under_50ms": 500,
           "steps": [
             {
               "target": 100,
               "players": 100,
               "movement": "random",
-              "ramp_s": 36.04,
-              "ramp_mspt_max": 223.5,
+              "ramp_s": 7.0,
+              "ramp_mspt_max": 41.28,
               "mspt": {
-                "mean": 32.03,
-                "p50": 31.08,
-                "p95": 43.62,
-                "p99": 64.84,
-                "max": 97.2
+                "mean": 9.86,
+                "p50": 9.59,
+                "p95": 12.26,
+                "p99": 14.18,
+                "max": 20.79
               },
-              "rss_mib": 2407.03,
-              "rss_net_per_player_kib": 10086.31,
-              "cpu_percent": 366.78,
+              "rss_mib": 241.27,
+              "rss_net_per_player_kib": 1487.2,
+              "cpu_percent": 38.98,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 155.73,
-              "join_ms_p95": 3360.2,
-              "rtt_ms_p95": 160.43,
-              "chunks_per_s_per_bot": 2.76,
+              "in_kbps_per_bot": 80.29,
+              "join_ms_p95": 128.89,
+              "rtt_ms_p95": 1.29,
+              "chunks_per_s_per_bot": 8.07,
               "near_missing_percent": 0.0,
-              "full_view_ms_p50": 14700.24,
-              "full_view_ms_p95": 25281.77,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 42361,
-              "cpu_ms_per_chunk": 13.29,
-              "failed": 0,
-              "disconnected": 0
-            },
-            {
-              "target": 500,
-              "players": 215,
-              "movement": "random",
-              "ramp_s": 278.4,
-              "ramp_mspt_max": 579.1,
-              "mspt": {
-                "mean": 157.95,
-                "p50": 138.75,
-                "p95": 323.65,
-                "p99": 579.1,
-                "max": 579.1
-              },
-              "rss_mib": 2687.8,
-              "rss_net_per_player_kib": 6028.55,
-              "cpu_percent": 386.41,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 41.34,
-              "join_ms_p95": 43473.69,
-              "rtt_ms_p95": 948.37,
-              "chunks_per_s_per_bot": 0.97,
-              "near_missing_percent": 0.59,
-              "full_view_ms_p50": 9486.97,
-              "full_view_ms_p95": 88944.18,
-              "chunk_ms_p50": 1500.56,
-              "chunk_ms_p95": 5649.97,
-              "teleports": 1585,
-              "cpu_ms_per_chunk": 18.65,
-              "failed": 0,
-              "disconnected": 0
-            }
-          ],
-          "status": "failed",
-          "note": "failed at 500 players (215 online)",
-          "limits": {
-            "profile": "4c8g",
-            "cpus": 4,
-            "cpu_list": "0,1,2,3",
-            "cpu_quota_percent": 400,
-            "memory_max_mib": 8192,
-            "swap": false
-          },
-          "load": {
-            "seconds": 462.29,
-            "host_load": 4.93,
-            "host_load_per_cpu": 0.82,
-            "cpu_pressure_percent": 25.86,
-            "steal_percent": 2.08,
-            "unreliable": false
-          },
-          "headline": 100
-        },
-        "pumpkin": {
-          "max_players_under_50ms": 100,
-          "steps": [
-            {
-              "target": 100,
-              "players": 100,
-              "movement": "random",
-              "ramp_s": 11.0,
-              "ramp_mspt_max": 141.59,
-              "mspt": {
-                "mean": 21.45,
-                "p50": 20.61,
-                "p95": 31.9,
-                "p99": 41.63,
-                "max": 73.27
-              },
-              "rss_mib": 692.17,
-              "rss_net_per_player_kib": 6473.54,
-              "cpu_percent": 152.04,
-              "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 82.23,
-              "join_ms_p95": 1257.55,
-              "rtt_ms_p95": 48.85,
-              "chunks_per_s_per_bot": 7.69,
-              "near_missing_percent": 0.0,
-              "full_view_ms_p50": 12006.81,
-              "full_view_ms_p95": 15143.05,
-              "chunk_ms_p50": null,
-              "chunk_ms_p95": null,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 1.98,
+              "full_view_ms_p50": 332.31,
+              "full_view_ms_p95": 1547.87,
+              "chunk_ms_p50": 3599.94,
+              "chunk_ms_p95": 3599.94,
+              "teleports": 113,
+              "cpu_ms_per_chunk": 0.48,
               "failed": 0,
               "disconnected": 0
             },
@@ -2271,67 +2906,129 @@
               "target": 500,
               "players": 500,
               "movement": "random",
-              "ramp_s": 38.02,
-              "ramp_mspt_max": 4191.35,
+              "ramp_s": 22.0,
+              "ramp_mspt_max": 37.5,
               "mspt": {
-                "mean": 708.41,
-                "p50": 224.15,
-                "p95": 5036.71,
-                "p99": 6751.74,
-                "max": 6969.86
+                "mean": 26.28,
+                "p50": 25.59,
+                "p95": 31.88,
+                "p99": 40.66,
+                "max": 81.34
               },
-              "rss_mib": 2006.18,
-              "rss_net_per_player_kib": 3985.8,
-              "cpu_percent": 394.43,
+              "rss_mib": 310.17,
+              "rss_net_per_player_kib": 438.55,
+              "cpu_percent": 129.09,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 96.49,
-              "join_ms_p95": 1133.13,
-              "rtt_ms_p95": 39731.54,
-              "chunks_per_s_per_bot": 7.38,
-              "near_missing_percent": 11.22,
-              "full_view_ms_p50": 7383.21,
-              "full_view_ms_p95": 67668.8,
-              "chunk_ms_p50": 3776.32,
-              "chunk_ms_p95": 15500.28,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 1.6,
+              "in_kbps_per_bot": 193.47,
+              "join_ms_p95": 139.62,
+              "rtt_ms_p95": 1.96,
+              "chunks_per_s_per_bot": 7.7,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 335.82,
+              "full_view_ms_p95": 398.36,
+              "chunk_ms_p50": 4249.15,
+              "chunk_ms_p95": 27350.9,
+              "teleports": 550,
+              "cpu_ms_per_chunk": 0.34,
               "failed": 0,
-              "disconnected": 373
+              "disconnected": 0
             },
             {
               "target": 1000,
-              "players": 149,
+              "players": 1000,
               "movement": "random",
-              "ramp_s": 78.07,
-              "ramp_mspt_max": 9124.26,
+              "ramp_s": 35.01,
+              "ramp_mspt_max": 80.75,
               "mspt": {
-                "mean": 481.33,
-                "p50": 205.22,
-                "p95": 1916.53,
-                "p99": 2770.79,
-                "max": 9124.26
+                "mean": 53.29,
+                "p50": 52.74,
+                "p95": 64.56,
+                "p99": 72.5,
+                "max": 107.28
               },
-              "rss_mib": 2689.89,
-              "rss_net_per_player_kib": 18073.96,
-              "cpu_percent": 237.11,
+              "rss_mib": 475.82,
+              "rss_net_per_player_kib": 388.9,
+              "cpu_percent": 257.75,
               "net_tx_mbps": 0.0,
-              "in_kbps_per_bot": 152.09,
-              "join_ms_p95": 1604.11,
-              "rtt_ms_p95": 37681.85,
-              "chunks_per_s_per_bot": 15.46,
-              "near_missing_percent": 0.24,
-              "full_view_ms_p50": 48932.34,
-              "full_view_ms_p95": 67652.02,
-              "chunk_ms_p50": 1203.97,
-              "chunk_ms_p95": 5299.76,
-              "teleports": 0,
-              "cpu_ms_per_chunk": 1.48,
+              "in_kbps_per_bot": 331.62,
+              "join_ms_p95": 410.1,
+              "rtt_ms_p95": 69.16,
+              "chunks_per_s_per_bot": 7.07,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 449.31,
+              "full_view_ms_p95": 734.01,
+              "chunk_ms_p50": 4589.4,
+              "chunk_ms_p95": 24172.78,
+              "teleports": 946,
+              "cpu_ms_per_chunk": 0.36,
               "failed": 0,
-              "disconnected": 899
+              "disconnected": 0
+            },
+            {
+              "target": 2000,
+              "players": 2000,
+              "movement": "random",
+              "ramp_s": 217.1,
+              "ramp_mspt_max": 190.61,
+              "mspt": {
+                "mean": 93.25,
+                "p50": 90.34,
+                "p95": 118.95,
+                "p99": 134.57,
+                "max": 177.17
+              },
+              "rss_mib": 832.35,
+              "rss_net_per_player_kib": 376.99,
+              "cpu_percent": 265.8,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": 210.23,
+              "join_ms_p95": 1667.08,
+              "rtt_ms_p95": 578.06,
+              "chunks_per_s_per_bot": 1.61,
+              "near_missing_percent": 0.0,
+              "full_view_ms_p50": 1304.55,
+              "full_view_ms_p95": 2427.14,
+              "chunk_ms_p50": 23872.96,
+              "chunk_ms_p95": 176324.65,
+              "teleports": 407,
+              "cpu_ms_per_chunk": 0.83,
+              "failed": 0,
+              "disconnected": 0
+            },
+            {
+              "target": 5000,
+              "players": 0,
+              "movement": "random",
+              "ramp_s": 461.19,
+              "ramp_mspt_max": 2699.72,
+              "mspt": {
+                "mean": 0.28,
+                "p50": 0.18,
+                "p95": 0.25,
+                "p99": 0.46,
+                "max": 73.47
+              },
+              "rss_mib": 259.73,
+              "rss_net_per_player_kib": null,
+              "cpu_percent": 0.62,
+              "net_tx_mbps": 0.0,
+              "in_kbps_per_bot": null,
+              "join_ms_p95": 4941.43,
+              "rtt_ms_p95": null,
+              "chunks_per_s_per_bot": null,
+              "near_missing_percent": null,
+              "full_view_ms_p50": 3338.45,
+              "full_view_ms_p95": 6091.37,
+              "chunk_ms_p50": null,
+              "chunk_ms_p95": null,
+              "teleports": 0,
+              "cpu_ms_per_chunk": null,
+              "failed": 0,
+              "disconnected": 0
             }
           ],
           "status": "failed",
-          "note": "failed at 1000 players (149 online)",
+          "note": "failed at 5000 players (0 online)",
           "limits": {
             "profile": "4c8g",
             "cpus": 4,
@@ -2341,22 +3038,494 @@
             "swap": false
           },
           "load": {
-            "seconds": 315.25,
-            "host_load": 8.89,
-            "host_load_per_cpu": 1.48,
-            "cpu_pressure_percent": 58.25,
-            "steal_percent": 2.72,
+            "seconds": 1058.3,
+            "host_load": 6.73,
+            "host_load_per_cpu": 1.12,
+            "cpu_pressure_percent": 4.01,
+            "steal_percent": 1.61,
             "unreliable": true
           },
-          "headline": 100
+          "headline": 500
+        }
+      }
+    },
+    "farm": {
+      "title": "Animal farm: 4 000 animals in a pen",
+      "what": "4 000 cows, sheep, pigs and chickens (1 000 each) 1.5 blocks apart in a walled 96 × 96 grass pen under the observer (mob AI, collisions, breeding age, eggs, tracking for one player).",
+      "headline": {
+        "label": "mean MSPT",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T181202Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.25,
+            "host_load": 1.22,
+            "host_load_per_cpu": 0.2,
+            "cpu_pressure_percent": 26.82,
+            "steal_percent": 1.18,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 4005,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 36,
+            "mean": 5.67,
+            "p50": 5.21,
+            "p95": 9.24,
+            "p99": 15.56,
+            "max": 69.25
+          },
+          "rss_mib": 258.81,
+          "cpu_percent": 19.58,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 94.52,
+            "host_load": 1.06,
+            "host_load_per_cpu": 0.18,
+            "cpu_pressure_percent": 0.56,
+            "steal_percent": 1.66,
+            "unreliable": false
+          },
+          "headline": 5.67
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.3,
+            "host_load": 1.22,
+            "host_load_per_cpu": 0.2,
+            "cpu_pressure_percent": 35.11,
+            "steal_percent": 1.31,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "commands": 4005,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1200,
+            "mean": 37.5,
+            "p50": 36.97,
+            "p95": 43.91,
+            "p99": 50.45,
+            "max": 67.87
+          },
+          "rss_mib": 203.51,
+          "cpu_percent": 76.04,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 99.95,
+            "host_load": 1.11,
+            "host_load_per_cpu": 0.19,
+            "cpu_pressure_percent": 0.51,
+            "steal_percent": 0.96,
+            "unreliable": false
+          },
+          "headline": 37.5
+        }
+      }
+    },
+    "mobs-far": {
+      "title": "Mobs without players nearby: 4 000 animals in force-loaded chunks",
+      "what": "The animal farm in force-loaded chunks, with the only player 2 000 blocks away (mob ticks nobody watches: despawn checks, AI, collisions, no tracking).",
+      "headline": {
+        "label": "mean MSPT",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T182106Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.27,
+            "host_load": 0.72,
+            "host_load_per_cpu": 0.12,
+            "cpu_pressure_percent": 32.33,
+            "steal_percent": 0.82,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 4007,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 72,
+            "mean": 4.75,
+            "p50": 4.47,
+            "p95": 7.28,
+            "p99": 10.17,
+            "max": 20.01
+          },
+          "rss_mib": 261.71,
+          "cpu_percent": 16.64,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 94.52,
+            "host_load": 0.86,
+            "host_load_per_cpu": 0.14,
+            "cpu_pressure_percent": 0.6,
+            "steal_percent": 1.32,
+            "unreliable": false
+          },
+          "headline": 4.75
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.23,
+            "host_load": 1.0,
+            "host_load_per_cpu": 0.17,
+            "cpu_pressure_percent": 36.15,
+            "steal_percent": 0.93,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "commands": 4007,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1200,
+            "mean": 36.41,
+            "p50": 35.83,
+            "p95": 43.06,
+            "p99": 47.53,
+            "max": 67.87
+          },
+          "rss_mib": 227.88,
+          "cpu_percent": 75.11,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 99.55,
+            "host_load": 0.75,
+            "host_load_per_cpu": 0.12,
+            "cpu_pressure_percent": 0.63,
+            "steal_percent": 0.77,
+            "unreliable": false
+          },
+          "headline": 36.41
+        }
+      }
+    },
+    "monsters": {
+      "title": "Monsters: 2 000 hostile mobs hunting villagers",
+      "what": "Difficulty normal: about 2 000 persistent zombies, skeletons, creepers, spiders and slimes in a dark, closed 96 × 96 stone hall with 36 villagers in glass cells the zombies try to reach (targeting, path finding, collisions, despawn checks).",
+      "headline": {
+        "label": "mean MSPT",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T181527Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.24,
+            "host_load": 1.09,
+            "host_load_per_cpu": 0.18,
+            "cpu_pressure_percent": 41.8,
+            "steal_percent": 0.98,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "commands": 2195,
+          "mspt": {
+            "source": "/tick query, mean of 100-tick windows",
+            "windows": 48,
+            "mean": 1.87,
+            "p50": 1.68,
+            "p95": 3.14,
+            "p99": 5.05,
+            "max": 6.6
+          },
+          "rss_mib": 248.12,
+          "cpu_percent": 9.06,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 94.01,
+            "host_load": 0.82,
+            "host_load_per_cpu": 0.14,
+            "cpu_pressure_percent": 0.46,
+            "steal_percent": 0.85,
+            "unreliable": false
+          },
+          "headline": 1.87
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.28,
+            "host_load": 1.09,
+            "host_load_per_cpu": 0.18,
+            "cpu_pressure_percent": 47.02,
+            "steal_percent": 1.32,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "commands": 2195,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1120,
+            "mean": 53.39,
+            "p50": 51.22,
+            "p95": 78.58,
+            "p99": 89.29,
+            "max": 117.79
+          },
+          "rss_mib": 195.84,
+          "cpu_percent": 100.78,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 99.65,
+            "host_load": 1.02,
+            "host_load_per_cpu": 0.17,
+            "cpu_pressure_percent": 0.4,
+            "steal_percent": 0.8,
+            "unreliable": false
+          },
+          "headline": 53.39
+        }
+      }
+    },
+    "villagers": {
+      "title": "Village: 400 villagers with beds and job sites",
+      "what": "400 villagers on a walled 96 × 96 platform, each with a bed and a job site block next to it, and a bell in the middle (brains, sensors, points of interest, gossip, path finding).",
+      "headline": {
+        "label": "mean MSPT",
+        "unit": "ms",
+        "better": "lower"
+      },
+      "date": "20261127T181852Z",
+      "commit": "5b96e7b75b36",
+      "results": {
+        "paper": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.23,
+            "host_load": 0.65,
+            "host_load_per_cpu": 0.11,
+            "cpu_pressure_percent": 31.61,
+            "steal_percent": 1.39,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "pumpkin": {
+          "status": "unsupported",
+          "note": "command not supported: ...:white_bed[part=foot,facing=north] strict<--[HERE]",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 23.98,
+            "host_load": 0.79,
+            "host_load_per_cpu": 0.13,
+            "cpu_pressure_percent": 1.3,
+            "steal_percent": 1.02,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanilla": {
+          "status": "error",
+          "note": "cmds: EOF while parsing a value at line 1 column 0: ",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 3.22,
+            "host_load": 0.74,
+            "host_load_per_cpu": 0.12,
+            "cpu_pressure_percent": 41.04,
+            "steal_percent": 1.19,
+            "unreliable": false
+          },
+          "headline": null
+        },
+        "vanillite": {
+          "commands": 1606,
+          "mspt": {
+            "source": "tick log",
+            "ticks": 1200,
+            "mean": 14.53,
+            "p50": 14.15,
+            "p95": 17.58,
+            "p99": 26.26,
+            "max": 60.41
+          },
+          "rss_mib": 196.68,
+          "cpu_percent": 29.97,
+          "observer_online": 1,
+          "status": "ok",
+          "limits": {
+            "profile": "4c8g",
+            "cpus": 4,
+            "cpu_list": "0,1,2,3",
+            "cpu_quota_percent": 400,
+            "memory_max_mib": 8192,
+            "swap": false
+          },
+          "load": {
+            "seconds": 99.39,
+            "host_load": 0.61,
+            "host_load_per_cpu": 0.1,
+            "cpu_pressure_percent": 0.52,
+            "steal_percent": 1.15,
+            "unreliable": false
+          },
+          "headline": 14.53
         }
       }
     }
   },
   "suite": 1,
-  "date": "20261127T165721Z",
-  "commit": "eabe8d614ba2",
-  "code_commit": "eabe8d614ba2",
+  "date": "20261127T174549Z",
+  "commit": "5b96e7b75b36",
+  "code_commit": "5b96e7b75b36",
   "environment": {
     "host": "benchmark server: 6 CPUs (0-5) of an AMD EPYC-Milan Processor, 12 GiB RAM, Linux 7.0.0-28-generic (kvm) on a host with 6 CPUs and 12 GiB; nothing else runs on it during runs",
     "limits": "every server (and the proxy's backend) runs in a cgroup pinned to the first 4 CPUs of the test server with a CPU quota of 400 % and 8 GiB memory, no swap (profile 4c8g; the weak scenario: 1 CPU, 1 GiB), so numbers stay comparable when the test server gets more cores or RAM",

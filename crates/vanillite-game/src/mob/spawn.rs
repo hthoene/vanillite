@@ -20,7 +20,7 @@ use super::nearby::{
 use super::physics;
 use super::{Environment, MobData, max_local_raw_brightness};
 use crate::level::Level;
-use crate::level::tiles::{Phase, TilePos, TileRun, sort_chunks, tile_seed};
+use crate::level::tiles::{Phase, Phases, TilePos, TileRun, sort_chunks, tile_seed};
 use crate::survival::rules::Difficulty;
 
 /// `MobCategory` without `MISC`, in Vanilla's order.
@@ -186,6 +186,9 @@ pub struct SpawnTable {
     pub biomes: Vec<BiomeSpawns>,
     /// `Structure.spawnOverrides` by structure id and category.
     pub structures: FxHashMap<Box<str>, [Option<StructureOverride>; 7]>,
+    /// Per category whether any structure overrides its spawns, worked out on first use (a
+    /// table is not changed once spawning uses it).
+    overridden: std::sync::OnceLock<[bool; 7]>,
 }
 
 /// `StructureSpawnOverride`: the spawns inside a structure (its pieces or its whole box).
@@ -197,6 +200,31 @@ pub struct StructureOverride {
 }
 
 impl SpawnTable {
+    /// A table of the biomes' spawn settings and the structures' spawn overrides.
+    pub fn new(
+        biomes: Vec<BiomeSpawns>,
+        structures: FxHashMap<Box<str>, [Option<StructureOverride>; 7]>,
+    ) -> Self {
+        SpawnTable {
+            biomes,
+            structures,
+            overridden: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Whether any structure overrides the spawns of `category`.
+    fn any_override(&self, category: Category) -> bool {
+        self.overridden.get_or_init(|| {
+            let mut any = [false; 7];
+            for o in self.structures.values() {
+                for (a, o) in any.iter_mut().zip(o) {
+                    *a |= o.is_some();
+                }
+            }
+            any
+        })[category.index()]
+    }
+
     /// The spawn settings of a biome by protocol id.
     pub fn biome(&self, id: u16) -> Option<&BiomeSpawns> {
         self.biomes.get(usize::from(id))
@@ -425,6 +453,73 @@ pub struct Spawner {
     pub generated: Vec<ChunkPos>,
     /// What each busy tile keeps between ticks in tile region mode ([`tick_tiled`]).
     tiles: FxHashMap<TilePos, TileSpawner>,
+    /// The chunks around the players and their flags ([`collect_spawning_chunks`]).
+    candidates: Vec<ChunkPos>,
+    flags: SpawnFlags,
+}
+
+/// `canSpawnEntitiesInChunk` (ticking and inside the world border) of the chunks around the
+/// players, worked out for the tick as a parallel phase: a grid over their bounding box,
+/// "unknown" outside.
+#[derive(Debug, Default)]
+struct SpawnFlags {
+    min: ChunkPos,
+    width: i32,
+    height: i32,
+    /// 0 = unknown, 1 = no, 2 = yes.
+    cells: Vec<u8>,
+}
+
+/// Largest grid of [`SpawnFlags`] in chunks; larger boxes go without one.
+const FLAGS_AREA: i64 = 1 << 22;
+
+impl SpawnFlags {
+    /// An empty grid over the bounding box of `chunks` (none when it is too large).
+    fn reset(&mut self, chunks: &[ChunkPos]) {
+        self.cells.clear();
+        self.width = 0;
+        self.height = 0;
+        let Some(first) = chunks.first() else {
+            return;
+        };
+        let (mut min, mut max) = (*first, *first);
+        for c in chunks {
+            min = ChunkPos::new(min.x.min(c.x), min.z.min(c.z));
+            max = ChunkPos::new(max.x.max(c.x), max.z.max(c.z));
+        }
+        let width = i64::from(max.x) - i64::from(min.x) + 1;
+        let height = i64::from(max.z) - i64::from(min.z) + 1;
+        if width * height > FLAGS_AREA {
+            return;
+        }
+        self.min = min;
+        self.width = i32::try_from(width).unwrap_or(0);
+        self.height = i32::try_from(height).unwrap_or(0);
+        self.cells
+            .resize(usize::try_from(width * height).unwrap_or(0), 0);
+    }
+
+    #[inline]
+    fn cell(&self, c: ChunkPos) -> Option<usize> {
+        let (x, z) = (c.x.wrapping_sub(self.min.x), c.z.wrapping_sub(self.min.z));
+        ((0..self.width).contains(&x) && (0..self.height).contains(&z))
+            .then(|| usize::try_from(z * self.width + x).unwrap_or(0))
+    }
+
+    fn set(&mut self, c: ChunkPos, yes: bool) {
+        if let Some(i) = self.cell(c) {
+            self.cells[i] = 1 + u8::from(yes);
+        }
+    }
+
+    /// The flag of `c`, `None` when it was not worked out.
+    #[inline]
+    fn get(&self, c: ChunkPos) -> Option<bool> {
+        match self.cells.get(self.cell(c)?)? {
+            0 => None,
+            v => Some(*v == 2),
+        }
+    }
 }
 
 /// A tile's own caches in tile region mode.
@@ -475,6 +570,8 @@ struct WorldRound<'a> {
     potential: &'a mut Potential,
     close: &'a mut CloseForSpawning,
     state: &'a mut SpawnState,
+    /// Mobs added so far: the local caps only change with them.
+    spawns: u32,
 }
 
 impl Round for WorldRound<'_> {
@@ -523,6 +620,7 @@ impl Round for WorldRound<'_> {
             SpawnReason::Natural,
         );
         self.potential.add(new.block, new.charge);
+        self.spawns += 1;
         self.state.counts[c.index()] += 1;
         for &slot in self.close.get(nearby, chunk) {
             self.state.local.add(slot, c, 1);
@@ -644,12 +742,13 @@ pub fn tick(
     spawner: &mut Spawner,
     input: &SpawnInput<'_>,
     spawn_persistent: bool,
+    phases: &Phases<'_>,
 ) {
     if input.players.is_empty() {
         return;
     }
     spawner.nearby.update(input.players);
-    tick_world(level, table, spawner, input, spawn_persistent);
+    tick_world(level, table, spawner, input, spawn_persistent, phases);
 }
 
 /// [`tick`] after the players were taken over: the round on the world itself.
@@ -659,11 +758,12 @@ fn tick_world(
     spawner: &mut Spawner,
     input: &SpawnInput<'_>,
     spawn_persistent: bool,
+    phases: &Phases<'_>,
 ) {
     spawner.close.clear();
     if !input.thunder.spawn_mobs || !input.natural {
         // No categories: only the shuffled chunks and their thunder.
-        collect_spawning_chunks(level, spawner);
+        collect_spawning_chunks(level, spawner, phases);
         let chunks = std::mem::take(&mut spawner.chunks);
         for &chunk in &chunks {
             // `tickSpawningChunk`.
@@ -677,18 +777,21 @@ fn tick_world(
     }
     let mut state = create_state(level, table, spawner, input);
     let categories = spawn_categories(&state, input, spawn_persistent);
-    collect_spawning_chunks(level, spawner);
+    collect_spawning_chunks(level, spawner, phases);
     let chunks = std::mem::take(&mut spawner.chunks);
+    let flags = &spawner.flags;
     let mut round = WorldRound {
         level,
         structures: &mut spawner.structures,
         potential: &mut spawner.potential,
         close: &mut spawner.close,
         state: &mut state,
+        spawns: 0,
     };
+    let mut wants = [false; 7];
     for (i, &chunk) in chunks.iter().enumerate() {
         // The chunks ahead start loading into the cache while this one spawns.
-        for (ahead, stage) in [(2, 0), (1, 1)] {
+        for (ahead, stage) in [(3, 0), (2, 3)] {
             if let Some(&next) = chunks.get(i + ahead) {
                 round.level.chunks.prefetch(next, stage);
             }
@@ -702,14 +805,30 @@ fn tick_world(
         if !round.level.border.is_chunk_within_bounds(chunk) {
             continue;
         }
-        let mut here = None;
-        for &c in &categories {
-            // `canSpawnForCategoryLocal`.
-            if round.can_spawn_local(c, &spawner.nearby, chunk) {
+        // `canSpawnForCategoryLocal` of every category: the local caps only change when a mob
+        // is added, so the answers hold until then.
+        let mut attempts = 0;
+        for (want, &c) in wants.iter_mut().zip(&categories) {
+            *want = round.can_spawn_local(c, &spawner.nearby, chunk);
+            attempts += usize::from(*want);
+        }
+        let mut here = round.level.chunks.chunk(chunk).cloned();
+        if let Some(c) = &here {
+            prefetch_starts(round.level, c, chunk, attempts);
+        }
+        let spawns = round.spawns;
+        for (&want, &c) in wants.iter().zip(&categories) {
+            let want = if round.spawns == spawns {
+                want
+            } else {
+                round.can_spawn_local(c, &spawner.nearby, chunk)
+            };
+            if want {
                 spawn_category_for_chunk(
                     &mut round,
                     table,
                     &spawner.nearby,
+                    flags,
                     input,
                     c,
                     chunk,
@@ -719,6 +838,43 @@ fn tick_world(
         }
     }
     spawner.chunks = chunks;
+}
+
+/// Prefetch hint for the start blocks of a chunk's next `attempts` spawn attempts
+/// (`getRandomPosWithin`), on a copy of the level's random and as if each attempt ended at its
+/// start block, as most do: first their sections, then the blocks. Only reads.
+fn prefetch_starts(level: &Level, chunk: &ProtoChunk, pos: ChunkPos, attempts: usize) {
+    let mut random = level.random_ref().clone();
+    let min_y = level.min_y();
+    let mut starts = [(0u32, 0i32, 0u32); 7];
+    let mut n = 0;
+    for _ in 0..attempts.min(starts.len()) {
+        let x = random.next_int_bounded(16);
+        let z = random.next_int_bounded(16);
+        let top = surface_y_of(
+            level,
+            Some(chunk),
+            HeightmapKind::WorldSurface,
+            pos.x * 16 + x,
+            pos.z * 16 + z,
+        ) + 1;
+        let y = random.next_int_between_inclusive(min_y, top);
+        let Ok(index) = usize::try_from((y >> 4) - chunk.chunk.min_section()) else {
+            continue;
+        };
+        if y < min_y + 1 || chunk.chunk.section_all_conductors(index) {
+            continue;
+        }
+        chunk.chunk.prefetch_section(index);
+        #[allow(clippy::cast_sign_loss)]
+        {
+            starts[n] = (x as u32, y, z as u32);
+        }
+        n += 1;
+    }
+    for &(x, y, z) in &starts[..n] {
+        chunk.chunk.prefetch_block(x, y, z);
+    }
 }
 
 /// `NaturalSpawner.createState`: the non-persistent mobs per category, globally and per
@@ -794,6 +950,7 @@ pub fn tick_tiled(
     input: &SpawnInput<'_>,
     spawn_persistent: bool,
     run: &TileRun<'_>,
+    phases: &Phases<'_>,
 ) {
     if input.players.is_empty() {
         return;
@@ -806,7 +963,7 @@ pub fn tick_tiled(
     if !run.applies(level, &chunks) {
         spawner.chunks = chunks;
         spawner.tiles.clear();
-        tick_world(level, table, spawner, input, spawn_persistent);
+        tick_world(level, table, spawner, input, spawn_persistent, phases);
         return;
     }
     // Without categories only the chunks tick (their thunder).
@@ -830,6 +987,7 @@ pub fn tick_tiled(
     let (seed, time) = (shared.seed(), shared.game_time());
     let caps = &state.local;
     let categories = &categories;
+    let no_flags = SpawnFlags::default();
     let replies = run.map(jobs, |tile, (mut spawning, mut own)| {
         let mut random = LegacyRandom::new(tile_seed(seed, time, tile, Phase::Spawning));
         // `collectSpawningChunks` of the tile, shuffled with its random.
@@ -858,7 +1016,7 @@ pub fn tick_tiled(
                 for &c in categories {
                     if round.can_spawn_local(c, nearby, chunk) {
                         spawn_category_for_chunk(
-                            &mut round, table, nearby, input, c, chunk, &mut here,
+                            &mut round, table, nearby, &no_flags, input, c, chunk, &mut here,
                         );
                     }
                 }
@@ -911,17 +1069,44 @@ fn shuffle(chunks: &mut [ChunkPos], random: &mut LegacyRandom) {
 }
 
 /// `collectSpawningChunks`: ticking chunks with a player within 128 blocks, shuffled with the
-/// level random (`Util.shuffle`).
-fn collect_spawning_chunks(level: &mut Level, spawner: &mut Spawner) {
+/// level random (`Util.shuffle`). The checks of the chunks around the players run as a
+/// parallel phase; their `canSpawnEntitiesInChunk` is kept for the tick ([`SpawnFlags`]).
+fn collect_spawning_chunks(level: &mut Level, spawner: &mut Spawner, phases: &Phases<'_>) {
+    const TICKING: u8 = 1;
+    const IN_BORDER: u8 = 2;
+    const CLOSE: u8 = 4;
     spawner.chunks.clear();
+    let mut candidates = std::mem::take(&mut spawner.candidates);
+    candidates.clear();
+    candidates.extend(spawner.nearby.chunks());
     {
+        let shared: &Level = level;
         let nearby = &spawner.nearby;
-        spawner.chunks.extend(
-            nearby
-                .chunks_close_for_spawning()
-                .filter(|&c| level.is_block_ticking(c)),
-        );
+        let flags = phases.map(&candidates, crate::level::tiles::PHASE_PART, |part, out| {
+            out.extend(part.iter().map(|&c| {
+                let ticking = shared.is_block_ticking(c);
+                (if ticking { TICKING } else { 0 })
+                    | (if ticking && shared.border.is_chunk_within_bounds(c) {
+                        IN_BORDER
+                    } else {
+                        0
+                    })
+                    | (if ticking && nearby.any_close_for_spawning(c) {
+                        CLOSE
+                    } else {
+                        0
+                    })
+            }));
+        });
+        spawner.flags.reset(&candidates);
+        for (&c, f) in candidates.iter().zip(flags) {
+            spawner.flags.set(c, f & IN_BORDER != 0);
+            if f & CLOSE != 0 {
+                spawner.chunks.push(c);
+            }
+        }
     }
+    spawner.candidates = candidates;
     sort_chunks(&mut spawner.chunks);
     shuffle(&mut spawner.chunks, level.random());
 }
@@ -955,6 +1140,7 @@ fn mobs_at<'t>(
     index: &mut super::structures::StructureIndex,
     category: Category,
     pos: BlockPos,
+    near: Option<&ProtoChunk>,
 ) -> &'t [SpawnEntry] {
     let mut fortress = false;
     let mut overridden: Option<&'t [SpawnEntry]> = None;
@@ -969,12 +1155,7 @@ fn mobs_at<'t>(
             .is_some_and(|o| o[category.index()].is_some())
     };
     let wanted = |name: &str| (below_bricks && name == "minecraft:fortress") || overrides(name);
-    if below_bricks
-        || table
-            .structures
-            .values()
-            .any(|o| o[category.index()].is_some())
-    {
+    if below_bricks || table.any_override(category) {
         index.structures_at_of(level, pos, wanted, |name, in_piece, in_box| {
             if below_bricks && name == "minecraft:fortress" && in_box {
                 fortress = true;
@@ -997,7 +1178,7 @@ fn mobs_at<'t>(
         return list;
     }
     table
-        .biome(level.biome(pos))
+        .biome(level.biome_near(pos, near))
         .map_or(&[], |b| &b.by_category[category.index()])
 }
 
@@ -1029,6 +1210,7 @@ fn spawn_category_for_chunk<R: Round>(
     round: &mut R,
     table: &SpawnTable,
     nearby: &NearbyPlayers,
+    flags: &SpawnFlags,
     input: &SpawnInput<'_>,
     category: Category,
     chunk: ChunkPos,
@@ -1074,6 +1256,7 @@ fn spawn_category_for_chunk<R: Round>(
     // `canSpawnEntitiesInChunk` of the chunks the positions fall into, and the spawn list of
     // the first position (`getRandomSpawnMobAt` and `canSpawnMobAt` ask for the same one).
     let mut ticking = TickingMemo::default();
+    let mut around = AroundMemo::default();
     let mut listed: Option<(BlockPos, &[SpawnEntry])> = None;
     let mut cluster = 0;
     for _ in 0..3 {
@@ -1094,8 +1277,16 @@ fn spawn_category_for_chunk<R: Round>(
             let at = Vec3::new(xx, f64::from(y), zz);
             // `getNearestPlayer`: only compared with 24 (`isRightDistanceToPlayerAndSpawnPoint`
             // rejects closer positions) and the despawn distances up to 128.
-            let nearest = nearby.nearest_distance_sqr(at, 576.0);
-            if !right_distance(round.level(), input, chunk, pos, nearest, &mut ticking) {
+            let nearest = nearby.nearest_distance_sqr_around(at, 576.0, around.get(nearby, pos));
+            if !right_distance(
+                round.level(),
+                input,
+                chunk,
+                pos,
+                nearest,
+                flags,
+                &mut ticking,
+            ) {
                 continue;
             }
             if current.is_none() {
@@ -1110,7 +1301,7 @@ fn spawn_category_for_chunk<R: Round>(
                 }
                 let list = {
                     let (level, structures) = round.level_structures();
-                    mobs_at(level, table, structures, category, pos)
+                    mobs_at(level, table, structures, category, pos, here.as_deref())
                 };
                 listed = Some((pos, list));
                 let Some(entry) = pick(list, round.random()) else {
@@ -1387,12 +1578,14 @@ fn add_mob_raw(level: &mut Level, mut mob: MobData, pos: Vec3, y_rot: f32) -> En
 }
 
 /// `isRightDistanceToPlayerAndSpawnPoint`.
+#[allow(clippy::too_many_arguments)]
 fn right_distance(
     level: &Level,
     input: &SpawnInput<'_>,
     chunk: ChunkPos,
     pos: BlockPos,
     nearest: f64,
+    flags: &SpawnFlags,
     ticking: &mut TickingMemo,
 ) -> bool {
     if nearest <= 576.0 {
@@ -1415,9 +1608,33 @@ fn right_distance(
     }
     let c = pos.chunk();
     c == chunk
-        || ticking.get(c, || {
-            level.is_block_ticking(c) && level.border.is_chunk_within_bounds(c)
+        || flags.get(c).unwrap_or_else(|| {
+            ticking.get(c, || {
+                level.is_block_ticking(c) && level.border.is_chunk_within_bounds(c)
+            })
         })
+}
+
+/// The players around the chunk of the last position of a spawn attempt
+/// ([`NearbyPlayers::around`]): its positions mostly stay in one chunk.
+#[derive(Default)]
+struct AroundMemo<'a> {
+    last: Option<(ChunkPos, &'a [u32])>,
+}
+
+impl<'a> AroundMemo<'a> {
+    #[inline]
+    fn get(&mut self, nearby: &'a NearbyPlayers, pos: BlockPos) -> &'a [u32] {
+        let chunk = pos.chunk();
+        match self.last {
+            Some((c, around)) if c == chunk => around,
+            _ => {
+                let around = nearby.around(chunk);
+                self.last = Some((chunk, around));
+                around
+            }
+        }
+    }
 }
 
 /// The last few answers of `canSpawnEntitiesInChunk` in one spawn attempt: its positions stay
@@ -1464,7 +1681,7 @@ fn valid_position_for_type(
     // `canSpawnMobAt`: the entry is still in the list there.
     let list = match known {
         Some(list) => list,
-        None => mobs_at(level, table, structures, category, pos),
+        None => mobs_at(level, table, structures, category, pos, None),
     };
     if !list.contains(&entry) {
         return false;
@@ -2408,10 +2625,7 @@ mod tests {
             vec![entry(e::ZOMBIE, 100, 4, 4), entry(e::SPIDER, 100, 4, 4)];
         plains.by_category[Category::Creature.index()] =
             vec![entry(e::COW, 8, 4, 4), entry(e::SHEEP, 12, 4, 4)];
-        SpawnTable {
-            biomes: vec![plains],
-            structures: FxHashMap::default(),
-        }
+        SpawnTable::new(vec![plains], FxHashMap::default())
     }
 
     /// Runs `ticks` spawn rounds with one player at the origin and returns every mob's type
@@ -2443,8 +2657,23 @@ mod tests {
         for _ in 0..ticks {
             level.tick_time();
             match run {
-                Some(run) => tick_tiled(&mut level, &table, &mut spawner, &input, true, run),
-                None => tick(&mut level, &table, &mut spawner, &input, true),
+                Some(run) => tick_tiled(
+                    &mut level,
+                    &table,
+                    &mut spawner,
+                    &input,
+                    true,
+                    run,
+                    &Phases::INLINE,
+                ),
+                None => tick(
+                    &mut level,
+                    &table,
+                    &mut spawner,
+                    &input,
+                    true,
+                    &Phases::INLINE,
+                ),
             }
         }
         crate::mob::set_entity_seed_stream(None);
@@ -2493,8 +2722,10 @@ mod tests {
     /// The number of mobs, the digest of their types and positions and the level random's
     /// next value after 60 rounds.
     /// (#217: `checkSpawnObstruction` tests entities that block building, pack members no
-    /// longer spawn inside each other.)
-    const EXPECTED_WORLD_ROUND: (usize, u64, i32) = (85, 13_380_462_405_938_920_257, 1_076_452_858);
+    /// longer spawn inside each other; #257: the player ticket makes one more chunk ring block
+    /// ticking and a spawn candidate.)
+    const EXPECTED_WORLD_ROUND: (usize, u64, i32) =
+        (85, 15_489_036_134_221_526_530, -2_082_463_062);
 
     /// Packs wander up to 20 blocks from their start, across the 32-block tiles of this test:
     /// the mobs land in several tiles, only in ticking chunks, and the tiles together respect
@@ -2513,8 +2744,9 @@ mod tests {
             seen.insert(TilePos::of(chunk, 2));
         }
         assert!(seen.len() >= 3, "tiles {seen:?}");
-        // The monster cap is 70; four tiles can overshoot it by a tick's packs.
-        assert!(mobs.len() <= 70 + 4 * 12, "{} mobs", mobs.len());
+        // The monster cap is 70; the tiles that spawn in the same tick can overshoot it by
+        // their packs (a few of the tiles over the 9 × 9 block-ticking chunks of view 3).
+        assert!(mobs.len() <= 70 + 6 * 12, "{} mobs", mobs.len());
     }
 
     /// One thread or many: the same mobs at the same places.

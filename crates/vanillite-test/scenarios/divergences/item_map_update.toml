@@ -1,0 +1,3 @@
+tick = 2
+cause = "several gaps: the first map_item_data of the new map differs (its colours), using a map on a banner sends block updates Vanilla does not, the frame decoration updates differ (ticks 12 and 17), the level random diverges from tick 19 and the item frames show in the client view"
+owner = "game-systems-developer #281"

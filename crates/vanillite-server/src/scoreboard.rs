@@ -147,22 +147,22 @@ impl ScoreboardSync {
         for event in events {
             match event {
                 ScoreEvent::ObjectiveAdded(_) => {}
-                ScoreEvent::ObjectiveChanged(name) => {
-                    if self.tracked.contains(&name)
-                        && let Some(o) = board.objective(&name)
-                    {
+                ScoreEvent::ObjectiveChanged(o) => {
+                    if self.tracked.contains(&o.name) {
                         out.push(SharedPacket::of(&SetObjective {
-                            action: ObjectiveAction::Change(objective_parameters(o)),
-                            name,
+                            action: ObjectiveAction::Change(objective_parameters(&o)),
+                            name: o.name.clone(),
                         }));
                     }
                 }
                 ScoreEvent::ObjectiveRemoved(o) => self.stop(&o.name, &mut out),
-                ScoreEvent::ScoreChanged { holder, objective } => {
-                    if self.tracked.contains(&objective)
-                        && let Some(score) = board.score(&holder, &objective)
-                    {
-                        out.push(score_packet(&holder, &objective, score));
+                ScoreEvent::ScoreChanged {
+                    holder,
+                    objective,
+                    score,
+                } => {
+                    if self.tracked.contains(&objective) {
+                        out.push(score_packet(&holder, &objective, &score));
                     }
                 }
                 ScoreEvent::ScoreRemoved { holder, objective } => {
@@ -184,18 +184,12 @@ impl ScoreboardSync {
                 ScoreEvent::DisplaySlot { slot, objective } => {
                     self.set_display(board, slot, objective, &mut out);
                 }
-                ScoreEvent::TeamAdded(name) => {
-                    if let Some(team) = board.team(&name) {
-                        out.push(SharedPacket::of(&add_packet(team)));
-                    }
-                }
-                ScoreEvent::TeamChanged(name) => {
-                    if let Some(team) = board.team(&name) {
-                        out.push(SharedPacket::of(&SetPlayerTeam {
-                            name,
-                            action: TeamAction::Change(parameters(team)),
-                        }));
-                    }
+                ScoreEvent::TeamAdded(team) => out.push(SharedPacket::of(&add_packet(&team))),
+                ScoreEvent::TeamChanged(team) => {
+                    out.push(SharedPacket::of(&SetPlayerTeam {
+                        action: TeamAction::Change(parameters(&team)),
+                        name: team.name.clone(),
+                    }));
                 }
                 ScoreEvent::TeamRemoved(name) => out.push(SharedPacket::of(&SetPlayerTeam {
                     name,
@@ -502,8 +496,9 @@ mod tests {
         board.reset_all("x");
         let events = board.take_events();
         let p = sync.packets(&board, events);
-        // The score is gone by the flush: only its reset goes out.
-        assert_eq!(ids(&p), [display, reset]);
+        // Each change goes out as it was (`onScoreChanged` sends at once): the score, then
+        // its reset.
+        assert_eq!(ids(&p), [display, score, reset]);
         board.remove_objective("a");
         let events = board.take_events();
         let p = sync.packets(&board, events);

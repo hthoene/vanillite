@@ -41,7 +41,7 @@ pub mod layout;
 /// Major version of the plugin ABI: changes on breaking changes.
 pub const ABI_MAJOR: u16 = 1;
 /// Minor version of the plugin ABI: changes when declarations are appended.
-pub const ABI_MINOR: u16 = 12;
+pub const ABI_MINOR: u16 = 13;
 /// The symbol every plugin library exports (type [`EntryFn`]).
 pub const ENTRY_SYMBOL: &str = "vanillite_plugin_abi";
 
@@ -433,6 +433,13 @@ abi! {
             /// ([`GameEvent`]: `entity`, `entity_type`, `key` the item); cancellable: nothing
             /// drops. Since ABI 1.6.
             ENTITY_DROP_ITEM = 54,
+            /// A command is about to change an attribute of a living entity ([`GameEvent`]:
+            /// `entity`, `entity_type`, `key` the attribute, e.g. `minecraft:scale`, `cause`
+            /// from [`attribute_change`], `text` the modifier id (empty for the base value),
+            /// `amount` the new base value or the modifier's amount, `value` the modifier's
+            /// [`attribute_op`]); cancellable: the command fails. Not for the transient
+            /// modifiers of effects and equipment. Since ABI 1.13.
+            ENTITY_ATTRIBUTE_CHANGE = 55,
             /// A block is broken and about to drop ([`GameEvent`]: `player` who broke it or
             /// [`Uuid::NIL`], `pos`, `state` the broken state, `item` the drops as an SNBT
             /// list, `item_out` replaces them, `value` the experience, changeable);
@@ -1259,6 +1266,16 @@ abi! {
             ADD_MULTIPLIED_BASE = 1,
             /// `add_multiplied_total`.
             ADD_MULTIPLIED_TOTAL = 2,
+        }
+        /// What [`event::ENTITY_ATTRIBUTE_CHANGE`] changes ([`GameEvent::cause`]). Since
+        /// ABI 1.13.
+        pub mod attribute_change: u32 {
+            /// The base value is set (`base set`, `base reset`).
+            BASE = 0,
+            /// A modifier is added.
+            MODIFIER_ADD = 1,
+            /// A modifier is removed.
+            MODIFIER_REMOVE = 2,
         }
         /// What a plugin goal controls ([`GoalSpec::flags`]), Vanilla's `Goal.Flag`. Since
         /// ABI 1.6.

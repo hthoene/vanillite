@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [{"type": "minecraft:item", "name": "minecraft:diamond", "condition": {"type": "minecraft:match_block", "blocks": "#minecraft:planks"}}]
+    },
+    {
+      "rolls": 1,
+      "entries": [{"type": "minecraft:item", "name": "minecraft:emerald", "condition": {"type": "minecraft:match_block", "blocks": "#minecraft:logs"}}]
+    },
+    {
+      "rolls": 1,
+      "entries": [{"type": "minecraft:item", "name": "minecraft:gold_ingot", "condition": {"type": "minecraft:match_block", "blocks": "#vanillite_test:planks_too"}}]
+    }
+  ],
+  "random_sequence": "minecraft:blocks/oak_planks"
+}

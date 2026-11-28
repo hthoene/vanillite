@@ -47,9 +47,11 @@ contracts live in the crate that owns them (`Scheduler` here; world-scoped slots
 
 - **Compute pool** (`compute.rs`, the `scheduler` slot): one pool, workers = cores (at least 1)
   unless `performance.threads.compute` is set, at nice `performance.threads.compute-nice` (10)
-  so the tick threads win a shared core. An urgent FIFO for
-  fork-join jobs of a running tick phase (`Compute::scope`; the waiting thread helps) and a
-  background priority heap (lower number first, FIFO within a priority). `InlineScheduler`
+  so the tick threads win a shared core, and tick helpers (`performance.threads.tick-phases`,
+  default cores minus one) at the tick threads' priority. An urgent FIFO for fork-join jobs of
+  a running tick phase (`Compute::scope`; only the helpers and the waiting thread take them, so
+  a phase never waits for a part starved at the workers' priority) and a background priority
+  heap for the workers (lower number first, FIFO within a priority). `InlineScheduler`
   runs everything inline for deterministic tests.
 - **Server thread** runs a port of Vanilla's `runServer`: 50 ms deadline per tick from the tick
   rate manager (rate, freeze, step, sprint), catch-up and "Can't keep up!" after 1 s + 20 ticks,

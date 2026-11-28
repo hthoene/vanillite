@@ -629,7 +629,7 @@ impl Level {
                     crate::block::chest_loot::unpack(self, pos, None);
                 }
                 if let Some(entity) = self.block_entities.get(pos).cloned() {
-                    crate::block::container::pre_remove_side_effects(self, pos, &entity);
+                    crate::block::container::pre_remove_side_effects(self, pos, old, &entity);
                     if let BlockEntity::Lectern(lectern) = &entity {
                         crate::block::lectern::drop_book(self, pos, old, lectern);
                     }
@@ -1107,11 +1107,16 @@ impl Level {
     }
 
     /// Creates the live block entities of a chunk that became live from its stored data.
+    ///
+    /// `runPostLoad` puts them into the chunk's `Object2ObjectOpenHashMap<BlockPos,
+    /// BlockEntity>` in stored order, then `registerAllBlockEntitiesAfterLevelLoad` adds their tickers in the map's
+    /// iteration order: that is the order they tick in.
     pub(super) fn load_block_entities(&mut self, chunk: ChunkPos) {
         let Some(stored) = self.chunks.chunk(chunk).map(|c| c.block_entities.clone()) else {
             return;
         };
-        for data in stored {
+        let order = fastutil_map_order(&stored.iter().map(|d| d.pos).collect::<Vec<_>>());
+        for data in order.into_iter().map(|i| &stored[i]) {
             let state = self.block(data.pos);
             if data.kind != Some(state.block().info().block_entity)
                 && !state.is(vanillite_data::block::ids::MOVING_PISTON)
@@ -1366,12 +1371,20 @@ const IMPLICIT_COMPONENTS: [u16; 11] = [
     components::BEES,
 ];
 
+/// What signs use themselves besides [`IMPLICIT_COMPONENTS`].
+const SIGN_COMPONENTS: [u16; 3] = [
+    components::SIGN_TEXT_FRONT,
+    components::SIGN_TEXT_BACK,
+    components::WAXED,
+];
+
 /// `BlockEntity.applyComponents`: the stack's component patch without the implicit
-/// components, in its saved form.
-fn kept_of(stack: &ItemStack) -> Option<Compound> {
+/// components (of a sign also its texts and `waxed`), in its saved form.
+fn kept_of(stack: &ItemStack, sign: bool) -> Option<Compound> {
     let patch = stack.patch()?;
     let mut kept = patch.clone();
-    for id in IMPLICIT_COMPONENTS {
+    let own: &[u16] = if sign { &SIGN_COMPONENTS } else { &[] };
+    for &id in IMPLICIT_COMPONENTS.iter().chain(own) {
         kept.unset(id);
         if let Ok(i) = kept.removed.binary_search(&id) {
             kept.removed.remove(i);
@@ -1408,6 +1421,19 @@ pub fn collect_component(entity: &BlockEntity, id: u16) -> Option<Box<[u8]>> {
             }
         }
         BlockEntity::Beehive(hive) => hive.component(id),
+        BlockEntity::Sign(sign) => match id {
+            components::SIGN_TEXT_FRONT => sign.front.component(id),
+            components::SIGN_TEXT_BACK => sign.back.component(id),
+            components::WAXED => sign.waxed.then(|| Box::from([].as_slice())),
+            _ => None,
+        },
+        BlockEntity::CommandBlock(block) => {
+            if id == components::CUSTOM_NAME {
+                encode_name(block.base.custom_name.as_ref())
+            } else {
+                None
+            }
+        }
         BlockEntity::Crafter(crafter) => {
             if id == components::CONTAINER {
                 Some(container_value(&crafter.items))
@@ -1513,9 +1539,10 @@ pub fn apply_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
         level.block_entity(pos),
         None | Some(BlockEntity::CopperGolemStatue(_))
     ) {
+        let sign = matches!(level.block_entity(pos), Some(BlockEntity::Sign(_)));
         level
             .block_entities
-            .set_kept_components(pos, kept_of(stack));
+            .set_kept_components(pos, kept_of(stack, sign));
     }
     let contents = || {
         stack
@@ -1549,6 +1576,18 @@ pub fn apply_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
         }
         Some(BlockEntity::EnchantingTable(name)) => {
             *name = decode_name(stack).map(Box::new);
+        }
+        // `SignBlockEntity.applyImplicitComponents`: both texts (`SignText.EMPTY` without
+        // them) and `waxed`.
+        Some(BlockEntity::Sign(sign)) => {
+            use crate::block::sign::SignText;
+            sign.front = SignText::of_component(stack, components::SIGN_TEXT_FRONT);
+            sign.back = SignText::of_component(stack, components::SIGN_TEXT_BACK);
+            sign.waxed = stack.component(components::WAXED).is_some();
+        }
+        // `CommandBlockEntity.applyImplicitComponents`: the custom name.
+        Some(BlockEntity::CommandBlock(block)) => {
+            block.base.custom_name = decode_name(stack);
         }
         Some(BlockEntity::Beehive(hive)) => {
             hive.apply(stack);
@@ -1638,6 +1677,59 @@ pub fn load_component(nbt: &Compound, key: &str, type_id: u16) -> Option<Box<[u8
     )
     .ok()?;
     Some(wire.into_boxed_slice())
+}
+
+/// The indices of `keys`, put one after the other into a new fastutil
+/// `Object2ObjectOpenHashMap<BlockPos, _>` (a key already present keeps its slot), in the order
+/// the map iterates them: open addressing on `HashCommon.mix(Vec3i.hashCode)`, growing at three
+/// quarters full, iterated from the last slot down.
+pub(crate) fn fastutil_map_order(keys: &[BlockPos]) -> Vec<usize> {
+    let mix = |pos: BlockPos| {
+        let h = pos
+            .y
+            .wrapping_add(pos.z.wrapping_mul(31))
+            .wrapping_mul(31)
+            .wrapping_add(pos.x)
+            .wrapping_mul(0x9E37_79B9_u32 as i32);
+        (h ^ ((h as u32) >> 16) as i32) as u32 as usize
+    };
+    // `HashCommon.arraySize(expected, 0.75)` and `maxFill(n, 0.75)`.
+    let array_size = |expected: usize| (expected * 4).div_ceil(3).next_power_of_two().max(2);
+    let max_fill = |n: usize| (n * 3).div_ceil(4).min(n - 1);
+    let mut slots: Vec<Option<usize>> = vec![None; array_size(16)];
+    let mut size = 0;
+    for (i, &key) in keys.iter().enumerate() {
+        let mask = slots.len() - 1;
+        let mut pos = mix(key) & mask;
+        let mut present = false;
+        while let Some(j) = slots[pos] {
+            if keys[j] == key {
+                present = true;
+                break;
+            }
+            pos = (pos + 1) & mask;
+        }
+        if present {
+            continue;
+        }
+        slots[pos] = Some(i);
+        let before = size;
+        size += 1;
+        if before >= max_fill(slots.len()) {
+            // `rehash`: the old slots from the last down.
+            let n = array_size(size + 1);
+            let mut grown = vec![None; n];
+            for j in slots.iter().rev().flatten() {
+                let mut pos = mix(keys[*j]) & (n - 1);
+                while grown[pos].is_some() {
+                    pos = (pos + 1) & (n - 1);
+                }
+                grown[pos] = Some(*j);
+            }
+            slots = grown;
+        }
+    }
+    slots.into_iter().rev().flatten().collect()
 }
 
 // --- Pick block ------------------------------------------------------------------------------

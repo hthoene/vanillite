@@ -16,7 +16,7 @@ vanillite-data.workspace = true
 workspace = true
 
 [dev-dependencies]
-criterion.workspace = true
+microbench.workspace = true
 
 [[bench]]
 name = "chunk"

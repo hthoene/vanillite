@@ -9,7 +9,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -69,7 +71,46 @@ func (h logHandler) WithGroup(string) slog.Handler { return h }
 var (
 	itemDescriptorCount = reflect.TypeOf(protocol.ItemDescriptorCount{})
 	itemStack           = reflect.TypeOf(protocol.ItemStack{})
+	skin                = reflect.TypeOf(protocol.Skin{})
 )
+
+// maxJSONDepth is the deepest nesting accepted in skin JSON fields (vanillite-bedrock's limit).
+const maxJSONDepth = 64
+
+// checkJSON reports a skin field the real client rejects ("Packet field must contain valid JSON
+// within the maximum nesting depth"): not valid JSON or nested too deep. Patch and geometry
+// (optional = false) must be non-empty JSON objects; animation data may be empty.
+func checkJSON(p *problems, what string, b []byte, optional bool) {
+	if len(b) == 0 && optional {
+		return
+	}
+	if !json.Valid(b) {
+		p.add("%s: not valid JSON: %.80q", what, b)
+		return
+	}
+	if t := bytes.TrimSpace(b); !optional && (len(t) == 0 || t[0] != '{') {
+		p.add("%s: JSON is not an object: %.80q", what, b)
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	depth, deepest := 0, 0
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		if d, ok := tok.(json.Delim); ok {
+			if d == '{' || d == '[' {
+				depth++
+				deepest = max(deepest, depth)
+			} else {
+				depth--
+			}
+		}
+	}
+	if deepest > maxJSONDepth {
+		p.add("%s: JSON nested %d deep, more than %d", what, deepest, maxJSONDepth)
+	}
+}
 
 // walk checks the values inside a decoded packet that the real client range-checks.
 func walk(p *problems, name string, v reflect.Value, path string) {
@@ -106,6 +147,11 @@ func walk(p *problems, name string, v reflect.Value, path string) {
 		if d.Descriptor == nil {
 			p.add("%s%s: item descriptor missing", name, path)
 		}
+	case skin:
+		s := v.Interface().(protocol.Skin)
+		checkJSON(p, name+path+".SkinResourcePatch", s.SkinResourcePatch, false)
+		checkJSON(p, name+path+".SkinGeometry", s.SkinGeometry, false)
+		checkJSON(p, name+path+".AnimationData", s.AnimationData, true)
 	case itemStack:
 		s := v.Interface().(protocol.ItemStack)
 		if s.NetworkID != 0 && s.Count == 0 {

@@ -178,7 +178,7 @@ fn use_item_on(
             GameEventContext::of(Some(ctx.player)),
         );
         level.set_block_and_update(pos, state.set_flag("lit", false));
-        super::hurt_item(level, stack, 1, ctx.player);
+        super::hurt_item(level, stack, 1, ctx.player, ctx.hand_slot());
         return ItemInteraction::Done(Interaction::Success);
     }
     ItemInteraction::TryWithEmptyHand

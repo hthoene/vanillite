@@ -327,16 +327,25 @@ pub(crate) enum Weather {
 /// `weather clear|rain|thunder [<duration>]` (`setWeatherParameters`).
 pub(crate) fn weather(
     source: &CommandSource,
-    global: &Global,
+    env: &mut super::Env<'_>,
     kind: Weather,
     duration: Option<i32>,
 ) -> i32 {
+    let global = env.global;
     let key = match kind {
         Weather::Clear => "commands.weather.set.clear",
         Weather::Rain => "commands.weather.set.rain",
         Weather::Thunder => "commands.weather.set.thunder",
     };
-    set_weather(global, kind, duration);
+    // `getDuration`: the default distribution draws from the source level's random.
+    let range = match kind {
+        Weather::Clear => RAIN_DELAY,
+        Weather::Rain => RAIN_DURATION,
+        Weather::Thunder => THUNDER_DURATION,
+    };
+    let ticks =
+        duration.or_else(|| (source.world == env.world).then(|| sample(range, env.level.random())));
+    set_weather(global, kind, ticks);
     source.send_success(global, Component::translatable(key, vec![]), true);
     duration.unwrap_or(-1)
 }

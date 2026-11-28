@@ -1,0 +1,34 @@
+{
+  "description": "Pandas of every main gene next to dropped bamboo and a player: playful ones roll, lazy ones sit and eat, worried ones panic in thunder-free day, aggressive ones attack when hurt, a weak baby sneezes; the player feeds bamboo to two adults (love, breeding with gene inheritance).",
+  "tier": "fast",
+  "time": 6000,
+  "region": [[0, -61, 0], [15, -56, 15]],
+  "ticks": 300,
+  "setup": [
+    {"op": "fill", "from": [0, -60, 0], "to": [15, -56, 0], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 15], "to": [15, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [0, -60, 0], "to": [0, -56, 15], "block": "minecraft:stone"},
+    {"op": "fill", "from": [15, -60, 0], "to": [15, -56, 15], "block": "minecraft:stone"}
+  ],
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [7.5, -60.0, 13.5]},
+    {"name": "playful", "type": "minecraft:panda", "pos": [3.5, -60.0, 3.5], "seed": 51},
+    {"name": "lazy", "type": "minecraft:panda", "pos": [11.5, -60.0, 3.5], "seed": 52},
+    {"name": "aggressive", "type": "minecraft:panda", "pos": [3.5, -60.0, 10.5], "seed": 53},
+    {"name": "baby", "type": "minecraft:panda", "pos": [11.5, -60.0, 10.5], "seed": 54, "baby": true},
+    {"name": "normal", "type": "minecraft:panda", "pos": [7.5, -60.0, 7.5], "seed": 55}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "effect give steve minecraft:resistance infinite 4 true"},
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:panda,limit=1,sort=nearest,x=3.5,y=-60,z=3.5] {MainGene:\"playful\",HiddenGene:\"playful\"}"},
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:panda,limit=1,sort=nearest,x=11.5,y=-60,z=3.5] {MainGene:\"lazy\",HiddenGene:\"lazy\"}"},
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:panda,limit=1,sort=nearest,x=3.5,y=-60,z=10.5] {MainGene:\"aggressive\",HiddenGene:\"aggressive\"}"},
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:panda,limit=1,sort=nearest,x=11.5,y=-60,z=10.5] {MainGene:\"weak\",HiddenGene:\"weak\"}"},
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:panda,limit=1,sort=nearest,x=7.5,y=-60,z=7.5] {MainGene:\"normal\",HiddenGene:\"worried\"}"},
+    {"tick": 3, "op": "command", "command": "summon minecraft:item 9.5 -60 5.5 {Item:{id:\"minecraft:bamboo\",count:4}}"},
+    {"tick": 3, "op": "command", "command": "summon minecraft:item 5.5 -60 9.5 {Item:{id:\"minecraft:cake\",count:1}}"},
+    {"tick": 20, "op": "interact", "entity": "steve", "target": "normal", "item": "minecraft:bamboo", "count": 8},
+    {"tick": 22, "op": "interact", "entity": "steve", "target": "lazy", "item": "minecraft:bamboo", "count": 8},
+    {"tick": 40, "op": "hurt", "entity": "aggressive", "by": "steve", "amount": 1}
+  ]
+}

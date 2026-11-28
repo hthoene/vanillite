@@ -38,6 +38,8 @@ import java.security.ProtectionDomain;
  *   <li>the {@code ShufflingList} constructors take their random from {@link
  *       ParityHooks#shuffleRandom()}: in a scenario every shuffled behaviour list starts from the
  *       same seed, as in Vanillite's scenario world.
+ *   <li>the {@code Raid} constructors take their random from {@link ParityHooks#raidRandom()}:
+ *       in a scenario a new raid is seeded from the entity seed stream, as in Vanillite.
  *   <li>{@code Collections.shuffle(list)} in {@code LongJumpToRandomPos} and {@code
  *       InsideBrownianWalk} (a JVM wide unseeded random) becomes {@link ParityHooks#shuffle}: in
  *       a scenario every such shuffle starts from the same seed.
@@ -66,7 +68,9 @@ public final class ParityAgent {
                 case "net/minecraft/world/entity/Entity" -> entityCreated(bytes);
                 case "net/minecraft/world/entity/EntityType" -> entityLoading(bytes);
                 case "net/minecraft/world/level/chunk/storage/EntityStorage" -> deferLoad(bytes);
-                case "net/minecraft/world/entity/ai/behavior/ShufflingList" -> shuffleRandom(bytes);
+                case "net/minecraft/world/entity/ai/behavior/ShufflingList" ->
+                    constructorRandom(bytes, "shuffleRandom");
+                case "net/minecraft/world/entity/raid/Raid" -> constructorRandom(bytes, "raidRandom");
                 case "net/minecraft/world/entity/ai/behavior/LongJumpToRandomPos",
                     "net/minecraft/world/entity/ai/behavior/InsideBrownianWalk" ->
                     collectionsShuffle(bytes);
@@ -132,8 +136,11 @@ public final class ParityAgent {
     return cf.transformClass(model, t);
   }
 
-  /** {@code ShufflingList.<init>}: {@code RandomSource.create()} → {@code ParityHooks.shuffleRandom()}. */
-  private static byte[] shuffleRandom(byte[] bytes) {
+  /**
+   * The constructors' {@code RandomSource.create()} → {@code ParityHooks.<hook>()} ({@code
+   * ShufflingList}: {@code shuffleRandom}, {@code Raid}: {@code raidRandom}).
+   */
+  private static byte[] constructorRandom(byte[] bytes, String hook) {
     ClassFile cf = ClassFile.of();
     ClassModel model = cf.parse(bytes);
     ClassDesc random = ClassDesc.of("net.minecraft.util.RandomSource");
@@ -147,7 +154,7 @@ public final class ParityAgent {
                       && i.owner().asSymbol().equals(random)
                       && i.name().equalsString("create")
                       && i.typeSymbol().parameterCount() == 0) {
-                    b.invokestatic(HOOKS, "shuffleRandom", MethodTypeDesc.of(random));
+                    b.invokestatic(HOOKS, hook, MethodTypeDesc.of(random));
                   } else {
                     b.with(e);
                   }

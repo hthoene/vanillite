@@ -1,0 +1,20 @@
+{
+  "description": "MinecartItem.useOn (#272, I5-31/I6-26): createDefaultStackConfig applies the stack's entity_data, so a minecart with Motion in it rolls off at once; for a non-operator the entity_data of a command block minecart (operator only) is ignored.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [[0, -61, 0], [15, -57, 12]],
+  "ticks": 30,
+  "entities": [
+    {"name": "p", "type": "minecraft:player", "pos": [1.5, -60.0, 6.5], "rot": [-90, 30]}
+  ],
+  "setup": [
+    {"op": "fill", "from": [2, -60, 4], "to": [14, -60, 4], "block": "minecraft:rail[shape=east_west,waterlogged=false]"},
+    {"op": "fill", "from": [2, -60, 8], "to": [14, -60, 8], "block": "minecraft:rail[shape=east_west,waterlogged=false]"}
+  ],
+  "actions": [
+    {"tick": 2, "op": "use", "entity": "p", "pos": [3, -60, 4], "face": "up", "item": "minecraft:minecart", "components": "{\"minecraft:entity_data\":{id:\"minecraft:minecart\",Motion:[0.3d,0.0d,0.0d]}}"},
+    {"tick": 4, "op": "use", "entity": "p", "pos": [3, -60, 8], "face": "up", "item": "minecraft:command_block_minecart", "components": "{\"minecraft:entity_data\":{id:\"minecraft:command_block_minecart\",Motion:[0.3d,0.0d,0.0d]}}"}
+  ]
+}

@@ -134,7 +134,16 @@ pub struct LootContext<'a> {
     /// `exploration_map` with level access: the filled map for the request at the origin, if
     /// a structure was found.
     pub exploration_map: Option<&'a ExploreFn<'a>>,
+    /// The level's weather as (raining, thundering) for `weather_check`; `None` without level
+    /// access (the check fails).
+    pub weather: Option<(bool, bool)>,
+    /// The score of an entity in an objective for `entity_scores` (`None`: no score); without
+    /// it the check fails.
+    pub score: Option<&'a ScoreFn<'a>>,
 }
+
+/// The score of an entity in an objective (see [`LootContext`]).
+pub type ScoreFn<'a> = dyn Fn(vanillite_world::entity::EntityId, &str) -> Option<i32> + 'a;
 
 /// Makes the map of an `exploration_map` request at an origin (see [`LootContext`]).
 pub type ExploreFn<'a> = dyn Fn(&ExplorationMap, Vec3) -> Option<ItemStack> + 'a;
@@ -199,6 +208,8 @@ impl LootContext<'_> {
             neighbour: None,
             entity: None,
             exploration_map: None,
+            weather: None,
+            score: None,
         }
     }
 }
@@ -295,9 +306,17 @@ pub struct LootTables {
     broken: Vec<String>,
     /// Unsupported features met while parsing, with the first file using each.
     unsupported: Vec<String>,
+    /// The block tags of the same packs (sorted block ids by tag id), for block predicates
+    /// with a tag; `None`: the installed game data's.
+    block_tags: Option<std::sync::Arc<HashMap<String, Vec<u16>>>>,
 }
 
 impl LootTables {
+    /// Sets the block tags of the packs these tables came from ([`BlockSet::Tag`]).
+    pub fn set_block_tags(&mut self, tags: std::sync::Arc<HashMap<String, Vec<u16>>>) {
+        self.block_tags = Some(tags);
+    }
+
     /// Loads every `data/<ns>/loot_table/**.json` of the packs in `roots` (each root contains
     /// `data/`; later roots override earlier ones), like the reloadable `loot_table` registry.
     /// Broken tables are logged and skipped.
@@ -900,6 +919,7 @@ impl LootTables {
             modifier_ids,
             broken,
             unsupported,
+            block_tags: None,
         }
     }
 }
@@ -1083,6 +1103,15 @@ enum Cond {
     ThisPresent,
     KilledByPlayer,
     DamageSource(Box<crate::predicate::DamageSourcePredicate>),
+    /// `weather_check`.
+    Weather {
+        raining: Option<bool>,
+        thundering: Option<bool>,
+    },
+    /// `int_value_check`: the value drawn, then tested.
+    IntValue(IntProvider, Bounds),
+    /// `entity_scores` of `this` (the other targets have no entity here).
+    Scores(EntityTarget, Box<[(Box<str>, Bounds)]>),
     /// `random_chance_with_enchanted_bonus`.
     EnchantedChance {
         enchantment: Box<str>,
@@ -1138,8 +1167,32 @@ impl Bounds {
 
 #[derive(Debug)]
 struct BlockPredicate {
-    blocks: Option<Box<[BlockId]>>,
+    blocks: Option<BlockSet>,
     state: Box<[(Box<str>, ValueMatcher)]>,
+}
+
+/// The `blocks` holder set of a block predicate.
+#[derive(Debug)]
+enum BlockSet {
+    Ids(Box<[BlockId]>),
+    /// A block tag (without `#`), resolved against the loaded data packs.
+    Tag(Box<str>),
+}
+
+impl BlockSet {
+    fn contains(&self, block: BlockId, tags: Option<&HashMap<String, Vec<u16>>>) -> bool {
+        match self {
+            BlockSet::Ids(ids) => ids.contains(&block),
+            BlockSet::Tag(tag) => match tags {
+                Some(tags) => tags
+                    .get(&**tag)
+                    .is_some_and(|v| v.binary_search(&block.0).is_ok()),
+                None => {
+                    crate::player::play::game_data().is_some_and(|d| d.block_in_tag(block.0, tag))
+                }
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1232,6 +1285,13 @@ enum FuncKind {
     /// `set_components`: component type ids with their persistent value (`None` removes
     /// the component). Encoded when applied, as the dynamic registries are known then.
     SetComponents(Box<[(u16, Option<vanillite_nbt::Tag>)]>),
+    /// `set_custom_data`: merged into the stack's custom data.
+    SetCustomData(Box<vanillite_nbt::Compound>),
+    /// `set_lore`: the lines (component NBT) put into the lore list by `mode`.
+    SetLore {
+        lore: Box<[vanillite_nbt::Tag]>,
+        mode: ListOperation,
+    },
     /// `filtered`.
     Filtered {
         filter: Option<Box<ItemPredicate>>,
@@ -1416,6 +1476,83 @@ fn item_set(v: &Value) -> Res<ItemSet> {
 }
 
 /// `MinMaxBounds.Ints`: a number or `{min, max}`.
+/// `CompoundTag.merge`: compounds merge, other values replace.
+fn merge_compound(into: &mut vanillite_nbt::Compound, from: &vanillite_nbt::Compound) {
+    for (k, v) in from.iter() {
+        match (into.get_mut(k), v) {
+            (Some(vanillite_nbt::Tag::Compound(a)), vanillite_nbt::Tag::Compound(b)) => {
+                merge_compound(a, b);
+            }
+            _ => into.insert(k, v.clone()),
+        }
+    }
+}
+
+/// `ListOperation` of `set_lore` (`mode` with `offset` and `size`).
+#[derive(Debug, Clone, Copy)]
+enum ListOperation {
+    ReplaceAll,
+    ReplaceSection { offset: usize, size: Option<usize> },
+    Insert { offset: usize },
+    Append,
+}
+
+impl ListOperation {
+    fn parse(o: &Map<String, Value>) -> Res<ListOperation> {
+        let count = |k: &str| -> Res<Option<usize>> {
+            o.get(k)
+                .map(|v| usize::try_from(int(v)?).map_err(|_| format!("negative `{k}`")))
+                .transpose()
+        };
+        Ok(match string(field(o, "mode")?)? {
+            "replace_all" => ListOperation::ReplaceAll,
+            "replace_section" => ListOperation::ReplaceSection {
+                offset: count("offset")?.unwrap_or(0),
+                size: count("size")?,
+            },
+            "insert" => ListOperation::Insert {
+                offset: count("offset")?.unwrap_or(0),
+            },
+            "append" => ListOperation::Append,
+            other => return Err(format!("unknown list operation {other}")),
+        })
+    }
+
+    /// `apply(original, replacement, maxSize)`: `None` keeps the original (an offset past
+    /// its end or a result over `max`).
+    fn apply<T: Clone>(self, original: &[T], replacement: &[T], max: usize) -> Option<Vec<T>> {
+        let result: Vec<T> = match self {
+            ListOperation::ReplaceAll => replacement.to_vec(),
+            ListOperation::ReplaceSection { offset, size } => {
+                if offset > original.len() {
+                    return None;
+                }
+                let size = size.unwrap_or(replacement.len());
+                let end = offset.saturating_add(size).min(original.len());
+                let mut out = original[..offset].to_vec();
+                out.extend_from_slice(replacement);
+                out.extend_from_slice(&original[end..]);
+                out
+            }
+            ListOperation::Insert { offset } => {
+                if offset > original.len() {
+                    return None;
+                }
+                let mut out = original[..offset].to_vec();
+                out.extend_from_slice(replacement);
+                out.extend_from_slice(&original[offset..]);
+                out
+            }
+            ListOperation::Append => {
+                let mut out = original.to_vec();
+                out.extend_from_slice(replacement);
+                out
+            }
+        };
+        (result.len() <= max).then_some(result)
+    }
+}
+
 fn bounds(v: &Value) -> Res<Bounds> {
     if v.is_number() {
         let n = int(v)?;
@@ -1711,6 +1848,28 @@ impl Parser<'_> {
                 }
             },
             "minecraft:killed_by_player" => Cond::KilledByPlayer,
+            "minecraft:weather_check" => Cond::Weather {
+                raining: o.get("raining").and_then(Value::as_bool),
+                thundering: o.get("thundering").and_then(Value::as_bool),
+            },
+            "minecraft:int_value_check" => Cond::IntValue(
+                self.int_provider(field(o, "value")?)?,
+                bounds(field(o, "test")?)?,
+            ),
+            "minecraft:entity_scores" => {
+                let target = match string(field(o, "entity")?)? {
+                    "this" => EntityTarget::This,
+                    "attacker" => EntityTarget::Attacker,
+                    "direct_attacker" => EntityTarget::DirectAttacker,
+                    "attacking_player" => EntityTarget::AttackingPlayer,
+                    other => return Err(format!("unknown entity target {other}")),
+                };
+                let scores = object(field(o, "scores")?)?
+                    .iter()
+                    .map(|(k, v)| Ok((Box::from(k.as_str()), bounds(v)?)))
+                    .collect::<Res<Box<[_]>>>()?;
+                Cond::Scores(target, scores)
+            }
             "minecraft:damage_source_properties" => {
                 let p = crate::predicate::DamageSourcePredicate::parse(
                     o.get("predicate").unwrap_or(&Value::Null),
@@ -1797,16 +1956,13 @@ impl Parser<'_> {
     fn block_predicate(&mut self, o: &Map<String, Value>) -> Res<Option<BlockPredicate>> {
         let blocks = match o.get("blocks").map(id_set).transpose()? {
             None => None,
-            Some(IdSet::Ids(names)) => Some(
+            Some(IdSet::Ids(names)) => Some(BlockSet::Ids(
                 names
                     .iter()
                     .map(|n| block_id(n))
                     .collect::<Res<Box<[_]>>>()?,
-            ),
-            Some(IdSet::Tag(tag)) => {
-                self.unsupported(format!("block tag #{tag} in match_block (false)"));
-                return Ok(None);
-            }
+            )),
+            Some(IdSet::Tag(tag)) => Some(BlockSet::Tag(tag.into())),
         };
         let mut state = Vec::new();
         if let Some(s) = o.get("state") {
@@ -2123,6 +2279,30 @@ impl Parser<'_> {
                     components.push((id, value));
                 }
                 FuncKind::SetComponents(components.into())
+            }
+            "minecraft:set_custom_data" => {
+                let tag = match field(o, "tag")? {
+                    Value::String(snbt) => {
+                        vanillite_nbt::snbt::parse_compound(snbt).map_err(|e| e.to_string())?
+                    }
+                    other => match crate::trading::data::json_to_nbt(other) {
+                        vanillite_nbt::Tag::Compound(c) => c,
+                        _ => return Err("`tag` is not a compound".into()),
+                    },
+                };
+                FuncKind::SetCustomData(Box::new(tag))
+            }
+            "minecraft:set_lore" => {
+                let lore = field(o, "lore")?
+                    .as_array()
+                    .ok_or("`lore` is not a list")?
+                    .iter()
+                    .map(crate::trading::data::json_to_nbt)
+                    .collect();
+                FuncKind::SetLore {
+                    lore,
+                    mode: ListOperation::parse(o)?,
+                }
             }
             "minecraft:copy_components" | "minecraft:copy_name" | "minecraft:copy_custom_data" => {
                 FuncKind::Noop
@@ -2593,12 +2773,12 @@ impl<'t> Eval<'t, '_> {
             Cond::MatchBlock(p) => self
                 .ctx
                 .block_state
-                .is_some_and(|state| block_matches(p, state)),
+                .is_some_and(|state| block_matches(p, state, self.tables.block_tags.as_deref())),
             // Without level access the neighbour is assumed to be as Vanilla left it.
-            Cond::LocationBlock([dx, dy, dz], p) => self
-                .ctx
-                .neighbour
-                .is_none_or(|at| at(*dx, *dy, *dz).is_some_and(|s| block_matches(p, s))),
+            Cond::LocationBlock([dx, dy, dz], p) => self.ctx.neighbour.is_none_or(|at| {
+                at(*dx, *dy, *dz)
+                    .is_some_and(|s| block_matches(p, s, self.tables.block_tags.as_deref()))
+            }),
             Cond::Biome(biomes) => {
                 self.ctx.origin.is_some()
                     && self
@@ -2625,6 +2805,26 @@ impl<'t> Eval<'t, '_> {
                 .ctx
                 .entity
                 .is_some_and(|e| e.last_damage_player.is_some()),
+            Cond::Weather {
+                raining,
+                thundering,
+            } => self.ctx.weather.is_some_and(|(rain, thunder)| {
+                raining.is_none_or(|r| r == rain) && thundering.is_none_or(|t| t == thunder)
+            }),
+            Cond::IntValue(value, test) => {
+                let v = self.int(value);
+                test.matches(v)
+            }
+            Cond::Scores(target, scores) => {
+                let (EntityTarget::This, Some(id), Some(score)) =
+                    (target, self.ctx.this_entity, self.ctx.score)
+                else {
+                    return false;
+                };
+                scores.iter().all(|(objective, range)| {
+                    score(id, objective).is_some_and(|v| range.matches(v))
+                })
+            }
             Cond::DamageSource(p) => self.ctx.entity.is_some_and(|e| {
                 e.source
                     .as_ref()
@@ -3008,6 +3208,55 @@ impl<'t> Eval<'t, '_> {
                 vanillite_protocol::codec::write_varint(&mut out, value);
                 stack.set_component(ids::OMINOUS_BOTTLE_AMPLIFIER, out.into_boxed_slice());
             }
+            FuncKind::SetCustomData(tag) => {
+                // `CustomData.update(CUSTOM_DATA, stack, t -> t.merge(tag))`.
+                let Some(id) =
+                    vanillite_protocol::components_nbt::type_by_name("minecraft:custom_data")
+                else {
+                    return;
+                };
+                let names = &vanillite_protocol::item::InstalledRegistries;
+                let mut data = match stack
+                    .component(id)
+                    .and_then(|w| vanillite_protocol::components_nbt::to_nbt(id, w, names).ok())
+                {
+                    Some(vanillite_nbt::Tag::Compound(c)) => c,
+                    _ => vanillite_nbt::Compound::new(),
+                };
+                merge_compound(&mut data, tag);
+                if let Ok(wire) = vanillite_protocol::components_nbt::from_nbt(
+                    id,
+                    &vanillite_nbt::Tag::Compound(data),
+                    names,
+                ) {
+                    stack.patch_mut().set(id, wire);
+                }
+            }
+            FuncKind::SetLore { lore, mode } => {
+                let Some(id) = vanillite_protocol::components_nbt::type_by_name("minecraft:lore")
+                else {
+                    return;
+                };
+                let names = &vanillite_protocol::item::InstalledRegistries;
+                let old: Vec<vanillite_nbt::Tag> = match stack
+                    .component(id)
+                    .and_then(|w| vanillite_protocol::components_nbt::to_nbt(id, w, names).ok())
+                {
+                    Some(vanillite_nbt::Tag::List(l)) => l.0,
+                    _ => Vec::new(),
+                };
+                // `ItemLore.MAX_LINES`.
+                let Some(lines) = mode.apply(&old, lore, 256) else {
+                    return;
+                };
+                if let Ok(wire) = vanillite_protocol::components_nbt::from_nbt(
+                    id,
+                    &vanillite_nbt::Tag::List(vanillite_nbt::List(lines)),
+                    names,
+                ) {
+                    stack.patch_mut().set(id, wire);
+                }
+            }
             FuncKind::SetComponents(components) => {
                 // `applyComponentsAndValidate`: a patch that leaves the stack invalid is undone.
                 let old = stack.patch.clone();
@@ -3262,10 +3511,14 @@ fn read_stew_effects(data: Option<&[u8]>) -> Vec<(u32, i32)> {
 }
 
 /// `BlockPredicate.matchesState`.
-fn block_matches(p: &BlockPredicate, state: BlockState) -> bool {
+fn block_matches(
+    p: &BlockPredicate,
+    state: BlockState,
+    tags: Option<&HashMap<String, Vec<u16>>>,
+) -> bool {
     let block = state.block();
     if let Some(blocks) = &p.blocks
-        && !blocks.contains(&block)
+        && !blocks.contains(block, tags)
     {
         return false;
     }

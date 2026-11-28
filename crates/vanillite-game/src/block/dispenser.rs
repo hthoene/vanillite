@@ -424,10 +424,7 @@ fn execute(
             let Some(kind) = crate::minecart::MinecartKind::of_item(item::item_id(&stack)) else {
                 return default_execute(level, source, stack);
             };
-            let name = stack
-                .component(vanillite_protocol::components::ids::CUSTOM_NAME)
-                .map(Into::into);
-            if crate::minecart::dispense(level, kind, source.pos, source.facing, name) {
+            if crate::minecart::dispense(level, kind, source.pos, source.facing, &stack) {
                 stack.shrink(1);
                 stack
             } else {
@@ -732,6 +729,7 @@ fn dispense_boat(level: &mut Level, source: Source, mut stack: ItemStack) -> Ite
         yaw,
         data,
     );
+    crate::vehicle::apply_stack_entity_data(ents, id, &stack, false);
     if ents.spawned(id, vanillite_abi::spawn_reason::DISPENSER, 0) {
         stack.shrink(1);
     }
@@ -850,33 +848,10 @@ pub(super) fn spawn_dispensed(
     );
 }
 
-/// `ItemStack.hurtAndBreak(amount, level, null, ...)`: durability loss (`minecraft:unbreaking`
-/// removes each point with chance `level / (level + 1)`); the stack breaks at its maximum.
+/// `ItemStack.hurtAndBreak(amount, level, null, ...)`: durability loss through the
+/// `item_damage` effects (Unbreaking) from the level random; the stack breaks at its maximum.
 fn hurt_and_break(level: &mut Level, stack: &mut ItemStack, amount: i32) {
-    if !item::is_damageable(stack) {
-        return;
-    }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(stack, "minecraft:unbreaking"));
-    let mut amount = amount;
-    if unbreaking > 0 {
-        let chance = unbreaking as f32 / (unbreaking as f32 + 1.0);
-        let mut removed = 0;
-        for _ in 0..amount {
-            if level.random().next_float() < chance {
-                removed += 1;
-            }
-        }
-        amount -= removed;
-    }
-    if amount <= 0 {
-        return;
-    }
-    let damage = item::damage(stack) + amount;
-    item::set_damage(stack, damage);
-    if damage >= item::max_damage(stack) {
-        stack.shrink(1);
-    }
+    crate::durability::hurt_and_break(stack, amount, level.random());
 }
 
 // --- Buckets ---------------------------------------------------------------------------------
@@ -1181,7 +1156,7 @@ fn shear_entity(level: &mut Level, pos: BlockPos) -> bool {
     let sheared = crate::level::mob_env::with_mob_env(level, |level, ents, env, cx| {
         let blocks = vanillite_protocol::packets::play::clientbound::SoundSource::Blocks;
         for id in candidates {
-            if crate::mob::tame::shear_off_all_leash_connections(ents, env, id) {
+            if crate::mob::tame::shear_off_all_leash_connections(ents, env, id, None) {
                 return Some(false);
             }
             let Some(m) = ents.mob(id) else {
@@ -1307,7 +1282,10 @@ fn place_shulker_box(level: &mut Level, source: Source, stack: &mut ItemStack) -
             level.set_block(target, updated, update::CLIENTS);
             placed = updated;
         }
-        super::container::apply_item_components(level, target, stack);
+        // `BlockItem.place` without a player: `updateCustomBlockEntityTag` (no operator-only
+        // kinds) and `applyComponentsFromItemStack` (name, lock, contents, loot).
+        crate::level::block_entity::apply_block_entity_data(level, target, stack, false);
+        crate::level::block_entity::apply_components(level, target, stack);
     }
     let sound = placed.block().sound();
     level.play_block_sound(
@@ -1761,11 +1739,10 @@ pub fn spawn_projectile_item(
     let id = item::item_id(stack);
     if [items::ARROW, items::TIPPED_ARROW, items::SPECTRAL_ARROW].contains(&id) {
         // `new Arrow(level, x, y, z, stack, null)` with `pickup = ALLOWED`.
-        let (entities, _, random) = level.entity_parts();
+        let (entities, _, _) = level.entity_parts();
         return Some(crate::mob::projectile::shoot_arrow(
             entities,
             &network_ids,
-            random,
             at,
             dir,
             power,

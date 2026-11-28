@@ -241,6 +241,34 @@ impl Chunk {
         }
     }
 
+    /// Prefetch hint ahead of natural spawning: the whole list of sections and a heightmap.
+    #[inline]
+    pub fn prefetch_sections_and(&self, heightmap: HeightmapKind) {
+        for section in self.sections.iter().step_by(8).chain(self.sections.last()) {
+            vanillite_base::prefetch::read(section);
+        }
+        if let Some(map) = self.heightmaps.get(heightmap) {
+            map.prefetch();
+        }
+    }
+
+    /// Prefetch hint: starts loading section `index` (`index` may be out of range).
+    #[inline]
+    pub fn prefetch_section(&self, index: usize) {
+        if let Some(section) = self.sections.get(index) {
+            vanillite_base::prefetch::read(Arc::as_ptr(section));
+        }
+    }
+
+    /// Prefetch hint for the block at local x/z (0..16) and world y, its section already
+    /// loaded (see [`Self::prefetch_section`]).
+    #[inline]
+    pub fn prefetch_block(&self, x: u32, y: i32, z: u32) {
+        if let Some(index) = self.section_index(y) {
+            self.sections[index].prefetch_block(x, (y & 15) as u32, z);
+        }
+    }
+
     /// Whether every block of section `index` is known to be a redstone conductor without
     /// visiting it (`false` = not known; read the block).
     #[inline]

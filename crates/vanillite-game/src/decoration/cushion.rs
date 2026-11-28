@@ -70,8 +70,9 @@ pub fn color_of_item(stack: &ItemStack) -> Option<u8> {
 /// with a full collision cube.
 fn suffocating(state: vanillite_data::block::BlockState) -> bool {
     let full = state.has(vanillite_data::block::flags::COLLISION_FULL_BLOCK);
-    full && crate::player::play::game_data()
-        .is_none_or(|d| d.block_in_tag(state.block().0, "minecraft:causes_suffocation"))
+    full && !crate::survival::blocks::never_suffocating(state.block())
+        && crate::player::play::game_data()
+            .is_none_or(|d| d.block_in_tag(state.block().0, "minecraft:causes_suffocation"))
 }
 
 fn floor(v: f64) -> i32 {

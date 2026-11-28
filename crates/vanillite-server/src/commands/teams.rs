@@ -307,6 +307,7 @@ fn own_holder(source: &CommandSource) -> Result<Holder, CommandError> {
             .display
             .clone()
             .hover(HoverEvent::ShowText(Component::text(name.as_str()))),
+        score_display: Some(e.display.clone()),
         name,
     })
 }

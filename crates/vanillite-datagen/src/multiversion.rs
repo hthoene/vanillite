@@ -78,17 +78,115 @@ const ENTITY_STAND_INS: &[(&str, &[&str])] = &[
     ("minecraft:cushion", &["minecraft:interaction"]),
 ];
 
-/// The stand-in of an item that name similarity would map to an unrelated item or stone: spears
-/// show as the sword of their material, music discs as a music disc, harnesses as a saddle.
-fn item_stand_in(name: &str) -> Option<String> {
-    if let Some(material) = name.strip_suffix("_spear") {
-        return Some(format!("{material}_sword"));
+/// Stand-ins for blocks and items an older version lacks and that name similarity would map to
+/// an unrelated entry or to none: candidates in order, the first the older version has wins.
+/// Spears show as the sword of their material, music discs as a music disc, harnesses as a
+/// saddle, spawn eggs as the egg of the entity's stand-in, the sulfur and cinnabar stone families
+/// as sandstone and red sandstone, plants as plants of the same shape.
+fn stand_ins(name: &str) -> Vec<String> {
+    let path = name.strip_prefix("minecraft:").unwrap_or(name);
+    let mc = |p: &str| format!("minecraft:{p}");
+    const EXACT: &[(&str, &[&str])] = &[
+        ("red_shrub", &["dead_bush"]),
+        ("open_eyeblossom", &["oxeye_daisy"]),
+        ("closed_eyeblossom", &["oxeye_daisy"]),
+        ("wildflowers", &["pink_petals"]),
+        ("leaf_litter", &["pink_petals"]),
+        ("pale_hanging_moss", &["hanging_roots"]),
+        ("creaking_heart", &["pale_oak_log", "oak_log"]),
+        ("resin_clump", &["glow_lichen"]),
+        ("resin_block", &["orange_terracotta"]),
+        ("dried_ghast", &["soul_sand"]),
+        ("cactus_flower", &["pink_tulip"]),
+        ("test_block", &["structure_block"]),
+        ("test_instance_block", &["structure_block"]),
+        ("short_dry_grass", &["short_grass", "grass"]),
+        ("tall_dry_grass", &["short_grass", "grass"]),
+        ("straw_bed", &["yellow_bed"]),
+        ("copper_nugget", &["iron_nugget"]),
+        ("netherite_horse_armor", &["diamond_horse_armor"]),
+        ("sulfur_spike", &["pointed_dripstone"]),
+    ];
+    if let Some((_, c)) = EXACT.iter().find(|(n, _)| *n == path) {
+        return c.iter().map(|c| mc(c)).collect();
     }
-    if name.starts_with("minecraft:music_disc_") {
-        return Some("minecraft:music_disc_13".to_owned());
+    if let Some(material) = path.strip_suffix("_spear") {
+        return vec![mc(&format!("{material}_sword"))];
     }
-    name.ends_with("_harness")
-        .then(|| "minecraft:saddle".to_owned())
+    if path.starts_with("music_disc_") {
+        return vec![mc("music_disc_13")];
+    }
+    if path.ends_with("_harness") {
+        return vec![mc("saddle")];
+    }
+    if let Some(plant) = path.strip_prefix("potted_") {
+        return stand_ins(plant)
+            .iter()
+            .map(|s| mc(&format!("potted_{}", s.trim_start_matches("minecraft:"))))
+            .collect();
+    }
+    if let Some(entity) = path.strip_suffix("_spawn_egg") {
+        let entity = mc(entity);
+        return ENTITY_STAND_INS
+            .iter()
+            .filter(|(n, _)| *n == entity)
+            .flat_map(|(_, s)| s.iter())
+            .map(|s| format!("{s}_spawn_egg"))
+            .collect();
+    }
+    if let Some(material) = path.strip_suffix("_nautilus_armor") {
+        let material = if material == "netherite" {
+            "diamond"
+        } else {
+            material
+        };
+        return vec![
+            mc(&format!("{material}_horse_armor")),
+            mc("iron_horse_armor"),
+        ];
+    }
+    if let Some(colour) = path.strip_suffix("_cushion") {
+        return vec![mc(&format!("{colour}_carpet"))];
+    }
+    if path.ends_with("_shelf") {
+        return vec![mc("oak_shelf"), mc("chiseled_bookshelf")];
+    }
+    if let Some(prefix) = path.strip_suffix("copper_golem_statue") {
+        // The copper block of the same oxidation.
+        let block = match prefix {
+            "" => "copper_block".to_owned(),
+            "waxed_" => "waxed_copper_block".to_owned(),
+            p => format!("{p}copper"),
+        };
+        return vec![mc(&block), mc("copper_block")];
+    }
+    for (stone, like) in [("sulfur", "sandstone"), ("cinnabar", "red_sandstone")] {
+        let Some(at) = path.find(stone) else {
+            continue;
+        };
+        let (prefix, rest) = (&path[..at], &path[at + stone.len()..]);
+        let shape = ["_slab", "_stairs", "_wall"]
+            .into_iter()
+            .find(|s| rest.ends_with(s))
+            .unwrap_or("");
+        let bricks = rest.starts_with("_brick");
+        if !matches!(rest, "" | "_slab" | "_stairs" | "_wall" | "_bricks")
+            && !(bricks && !shape.is_empty())
+        {
+            continue;
+        }
+        let style = match prefix {
+            "polished_" => "smooth_",
+            "chiseled_" => "chiseled_",
+            _ if bricks => "cut_",
+            _ => "",
+        };
+        return vec![
+            mc(&format!("{style}{like}{shape}")),
+            mc(&format!("{like}{shape}")),
+        ];
+    }
+    Vec::new()
 }
 
 /// Entries whose ids the hand-written step code needs (renamed components, placeholders).
@@ -456,10 +554,9 @@ fn step(old: &Facts, new: &Facts, cb: &[String], sb: &[String]) -> Result<String
         let remap = remap_by_name(&oe, &ne, |name| {
             if SIMILAR.contains(registry) {
                 // Blocks and items without a similar older one show as stone.
-                let stand_in = (*registry == "minecraft:item")
-                    .then(|| item_stand_in(name))
-                    .flatten()
-                    .and_then(|s| oe.iter().position(|o| *o == s));
+                let stand_in = stand_ins(name)
+                    .iter()
+                    .find_map(|s| oe.iter().position(|o| o == s));
                 stand_in
                     .or_else(|| similar(name, &oe))
                     .or_else(|| oe.iter().position(|e| e == "minecraft:stone"))
@@ -967,10 +1064,17 @@ fn block_states(old: &Facts, new: &Facts) -> (Vec<Option<usize>>, Vec<Option<usi
 
     let mut to_old = vec![None; new_total];
     for b in &new.blocks {
+        // Blocks without a stand-in or a similar older one show as stone.
         let target = old_by_name
             .get(b.name.as_str())
             .copied()
-            .or_else(|| similar(&b.name, &old_names).and_then(|i| old.blocks.get(i)));
+            .or_else(|| {
+                stand_ins(&b.name)
+                    .iter()
+                    .find_map(|s| old_by_name.get(s.as_str()).copied())
+            })
+            .or_else(|| similar(&b.name, &old_names).and_then(|i| old.blocks.get(i)))
+            .or_else(|| old_by_name.get("minecraft:stone").copied());
         for s in b.first_state..b.first_state + b.state_count() {
             if let Some(slot) = to_old.get_mut(s) {
                 *slot = Some(target.map_or(0, |t| state_in(t, b, s)));

@@ -19,12 +19,31 @@ use crate::survival::player::Env;
 /// `getVehicleAttachmentPoint` height of a passenger (`Avatar.DEFAULT_VEHICLE_ATTACHMENT`,
 /// `ridingOffset`).
 fn vehicle_attachment(ents: &Entities, passenger: EntityId) -> f64 {
-    if ents.player(passenger).is_some() {
-        return 0.6;
+    // The attachments scale with the dimensions (`EntityDimensions.scale`).
+    if let Some(p) = ents.player(passenger) {
+        let scale = crate::effect::attribute_map::scale_of(&p.survival.effects.modifiers);
+        #[allow(clippy::cast_possible_truncation)]
+        return if scale == 1.0 {
+            0.6
+        } else {
+            0.6 * f64::from(scale as f32)
+        };
     }
     let Some(m) = ents.mob(passenger) else {
         return 0.0;
     };
+    let attachment = unscaled_vehicle_attachment(m);
+    let scale = crate::effect::attribute_map::scale_of(&m.effects.modifiers);
+    if scale == 1.0 {
+        attachment
+    } else {
+        #[allow(clippy::cast_possible_truncation)]
+        let s = scale as f32;
+        attachment * f64::from(s)
+    }
+}
+
+fn unscaled_vehicle_attachment(m: &crate::mob::MobData) -> f64 {
     // `EntityType.Builder.ridingOffset(offset)`: the vehicle attachment is `-offset`.
     let offset = match m.kind {
         // `Zombie.BABY_DIMENSIONS` attaches at 0.1875 (husks, drowned, zombie villagers and
@@ -788,7 +807,16 @@ pub fn position_riders_of(ents: &mut Entities, vehicle: EntityId) {
             Vec3::new(0.0, crate::minecart::passenger_height(ents, p), 0.0)
         } else if let Some(m) = ents.mob(vehicle) {
             let scale = if m.baby { 0.5 } else { 1.0 };
-            let base = Vec3::new(0.0, mob_passenger_height(m.kind, height) * scale, 0.0);
+            // The `minecraft:scale` attribute: the dimensions carry it already, the fixed
+            // attachments are scaled with it.
+            let attr = crate::effect::attribute_map::scale_of(&m.effects.modifiers);
+            let h = mob_passenger_height(m.kind, height);
+            #[allow(clippy::cast_possible_truncation)]
+            let base = if attr == 1.0 || h != mob_passenger_height(m.kind, height + 1.0) {
+                Vec3::new(0.0, h * scale, 0.0)
+            } else {
+                Vec3::new(0.0, h * f64::from(scale as f32 * attr as f32), 0.0)
+            };
             if crate::mob::fam::companion::is_horse(m.kind) {
                 #[allow(clippy::cast_possible_truncation)]
                 let s = scale as f32;
@@ -828,6 +856,23 @@ pub fn position_all_riders(ents: &mut Entities) {
     while let Some(v) = stack.pop() {
         position_riders_of(ents, v);
         stack.extend(ents.riding.passengers_of(v).iter().rev().copied());
+    }
+}
+
+/// `Player.rideTick`'s `wantsToStopRiding`: a player who holds sneak (its last `player_input`)
+/// gets off its vehicle after the vehicles ticked, before the passengers are placed.
+pub fn stop_riding_sneaking_players(ents: &mut Entities, env: &mut Env<'_>) {
+    if ents.riding.is_empty() {
+        return;
+    }
+    let sneaking: Vec<EntityId> = ents
+        .players
+        .iter()
+        .filter(|(id, p)| p.connection.vehicle.input.shift && ents.riding.vehicle_of(*id).is_some())
+        .map(|(id, _)| id)
+        .collect();
+    for player in sneaking {
+        stop_riding(ents, env, player);
     }
 }
 
@@ -1057,6 +1102,7 @@ pub fn boost(
     player: EntityId,
     stack: &mut crate::item::ItemStack,
     creative: bool,
+    hand: vanillite_protocol::packets::play::serverbound::Hand,
 ) -> bool {
     let Some(vehicle) = ents.vehicle_of(player) else {
         return false;
@@ -1083,16 +1129,9 @@ pub fn boost(
     if creative {
         return true;
     }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(stack, "minecraft:unbreaking"));
-    let mut n = 0;
-    for _ in 0..cost {
-        #[allow(clippy::cast_precision_loss)]
-        let level = unbreaking.max(0) as f32;
-        // `remove_binomial`: the draw removes the point below level / (level + 1).
-        if unbreaking <= 0 || env.random.next_float() >= level / (level + 1.0) {
-            n += 1;
-        }
+    let n = crate::durability::change(stack, cost, false, env.random);
+    if n == 0 {
+        return true;
     }
     let d = crate::item::damage(stack) + n;
     if n > 0
@@ -1111,6 +1150,16 @@ pub fn boost(
         }
     }
     if d >= crate::item::max_damage(stack) {
+        // `onEquippedItemBroken`.
+        let slot = match hand {
+            vanillite_protocol::packets::play::serverbound::Hand::MainHand => {
+                crate::item::EquipmentSlot::MainHand
+            }
+            vanillite_protocol::packets::play::serverbound::Hand::OffHand => {
+                crate::item::EquipmentSlot::OffHand
+            }
+        };
+        crate::durability::broken_in_env(ents, env, player, slot);
         // `hurtAndConvertOnBreak(cost, FISHING_ROD)`: the components stay, the damage resets.
         let mut rod = stack.clone();
         rod.item = vanillite_data::item::ids::FISHING_ROD.0;

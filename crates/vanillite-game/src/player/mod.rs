@@ -190,6 +190,21 @@ pub fn dimensions(pose: Pose) -> Dimensions {
     Dimensions { width, height }
 }
 
+/// `LivingEntity.getDimensions`: the pose's size scaled by `minecraft:scale` (sleeping keeps
+/// its own).
+pub fn scaled_dimensions(pose: Pose, scale: f64) -> Dimensions {
+    let d = dimensions(pose);
+    if scale == 1.0 || pose == Pose::Sleeping {
+        return d;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
+    let s = scale as f32;
+    Dimensions {
+        width: d.width * s,
+        height: d.height * s,
+    }
+}
+
 /// Fires a player event of `kind` (`vanillite_abi::event`; `entity` the player) when a plugin
 /// listens: `fill` sets the kind's other fields. Returns the event with the handlers'
 /// changes, `None` when nobody listens (nothing is built then).

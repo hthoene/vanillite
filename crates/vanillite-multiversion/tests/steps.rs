@@ -364,11 +364,44 @@ fn new_items_have_stand_ins() {
             "music_disc_tears",
             "music_disc_13",
         ),
+        (
+            &g::v1_21_8::TABLES,
+            "1.21.8",
+            "1.21.10",
+            "copper_golem_statue",
+            "copper_block",
+        ),
+        (
+            &g::v1_21_5::TABLES,
+            "1.21.5",
+            "1.21.6",
+            "dried_ghast",
+            "soul_sand",
+        ),
+        (
+            &g::v1_21_4::TABLES,
+            "1.21.4",
+            "1.21.5",
+            "wildflowers",
+            "pink_petals",
+        ),
     ];
     for (step, older, newer, item, want) in cases {
         let (older, newer) = (Ids::load(older), Ids::load(newer));
         assert_eq!(
             step.older("minecraft:item", newer.old_id("minecraft:item", item)),
+            Some(older.old_id("minecraft:item", want)),
+            "{item}"
+        );
+    }
+    // 26.3 content for 26.2 clients.
+    let older = Ids::load("26.2");
+    for (item, want) in [
+        ("red_shrub", "dead_bush"),
+        ("white_cushion", "white_carpet"),
+    ] {
+        assert_eq!(
+            g::v26_2::TABLES.older("minecraft:item", older.new_id("minecraft:item", item)),
             Some(older.old_id("minecraft:item", want)),
             "{item}"
         );

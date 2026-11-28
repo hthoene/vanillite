@@ -229,8 +229,14 @@ pub fn ambient_sound(m: &MobData) -> Option<&'static str> {
     })
 }
 
-/// `Panda.tick`: worry in thunder, unhappiness, sneezing, rolling and eating.
-pub fn before_tick(t: &mut Tick<'_, '_>) {
+/// `PandaBreedGoal.canUse` after `super.canUse()`: not unhappy and bamboo near.
+pub(crate) fn breed_allowed(t: &Tick<'_, '_>) -> bool {
+    st(t.mob_ref()).unhappy == 0 && bamboo_nearby(t)
+}
+
+/// `Panda.tick` after `super.tick()`: worry in thunder, unhappiness, sneezing, rolling and
+/// eating.
+pub fn after_tick(t: &mut Tick<'_, '_>) {
     if kind_gene(t.mob_ref()) == gene::WORRIED {
         if t.cx.env.thundering && !t.mob_ref().fluids.in_water() {
             set(t, SITTING, true);
@@ -662,14 +668,17 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
         }
         Goal::BreedCheck { unhappy_cooldown } => {
             // Holds the breed goal back while no bamboo is near (it never runs itself).
+            // `super.canUse()`: in love with a free partner near.
+            if t.mob_ref().in_love <= 0 || crate::mob::animal::free_partner(t).is_none() {
+                return false;
+            }
             let m = t.mob_ref();
-            if m.in_love <= 0 || st(m).unhappy != 0 || bamboo_nearby(t) {
+            if st(m).unhappy != 0 || bamboo_nearby(t) {
                 return false;
             }
             if *unhappy_cooldown <= m.tick_count {
                 st_mut(t.mob()).unhappy = 32;
                 *unhappy_cooldown = t.mob_ref().tick_count + 600;
-                t.mob().in_love = 0;
                 t.core_mut().mark_data_dirty();
             }
             false

@@ -12,12 +12,13 @@
 //!             [<scenario>...]
 //! ```
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use vanillite_test::scenario::Scenario;
-use vanillite_test::soak::{self, Java, Report};
+use vanillite_test::soak::{self, Java, Report, Verdict};
 
 struct Args {
     java: Java,
@@ -130,8 +131,8 @@ fn main() -> std::process::ExitCode {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     reports.sort_by_key(|r| r.0);
     let mut summary = format!(
-        "{} ({} scenarios, {:.1} min)\n\n| scenario | ticks | result | Vanilla \
-         recording | Vanillite |\n|---|---|---|---|---|\n",
+        "{} ({} scenarios, {:.1} min)\n\n| scenario | ticks | result | activity per 100 ticks (Vanillite) | \
+         Vanilla recording | Vanillite |\n|---|---|---|---|---|---|\n",
         args.title,
         reports.len(),
         started.elapsed().as_secs_f64() / 60.0
@@ -140,6 +141,17 @@ fn main() -> std::process::ExitCode {
         summary.push_str(&r.row());
         summary.push('\n');
     }
+    let count = |f: &dyn Fn(&Report) -> bool| reports.iter().filter(|(_, r)| f(r)).count();
+    let _ = write!(
+        summary,
+        "\n**{} same as Vanilla and active, {} inactive (same, but nothing changes in the \
+         region), {} diverging, {} errors or stopped** of {}.\n",
+        count(&|r| r.verdict == Verdict::Same && !r.activity.idle()),
+        count(&|r| r.verdict == Verdict::Same && r.activity.idle()),
+        count(&|r| matches!(r.verdict, Verdict::Diverges { .. })),
+        count(&|r| matches!(r.verdict, Verdict::Error(_) | Verdict::Stopped(_))),
+        reports.len()
+    );
     summary.push_str("\nDetails per scenario: `<scenario>.md`.\n");
     let path = args.out.join("summary.md");
     if let Err(e) = std::fs::write(&path, &summary) {

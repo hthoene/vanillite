@@ -75,6 +75,16 @@ step light-sweep 20 cargo xtask light sweep --seed "$(($(date -u +%s) / 86400 + 
 # nightly replayed yet, against Vanilla.
 step session-replay 50 env VANILLITE_PARITY_PROFILE=release-fast bash scripts/testserver/replay-recordings.sh "$HOME/recordings" "$out"
 
+# Coverage of Vanilla's code by the parity scenarios (#257, #267): every scenario on the pinned
+# jar under JaCoCo, two 2 GiB recorders (the host has 6 GiB). Each night's gameplay and
+# per-system figures go to coverage-history.jsonl next to the nightly runs; coverage-trend.md
+# there is the readable trend (`cargo xtask parity coverage --trend <history>` prints it too).
+history=$(dirname "$out")/coverage-history.jsonl
+rm -f target/parity-coverage/summary.md
+step parity-coverage 50 cargo xtask parity coverage --jobs 2 --heap 2g --history "$history"
+[ -f target/parity-coverage/summary.md ] && cp target/parity-coverage/summary.md "$out/parity-coverage.md"
+[ -f "$history" ] && cargo xtask parity coverage --trend "$history" > "$(dirname "$out")/coverage-trend.md" 2>/dev/null
+
 # Soak parity runs (#166): game days against Vanilla, per-tick checksums; Vanilla's run is
 # recorded once per golden key, so only a new jar, harness or scenario costs its recording.
 soak=$(($(minutes_left) / 2))
@@ -103,6 +113,9 @@ if [ -f "$out/session-replay/summary.md" ]; then
 fi
 if [ -f "$out/parity-worlds.md" ]; then
     { echo; echo "## parity worlds"; sed '1d' "$out/parity-worlds.md"; } >> "$out/summary.md"
+fi
+if [ -f "$out/parity-coverage.md" ]; then
+    { echo; echo "## parity coverage"; sed -n '/^## Per system/,/^## The/p' "$out/parity-coverage.md" | sed '1d;$d'; } >> "$out/summary.md"
 fi
 if [ -f "$out/parity-soak/summary.md" ]; then
     { echo; echo "## parity soak"; cat "$out/parity-soak/summary.md"; } >> "$out/summary.md"

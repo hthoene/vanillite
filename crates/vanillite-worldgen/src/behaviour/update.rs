@@ -21,7 +21,7 @@ use super::survive::{
     vine_has_faces,
 };
 use super::tables::{can_burn, tags};
-use super::{SupportType, can_attach_multiface, is_face_sturdy};
+use super::{SupportType, can_attach_multiface, face_sturdy_at, is_face_sturdy};
 
 const AIR: BlockState = BlockState::AIR;
 /// `Fluids.WATER` (`minecraft:fluid` id).
@@ -380,7 +380,7 @@ pub(crate) fn update_shape(
             state.set_flag(direction_name(dir), connect)
         }
         Class::Comparator => {
-            if dir == Direction::Down && !diode_can_survive_on(neighbour) {
+            if dir == Direction::Down && !diode_can_survive_on(level, pos.below(), neighbour) {
                 AIR
             } else {
                 state
@@ -388,7 +388,7 @@ pub(crate) fn update_shape(
         }
         Class::Repeater => {
             let facing = state.direction("facing").unwrap_or(Direction::North);
-            if dir == Direction::Down && !diode_can_survive_on(neighbour) {
+            if dir == Direction::Down && !diode_can_survive_on(level, pos.below(), neighbour) {
                 AIR
             } else if axis(dir) != axis(facing) {
                 state.set_flag("locked", repeater_alternate_signal(level, pos, facing) > 0)
@@ -415,7 +415,8 @@ pub(crate) fn update_shape(
                 return state;
             }
             let face = dir.opposite();
-            let solid = is_face_sturdy(neighbour, face, SupportType::Full);
+            let solid =
+                face_sturdy_at(level, pos.relative(dir), neighbour, face, SupportType::Full);
             state.set_flag(
                 direction_name(dir),
                 fence_connects_to(state, neighbour, solid, face),
@@ -426,7 +427,13 @@ pub(crate) fn update_shape(
             if !is_horizontal(dir) {
                 return state;
             }
-            let solid = is_face_sturdy(neighbour, dir.opposite(), SupportType::Full);
+            let solid = face_sturdy_at(
+                level,
+                pos.relative(dir),
+                neighbour,
+                dir.opposite(),
+                SupportType::Full,
+            );
             let attaches = !is_exception_for_connection(neighbour) && solid
                 || class_of(neighbour) == Class::IronBars
                 || tags().blocks.walls.contains(neighbour);
@@ -1024,7 +1031,9 @@ pub fn fire_state_with_age(level: &impl BlockLevel, pos: BlockPos, age: i32) -> 
     }
     // `FireBlock.getStateForPlacement(level, pos)`.
     let mut fire = ids::FIRE.default_state();
-    if !can_burn(below) && !is_face_sturdy(below, Direction::Up, SupportType::Full) {
+    if !can_burn(below)
+        && !face_sturdy_at(level, below_pos, below, Direction::Up, SupportType::Full)
+    {
         for direction in Direction::ALL {
             if direction != Direction::Down {
                 let burns = can_burn(level.block(pos.relative(direction)));
@@ -1278,7 +1287,7 @@ fn redstone_wire(
 ) -> BlockState {
     match dir {
         Direction::Down => {
-            if redstone_wire_can_survive_on(neighbour) {
+            if redstone_wire_can_survive_on(level, pos.below(), neighbour) {
                 state
             } else {
                 AIR
@@ -1347,10 +1356,16 @@ pub fn wire_connecting_side(
     let side_pos = pos.relative(direction);
     let side = level.block(side_pos);
     if can_connect_up {
-        let placeable_above =
-            class_of(side) == Class::TrapDoor || redstone_wire_can_survive_on(side);
+        let placeable_above = class_of(side) == Class::TrapDoor
+            || redstone_wire_can_survive_on(level, side_pos, side);
         if placeable_above && should_wire_connect_to(level.block(side_pos.above()), None) {
-            return if is_face_sturdy(side, direction.opposite(), SupportType::Full) {
+            return if face_sturdy_at(
+                level,
+                side_pos,
+                side,
+                direction.opposite(),
+                SupportType::Full,
+            ) {
                 "up"
             } else {
                 "side"

@@ -706,6 +706,16 @@ impl ScenarioWorld for ServerWorld {
         self.server.step();
     }
 
+    fn block_entities(&self, min: BlockPos, max: BlockPos, out: &mut Vec<String>) {
+        crate::game_world::observe_block_entities(
+            self.level(),
+            |p| self.is_loaded(p),
+            min,
+            max,
+            out,
+        );
+    }
+
     fn block_ticks(&self, min: BlockPos, max: BlockPos, out: &mut Vec<TickObs>) {
         let level = self.level();
         observe_ticks(level, level.chunks.block_ticks(), min, max, out, |kind| {
@@ -913,7 +923,7 @@ impl ScenarioWorld for ServerWorld {
 
     /// As the server at the origin of the overworld, before the tick.
     fn command(&mut self, line: &str) -> Result<(), String> {
-        self.server.command(line);
+        self.server.command_at(line, vanillite_base::Vec3::ZERO);
         Ok(())
     }
 

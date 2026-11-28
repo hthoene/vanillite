@@ -1,0 +1,27 @@
+{
+  "description": "attribute base set, modifiers (add, value get, remove) and the full saved data of a pig with a chicken passenger (Brain, attributes, impulse fields, Passengers); results stored into a probe chest.",
+  "tier": "fast",
+  "dimensions": true,
+  "block_entities": true,
+  "region": [[-16, -61, -16], [31, -58, 31]],
+  "ticks": 3,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [1.5, -60.0, 2.5]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "setblock 0 -60 0 minecraft:chest"},
+    {"tick": 1, "op": "command", "command": "item replace block 0 -60 0 container.0 with minecraft:paper"},
+    {"tick": 2, "op": "command", "command": "summon minecraft:pig 2.5 -60 2.5 {NoAI:1b,Tags:[\"p\"],Passengers:[{id:\"minecraft:chicken\",NoAI:1b,Tags:[\"c\"]}]}"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p a3 int 1 run attribute @e[tag=p,limit=1] minecraft:max_health base set 20"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p a4 int 1 run attribute @e[tag=p,limit=1] minecraft:movement_speed modifier add t:m 0.5 add_multiplied_total"},
+    {"tick": 2, "op": "command", "command": "execute store success storage t:p a5 int 1 run attribute @e[tag=p,limit=1] minecraft:movement_speed modifier add t:m 0.5 add_value"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p a6 int 1 run attribute @e[tag=p,limit=1] minecraft:movement_speed get 1000"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p a7 int 1 run attribute @e[tag=p,limit=1] minecraft:movement_speed modifier value get t:m 100"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p a8 int 1 run attribute @e[tag=p,limit=1] minecraft:movement_speed modifier remove t:m"},
+    {"tick": 2, "op": "command", "command": "execute store result storage t:p aa int 1 run attribute @e[tag=p,limit=1] minecraft:scale base set 1.5"},
+    {"tick": 2, "op": "command", "command": "data modify storage t:p pig set from entity @e[tag=p,limit=1] {}"},
+    {"tick": 2, "op": "command", "command": "data remove storage t:p pig.UUID"},
+    {"tick": 2, "op": "command", "command": "data remove storage t:p pig.Passengers[0].UUID"},
+    {"tick": 2, "op": "command", "command": "data modify block 0 -60 0 Items[0].components.\"minecraft:custom_data\" set from storage t:p"}
+  ]
+}

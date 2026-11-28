@@ -341,8 +341,18 @@ impl ServerBuilder {
         let (scheduler, origin) = match self.scheduler.take() {
             Some(filled) => filled,
             None => {
-                let pool = ComputePool::with_budget(workers, Arc::clone(&budget))
-                    .map_err(|e| StartError::io(&dir, e))?;
+                // Tick helpers for the parallel tick phases: one per core besides the tick
+                // thread, at the tick threads' priority (the workers run below it).
+                let phase_threads = match config.server.threads.tick_phases {
+                    0 => budget.limits().default_workers(),
+                    n => usize::from(n),
+                };
+                let pool = ComputePool::with_budget(
+                    workers,
+                    phase_threads.saturating_sub(1),
+                    Arc::clone(&budget),
+                )
+                .map_err(|e| StartError::io(&dir, e))?;
                 (Box::new(pool) as Box<dyn Scheduler>, Origin::BuiltIn)
             }
         };
@@ -595,7 +605,7 @@ impl ServerBuilder {
             level,
             seed: level_seed(&config.properties.level_seed),
             registries: prepared.registries.clone(),
-            game_at_start: game,
+            game_data: std::sync::RwLock::new(game),
             recipes_packet: std::sync::RwLock::new(recipes_packet),
             spawn_protection: config.properties.spawn_protection,
             systems: crate::systems::GameSystems::new(
@@ -603,7 +613,7 @@ impl ServerBuilder {
                 u8::try_from(config.properties.function_permission_level).unwrap_or(2),
                 Arc::clone(&random_sequences),
             ),
-            packs: data_packs.with_loaded(packs.clone()),
+            packs: data_packs.with_loaded(packs.clone(), self.harness),
             templates,
             tick_rate: std::sync::Mutex::new(TickRateManager::default()),
             tick_times: std::sync::Mutex::new(crate::tick_rate::TickTimes::default()),
@@ -2619,6 +2629,18 @@ impl Server {
     /// Runs a console command now, as the global pre-phase runs one.
     pub fn command(&mut self, line: &str) {
         self.run_console_command(line);
+    }
+
+    /// Runs a command as the console at `pos` of the overworld now (parity scenarios).
+    pub fn command_at(&mut self, line: &str, pos: vanillite_base::Vec3) {
+        let global = Arc::clone(&self.global);
+        let line = line.to_owned();
+        self.run_in_world(
+            WorldId(0),
+            Box::new(move |w: &mut ServerWorld| {
+                crate::commands::run_console_command_at(w, &global, &line, pos);
+            }),
+        );
     }
 
     /// Sets the game time of the server and every world (`setGameTime` of the overworld's

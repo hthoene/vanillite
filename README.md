@@ -24,7 +24,7 @@ plugins over a stable C ABI. Vanillite always targets the newest Minecraft relea
 **26.3**; older clients can join through the built-in version translation, Bedrock players
 through the built-in Bedrock frontend.
 
-> **Beta.** Vanillite `0.1.0-beta.2` is a beta release ([changes](CHANGELOG.md)). Back up your worlds and
+> **Beta.** Vanillite `0.1.0-beta.3` is a beta release ([changes](CHANGELOG.md)). Back up your worlds and
 > report problems in the [issues](https://github.com/hthoene/vanillite/issues).
 
 ## Highlights
@@ -121,7 +121,7 @@ volumes:
 |---|---|
 | `beta` | the newest beta, also across Minecraft versions |
 | `mc26.3-beta` | the newest beta for Minecraft 26.3 |
-| `0.1.0-beta.2-mc26.3` | exactly this release |
+| `0.1.0-beta.3-mc26.3` | exactly this release |
 
 The health check (`vanillite health`) sends a status ping. A bind-mounted `/data` must be
 writable by UID 10001. Console commands go through `docker attach` (start the container with

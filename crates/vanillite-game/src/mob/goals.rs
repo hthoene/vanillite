@@ -1097,6 +1097,21 @@ fn fluid_jump_threshold(t: &Tick<'_, '_>) -> f64 {
 
 /// `canUse`.
 pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
+    if matches!(g, Goal::Melee { .. }) {
+        match t.mob_ref().kind {
+            // `BeeAttackGoal`: only an angry bee that has not stung yet.
+            Kind::Bee => return can_use_goal(t, g) && super::fam::wildlife::bee::can_attack(t),
+            // `FoxMeleeAttackGoal`: not while sitting, sleeping, crouching or faceplanted.
+            Kind::Fox => {
+                return super::fam::companion::fox::can_melee(t.mob_ref()) && can_use_goal(t, g);
+            }
+            _ => {}
+        }
+    }
+    can_use_goal(t, g)
+}
+
+fn can_use_goal(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
     match g {
         Goal::Fam(f) => super::fam::goal_can_use(t, f),
         Goal::Common(c) => super::common::can_use(t, c),
@@ -1110,7 +1125,9 @@ pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
                 .mob_ref()
                 .last_damage_source(t.game_time())
                 .is_some_and(|k| t.env.types.is(k, tag::PANIC_CAUSES));
-            if !panics {
+            // `AbstractHorse.MountPanicGoal`: not while a mob steers the horse.
+            let mount_panic = matches!(t.mob_ref().kind, Kind::Horse | Kind::Donkey | Kind::Mule);
+            if !panics || mount_panic && super::controlling_mob_passenger(t.ents, t.id).is_some() {
                 return false;
             }
             match super::animal::panic_pos(t) {
@@ -1286,7 +1303,10 @@ pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
                 return false;
             }
             *partner = super::animal::free_partner(t);
+            // `PandaBreedGoal`: only without unhappiness and with bamboo near.
             partner.is_some()
+                && (t.mob_ref().kind != Kind::Panda
+                    || super::fam::companion::panda::breed_allowed(t))
         }
         Goal::Tempt {
             items,
@@ -1387,6 +1407,14 @@ pub(crate) fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
 
 /// `canContinueToUse`.
 pub(crate) fn can_continue(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
+    if matches!(g, Goal::Melee { .. }) && t.mob_ref().kind == Kind::Bee {
+        // `BeeAttackGoal`: only an angry bee that has not stung yet.
+        return can_continue_goal(t, g) && super::fam::wildlife::bee::can_attack(t);
+    }
+    can_continue_goal(t, g)
+}
+
+fn can_continue_goal(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
     match g {
         Goal::Fam(f) => super::fam::goal_can_continue(t, f),
         Goal::Common(c) => super::common::can_continue(t, c),
@@ -1534,6 +1562,10 @@ pub(crate) fn target_can_continue(t: &mut Tick<'_, '_>, state: &mut TargetState)
 
 /// `start`.
 pub(crate) fn start(t: &mut Tick<'_, '_>, g: &mut Goal) {
+    if matches!(g, Goal::Melee { .. }) && t.mob_ref().kind == Kind::Fox {
+        // `FoxMeleeAttackGoal.start`.
+        super::fam::companion::fox::melee_start(t);
+    }
     match g {
         Goal::Fam(f) => super::fam::goal_start(t, f),
         Goal::Common(c) => super::common::start(t, c),

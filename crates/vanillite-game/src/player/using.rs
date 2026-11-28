@@ -35,6 +35,14 @@ pub struct UsingItem {
     pub emptied: bool,
 }
 
+/// The equipment slot of a hand.
+pub(crate) fn hand_slot(hand: Hand) -> crate::item::EquipmentSlot {
+    match hand {
+        Hand::MainHand => crate::item::EquipmentSlot::MainHand,
+        Hand::OffHand => crate::item::EquipmentSlot::OffHand,
+    }
+}
+
 fn hand_index(ents: &Entities, player: EntityId, hand: Hand) -> usize {
     match hand {
         Hand::MainHand => ents.player(player).map_or(0, |p| p.inventory.selected),
@@ -398,7 +406,11 @@ pub fn tick_brushes(level: &mut crate::level::Level) {
             .and_then(|p| p.inventory.get_mut(i).map(std::mem::take))
             .unwrap_or_default();
         let time = level.game_time();
-        crate::block::brushable::brush(level, time, player, pos, face, &mut brush);
+        let slot = match u.hand {
+            Hand::MainHand => crate::item::EquipmentSlot::MainHand,
+            Hand::OffHand => crate::item::EquipmentSlot::OffHand,
+        };
+        crate::block::brushable::brush(level, time, player, pos, face, &mut brush, slot);
         if let Some(p) = level.entities.player_mut(player)
             && let Some(slot) = p.inventory.get_mut(i)
         {
@@ -413,8 +425,10 @@ fn brush_hit(
     level: &crate::level::Level,
     player: EntityId,
 ) -> Option<(vanillite_base::BlockPos, vanillite_base::Direction)> {
-    /// The `block_interaction_range` attribute of players.
-    const RANGE: f64 = 4.5;
+    // `blockInteractionRange()`: the attribute (creative players have its +0.5 modifier).
+    let range = level.entities.player(player).map_or(4.5, |p| {
+        crate::player::play::interaction_ranges(&p.inventory, p.game_mode).0
+    });
     let e = level.entities.store.get(player)?;
     let info = e.kind().info();
     let eye_height =
@@ -424,9 +438,9 @@ fn brush_hit(
     let eye = Vec3::new(p.x, p.y + eye_height, p.z);
     let view = crate::mob::view_vector(rot.x_rot, rot.y_rot);
     let to = Vec3::new(
-        eye.x + view.x * RANGE,
-        eye.y + view.y * RANGE,
-        eye.z + view.z * RANGE,
+        eye.x + view.x * range,
+        eye.y + view.y * range,
+        eye.z + view.z * range,
     );
     let (pos, at) = crate::mob::physics::clip(level, eye, to)?;
     // An entity on the way is hit first (`getEntityHitResult` with `isPickable`).
@@ -1013,6 +1027,7 @@ fn crossbow_shoot(
         return;
     };
     let random = &mut *env.random;
+    let mut broke = false;
     crate::crossbow::shoot(
         ents,
         network_ids,
@@ -1024,8 +1039,17 @@ fn crossbow_shoot(
         power,
         1.0,
         None,
-        |ents, amount| !creative && hurt_held(ents, random, player, i, amount),
+        |ents, amount| {
+            let b = !creative && hurt_held(ents, random, player, i, amount);
+            broke |= b;
+            b
+        },
     );
+    if broke && let Some(selected) = ents.player(player).map(|p| p.inventory.selected) {
+        // `onEquippedItemBroken` of the crossbow's hand.
+        let slot = crate::mob::attack::inventory_slot(selected, i);
+        crate::durability::broken_in_env(ents, env, player, slot);
+    }
     if let Some(p) = ents.player_mut(player) {
         p.survival.random = own;
     }
@@ -1043,8 +1067,9 @@ fn crossbow_shoot(
     }
 }
 
-/// `hurtAndBreak(amount)` of the stack in inventory slot `i` with Unbreaking; whether it
-/// broke.
+/// `hurtAndBreak(amount, player, slot)` of the stack in inventory slot `i`: the
+/// `item_damage` effects (Unbreaking) from the level random; whether it broke (the caller
+/// sends the break event).
 fn hurt_held(
     ents: &mut Entities,
     random: &mut vanillite_base::random::LegacyRandom,
@@ -1055,21 +1080,8 @@ fn hurt_held(
     let Some(stack) = ents.player(player).map(|p| p.inventory.get(i).clone()) else {
         return false;
     };
-    if !item::is_damageable(&stack) {
-        return false;
-    }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-    let level = f32::from(i16::try_from(unbreaking.clamp(0, 255)).unwrap_or(0));
-    let mut points = amount;
-    if unbreaking > 0 {
-        for _ in 0..amount {
-            if random.next_float() < level / (level + 1.0) {
-                points = points.saturating_sub(1);
-            }
-        }
-    }
-    if points <= 0 {
+    let points = crate::durability::change(&stack, amount, false, random);
+    if points == 0 {
         return false;
     }
     let Some(p) = ents.player_mut(player) else {
@@ -1200,7 +1212,6 @@ fn shoot_bow(
     crate::mob::projectile::shoot_arrow(
         ents,
         network_ids,
-        env.random,
         eye,
         dir,
         power * 3.0,
@@ -1211,6 +1222,14 @@ fn shoot_bow(
         power >= 1.0,
         pickup,
     );
+    // `ProjectileWeaponItem.shoot`: the bow's `hurtAndBreak(1, player, hand)` comes before
+    // the sound.
+    if !creative {
+        let i = hand_index(ents, player, u.hand);
+        if hurt_held(ents, env.random, player, i, 1) {
+            crate::durability::broken_in_env(ents, env, player, hand_slot(u.hand));
+        }
+    }
     let pos = ents.store.get(player).map_or(Vec3::ZERO, |e| e.pos());
     let pitch = 1.0 / (env.random.next_float() * 0.4 + 1.2) + power * 0.5;
     let seed = crate::survival::sound_seed();
@@ -1236,28 +1255,6 @@ fn shoot_bow(
         && let Some(s) = p.inventory.get_mut(i)
     {
         s.shrink(1);
-    }
-    if !creative {
-        // The bow loses one durability (with Unbreaking).
-        let unbreaking = crate::player::play::game_data()
-            .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-        let level = f32::from(i16::try_from(unbreaking.clamp(0, 255)).unwrap_or(0));
-        let keeps = unbreaking > 0 && env.random.next_float() >= 1.0 / (level + 1.0);
-        let i = hand_index(ents, player, u.hand);
-        if !keeps && let Some(p) = ents.player_mut(player) {
-            let crate::player::PlayerData {
-                inventory,
-                advancements,
-                stats,
-                ..
-            } = p;
-            if let Some(s) = inventory.get_mut(i)
-                && item::is_damageable(s)
-            {
-                let d = item::damage(s).saturating_add(1);
-                crate::advancements::view::apply_damage(Some(advancements), Some(stats), s, d);
-            }
-        }
     }
 }
 

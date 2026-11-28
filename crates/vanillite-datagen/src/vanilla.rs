@@ -1,7 +1,7 @@
 //! Server jars: download with SHA-1 check, Mojang's data generator, the remapper for obfuscated
 //! jars, our extractor (`tools/extractor`), and the JDK they run on.
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -448,34 +448,37 @@ pub fn str_at<'a>(v: &'a Value, path: &[&str]) -> Result<&'a str> {
 }
 
 pub fn http_json(url: &str) -> Result<Value> {
-    let body = retry(url, || {
-        let mut body = Vec::new();
-        ureq::get(url)
-            .call()
-            .map_err(|e| format!("{url}: {e}"))?
-            .into_body()
-            .into_reader()
-            .read_to_end(&mut body)
-            .map_err(|e| format!("{url}: {e}"))?;
-        Ok(body)
-    })?;
+    let body = retry(url, || curl(url, None))?;
     serde_json::from_slice(&body).map_err(|e| format!("{url}: {e}"))
 }
 
 pub fn download(url: &str, to: &Path) -> Result<()> {
     let tmp = to.with_extension("part");
-    retry(url, || {
-        let mut file =
-            std::fs::File::create(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        let mut reader = ureq::get(url)
-            .call()
-            .map_err(|e| format!("{url}: {e}"))?
-            .into_body()
-            .into_reader();
-        std::io::copy(&mut reader, &mut file).map_err(|e| format!("{url}: {e}"))?;
-        file.flush().map_err(|e| format!("{}: {e}", tmp.display()))
-    })?;
+    retry(url, || curl(url, Some(&tmp)))?;
     std::fs::rename(&tmp, to).map_err(|e| format!("{}: {e}", to.display()))
+}
+
+/// Fetches `url` (following redirects) with the system `curl`, into `to` or returned. An HTTP
+/// client crate here would be compiled a second time for every build script that uses this
+/// crate, at the start of every cold build.
+fn curl(url: &str, to: Option<&Path>) -> Result<Vec<u8>> {
+    let mut cmd = Command::new("curl");
+    cmd.args(["--fail", "--silent", "--show-error", "--location"]);
+    if let Some(to) = to {
+        cmd.arg("--output").arg(to);
+    }
+    let out = cmd
+        .arg(url)
+        .output()
+        .map_err(|e| format!("curl (needed to download {url}): {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{url}: curl failed ({}): {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(out.stdout)
 }
 
 /// Runs a network request up to four times (1, 2, 4 s apart): one dropped connection must not

@@ -1,0 +1,60 @@
+{
+  "description": "AdventureModePredicate (#272, I6-21): an adventure player places stone with can_place_on {blocks: grass_block, components: {custom_name}}; BlockPredicate.matches(BlockInWorld) ignores component matchers, so the grass block allows it. A second stack whose predicate names dirt places nothing.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 10,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        5.5,
+        -60.0,
+        5.5
+      ],
+      "game_mode": "adventure"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "use",
+      "entity": "p",
+      "pos": [
+        6,
+        -61,
+        5
+      ],
+      "face": "up",
+      "item": "minecraft:stone",
+      "components": "{\"minecraft:can_place_on\":{blocks:\"minecraft:grass_block\",components:{\"minecraft:custom_name\":\"x\"}}}"
+    },
+    {
+      "tick": 4,
+      "op": "use",
+      "entity": "p",
+      "pos": [
+        4,
+        -61,
+        5
+      ],
+      "face": "up",
+      "item": "minecraft:stone",
+      "components": "{\"minecraft:can_place_on\":{blocks:\"minecraft:dirt\"}}"
+    }
+  ]
+}

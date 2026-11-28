@@ -29,9 +29,6 @@ type Result<T> = std::result::Result<T, i32>;
 /// The longest custom name (its network NBT) a plugin may set: what a name reads back with.
 const MAX_NAME_BYTES: usize = (1 << 16) - 1;
 
-/// The most attribute modifiers one entity takes.
-const MAX_MODIFIERS: usize = 256;
-
 fn flag(on: bool) -> f64 {
     if on { 1.0 } else { 0.0 }
 }
@@ -500,22 +497,16 @@ fn attribute_of(entities: &Entities, id: EntityId, name: &str) -> Result<Attribu
 
 /// `/attribute ... base get` and `/attribute ... get`.
 pub(super) fn attribute(w: &PluginWorld<'_>, entity: u128, name: &str) -> Result<(f64, f64)> {
+    use vanillite_game::effect::attribute_map as map;
     let entities = w.0.entities();
     let id = any_entity(entities, entity)?;
     let a = attribute_of(entities, id, name)?;
-    let kind = entities.store.get(id).ok_or(status::NOT_FOUND)?.kind();
-    if let Some(m) = entities.mob(id) {
-        let base = vanillite_game::effect::living::mob_attribute_base(m, a)
-            .unwrap_or_else(|| a.base_of(kind));
-        return Ok((base, m.effects.attribute(a, base)));
-    }
-    let player = entities.player(id).ok_or(status::INVALID_ARGUMENT)?;
-    let base = a.base_of(kind);
-    Ok((base, player.survival.effects.attribute(a, base)))
+    let base = map::base(entities, id, a).map_err(|_| status::INVALID_ARGUMENT)?;
+    let value = map::value(entities, id, a).map_err(|_| status::INVALID_ARGUMENT)?;
+    Ok((base, value))
 }
 
-/// `/attribute ... base set`: mobs, for the attributes they keep a value of (the others and
-/// players `UNSUPPORTED`); a base outside the attribute's range is `INVALID_ARGUMENT`.
+/// `/attribute ... base set`; a base outside the attribute's range is `INVALID_ARGUMENT`.
 pub(super) fn set_attribute_base(
     w: &mut PluginWorld<'_>,
     entity: u128,
@@ -528,15 +519,8 @@ pub(super) fn set_attribute_base(
     if a.sanitize(value) != value {
         return Err(status::INVALID_ARGUMENT);
     }
-    let m = entities.mob_mut(id).ok_or(status::UNSUPPORTED)?;
-    if !vanillite_game::effect::living::set_mob_attribute_base(m, a, value) {
-        return Err(status::UNSUPPORTED);
-    }
-    // The save keeps the base value.
-    let mut extra = entities.extra(id).cloned().unwrap_or_default();
-    extra.attributes.entry(a, value).base = value;
-    entities.set_extra(id, extra);
-    Ok(())
+    vanillite_game::effect::attribute_map::set_base(entities, id, a, value, false)
+        .map_err(|_| status::INVALID_ARGUMENT)
 }
 
 /// `/attribute ... modifier add` (`INVALID_ARGUMENT` when the id is already there) and
@@ -549,29 +533,13 @@ pub(super) fn attribute_modifier(
     modifier: &str,
     change: Option<(f64, u32)>,
 ) -> Result<()> {
+    use vanillite_game::effect::attribute_map as map;
     let entities = w.0.entities_mut();
     let id = any_entity(entities, entity)?;
     let a = attribute_of(entities, id, name)?;
-    let modifiers = if entities.player(id).is_some() {
-        &mut entities
-            .player_mut(id)
-            .ok_or(status::NOT_FOUND)?
-            .survival
-            .effects
-            .modifiers
-    } else {
-        &mut entities
-            .mob_mut(id)
-            .ok_or(status::INVALID_ARGUMENT)?
-            .effects
-            .modifiers
-    };
     let Some((amount, operation)) = change else {
-        return if modifiers.remove(a, modifier) {
-            Ok(())
-        } else {
-            Err(status::NOT_FOUND)
-        };
+        return map::remove_modifier(entities, id, a, modifier, false)
+            .map_err(|_| status::NOT_FOUND);
     };
     let operation = match operation {
         attribute_op::ADD_VALUE => Operation::AddValue,
@@ -579,14 +547,11 @@ pub(super) fn attribute_modifier(
         attribute_op::ADD_MULTIPLIED_TOTAL => Operation::AddMultipliedTotal,
         _ => return Err(status::INVALID_ARGUMENT),
     };
-    if !amount.is_finite()
-        || modifiers.of(a).any(|m| &*m.id == modifier)
-        || modifiers.iter().count() >= MAX_MODIFIERS
-    {
+    if !amount.is_finite() {
         return Err(status::INVALID_ARGUMENT);
     }
-    modifiers.set(a, modifier, amount, operation);
-    Ok(())
+    map::add_modifier(entities, id, a, modifier, amount, operation, false)
+        .map_err(|_| status::INVALID_ARGUMENT)
 }
 
 /// The mob of a UUID: `INVALID_ARGUMENT` for another entity.

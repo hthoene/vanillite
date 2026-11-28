@@ -1,0 +1,13 @@
+{
+  "description": "A filled shulker box that a piston destroys (#264) drops itself with its contents inside, not its contents.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [6, -57, 4]],
+  "ticks": 20,
+  "setup": [
+    {"op": "set", "pos": [1, -60, 2], "block": "minecraft:piston[facing=east]"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "setblock 2 -60 2 minecraft:shulker_box{Items:[{Slot:0b,id:\"minecraft:stone\",count:5},{Slot:3b,id:\"minecraft:redstone\",count:2}]}"},
+    {"tick": 2, "op": "place", "pos": [0, -60, 2], "block": "minecraft:redstone_block"}
+  ]
+}

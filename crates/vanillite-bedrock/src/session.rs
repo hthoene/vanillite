@@ -9,6 +9,7 @@ mod dialog;
 mod heads;
 mod hud;
 mod inventory;
+mod piston;
 mod play;
 mod scoreboard;
 mod trade;
@@ -360,6 +361,7 @@ pub(crate) struct Session {
     /// Advancements that show a toast when done.
     toasts: hud::Toasts,
     border: hud::Border,
+    pistons: piston::Pistons,
     /// Player heads shown as entities with their skins.
     heads: heads::Heads,
     next_head: u64,
@@ -450,6 +452,7 @@ impl Session {
             server_links: Vec::new(),
             toasts: hud::Toasts::default(),
             border: hud::Border::default(),
+            pistons: piston::Pistons::default(),
             records: FxHashMap::default(),
             probes: Vec::new(),
             taking_book: false,
@@ -1000,6 +1003,7 @@ impl Session {
 
     fn auth_input(&mut self, i: &bp::AuthInput, vehicle_rotation: Option<[f32; 2]>) {
         self.draw_border();
+        self.piston_tick();
         self.ask_suggestions();
         let Some(w) = &mut self.world else {
             return;
@@ -1026,6 +1030,17 @@ impl Session {
                 return;
             };
             w.pos = target;
+        }
+        let Some(from) = self.world.as_ref().map(|w| w.pos) else {
+            return;
+        };
+        let mut feet = feet;
+        if !self.riding()
+            && let Some(stop) = self.border_stop(from, feet)
+        {
+            // The border stops the player: correct the client, send the server the stop.
+            feet = stop;
+            self.send_own_position(stop);
         }
         let Some(w) = &mut self.world else {
             return;
@@ -1438,6 +1453,9 @@ impl Session {
     }
 
     fn block_update(&mut self, pos: [i32; 3], java_state: u32) {
+        if self.piston_block_update(pos, java_state) {
+            return;
+        }
         if self
             .heads
             .get(&pos)
@@ -1477,6 +1495,7 @@ impl Session {
             self.recent_blocks.insert(pos, java_state);
         }
         if crate::blockentity::from_state(java_state)
+            && !self.piston_animating(pos)
             && let Some(nbt) =
                 crate::blockentity::translate(pos, java_state, None, self.version.palette)
         {
@@ -1756,8 +1775,9 @@ impl Session {
             w.biome_key,
             &self.shared.cache,
         ) {
-            Ok((body, actors, heads)) => {
+            Ok((body, actors, heads, near_pistons)) => {
                 self.send(id::LEVEL_CHUNK, &body);
+                self.pistons.remember_chunk(&near_pistons);
                 for h in &heads {
                     self.head_found(h.pos, h.state, &h.textures);
                 }

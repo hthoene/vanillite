@@ -641,6 +641,9 @@ impl Engine {
                                 ],
                             );
                             handle_error(&original, env, &e, mods.forked);
+                            // Vanilla stops instantiating at the first failure and runs the
+                            // functions instantiated before it.
+                            break;
                         }
                     }
                 }

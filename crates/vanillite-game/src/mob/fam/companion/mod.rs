@@ -91,6 +91,8 @@ pub struct State {
     pub fox_flags: u8,
     pub trusted: [Option<u128>; 2],
     pub ticks_since_eaten: i32,
+    /// `crouchAmount`: grows by 0.2 a tick while crouching, up to 5 (`isFullyCrouched`).
+    pub crouch_amount: f32,
     // --- Panda ---
     pub main_gene: u8,
     pub hidden_gene: u8,
@@ -778,15 +780,18 @@ impl FamilyHooks for Hooks {
             k if is_horse(k) => horse::before_tick(t),
             Kind::Wolf => wolf::before_tick(t),
             Kind::Cat => feline::cat_tick(t),
-            Kind::Panda => panda::before_tick(t),
             Kind::PolarBear => polar_bear::before_tick(t),
             _ => {}
         }
     }
 
     fn after_tick(t: &mut Tick<'_, '_>) {
-        if is_horse(t.mob_ref().kind) {
-            horse::after_tick(t.mob());
+        match t.mob_ref().kind {
+            k if is_horse(k) => horse::after_tick(t.mob()),
+            // `Panda.tick` and `Fox.tick` run their own part after `super.tick()`.
+            Kind::Panda => panda::after_tick(t),
+            Kind::Fox => fox::after_tick(t),
+            _ => {}
         }
     }
 
@@ -820,6 +825,14 @@ impl FamilyHooks for Hooks {
             Kind::Fox => fox::custom_server_ai_step(t),
             _ => {}
         }
+    }
+
+    fn look_control(t: &mut Tick<'_, '_>) -> bool {
+        if t.mob_ref().kind == Kind::Fox {
+            fox::look_control(t);
+            return true;
+        }
+        false
     }
 
     fn move_control(t: &mut Tick<'_, '_>) -> bool {

@@ -1,0 +1,3 @@
+tick = 37
+cause = "the weak baby panda following a player with bamboo (TemptGoal) draws one value more from its random in tick 37 and fewer in tick 38 than Vanilla"
+owner = "game-systems-developer #281"

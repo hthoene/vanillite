@@ -1,0 +1,45 @@
+{
+  "description": "Signed zero of entity motion (#264): a motion component stopped by a collision is -0.0 when it was positive (restituteMovementAfterCollisions); applyGravity adds the vector (0, -g, 0), which turns it into 0.0 in the next tick. Primed TNT and a falling block thrown against glass.",
+  "tier": "fast",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      5,
+      -56,
+      4
+    ]
+  ],
+  "ticks": 12,
+  "setup": [
+    {
+      "op": "fill",
+      "from": [
+        4,
+        -60,
+        0
+      ],
+      "to": [
+        4,
+        -57,
+        4
+      ],
+      "block": "minecraft:glass"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:tnt 3.0 -60 2.5 {Motion:[0.5d,0.0d,0.0d],fuse:60s}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:falling_block 3.0 -58 1.5 {BlockState:{Name:\"minecraft:sand\"},Time:1,Motion:[0.5d,0.0d,0.0d]}"
+    }
+  ]
+}

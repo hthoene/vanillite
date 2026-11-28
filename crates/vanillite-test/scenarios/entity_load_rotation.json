@@ -1,0 +1,10 @@
+{
+  "description": "Entities loaded with a yaw beyond a full turn (#264): Entity.load keeps the yaw modulo 360 while the head keeps the stored yaw; an armor stand's body yaw starts at 0.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [6, -57, 4]],
+  "ticks": 4,
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:armor_stand 1.5 -60 2.5 {Rotation:[-450f,0f]}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:pig 4.5 -60 2.5 {NoAI:1b,Rotation:[400f,0f]}"}
+  ]
+}

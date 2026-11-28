@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/*", "tools/loadbot", "xtask"]
+members = ["crates/*", "examples/*", "tools/loadbot", "tools/microbench", "xtask"]
 default-members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -14,34 +14,34 @@ homepage = "https://vanillite.org"
 
 [workspace.dependencies]
 # Internal crates.
-vanillite-abi = { path = "crates/vanillite-abi", version = "0.1.0-beta.2" }
-vanillite-base = { path = "crates/vanillite-base", version = "0.1.0-beta.2" }
-vanillite-bedrock = { path = "crates/vanillite-bedrock", version = "0.1.0-beta.2" }
-vanillite-chunk = { path = "crates/vanillite-chunk", version = "0.1.0-beta.2" }
-vanillite-command = { path = "crates/vanillite-command", version = "0.1.0-beta.2" }
-vanillite-config = { path = "crates/vanillite-config", version = "0.1.0-beta.2" }
-vanillite-data = { path = "crates/vanillite-data", version = "0.1.0-beta.2" }
-vanillite-datagen = { path = "crates/vanillite-datagen", version = "0.1.0-beta.2" }
-vanillite-datapack = { path = "crates/vanillite-datapack", version = "0.1.0-beta.2" }
-vanillite-game = { path = "crates/vanillite-game", version = "0.1.0-beta.2" }
-vanillite-light = { path = "crates/vanillite-light", version = "0.1.0-beta.2" }
-vanillite-macros = { path = "crates/vanillite-macros", version = "0.1.0-beta.2" }
-vanillite-multiversion = { path = "crates/vanillite-multiversion", version = "0.1.0-beta.2" }
-vanillite-nbt = { path = "crates/vanillite-nbt", version = "0.1.0-beta.2" }
-vanillite-net = { path = "crates/vanillite-net", version = "0.1.0-beta.2" }
-vanillite-plugin = { path = "crates/vanillite-plugin", version = "0.1.0-beta.2" }
-vanillite-plugin-host = { path = "crates/vanillite-plugin-host", version = "0.1.0-beta.2" }
-vanillite-protocol = { path = "crates/vanillite-protocol", version = "0.1.0-beta.2" }
-vanillite-proxy = { path = "crates/vanillite-proxy", version = "0.1.0-beta.2" }
-vanillite-server = { path = "crates/vanillite-server", version = "0.1.0-beta.2" }
-vanillite-storage = { path = "crates/vanillite-storage", version = "0.1.0-beta.2" }
-vanillite-test = { path = "crates/vanillite-test", version = "0.1.0-beta.2" }
-vanillite-world = { path = "crates/vanillite-world", version = "0.1.0-beta.2" }
-vanillite-worldgen = { path = "crates/vanillite-worldgen", version = "0.1.0-beta.2" }
+microbench = { path = "tools/microbench" }
+vanillite-abi = { path = "crates/vanillite-abi", version = "0.1.0-beta.3" }
+vanillite-base = { path = "crates/vanillite-base", version = "0.1.0-beta.3" }
+vanillite-bedrock = { path = "crates/vanillite-bedrock", version = "0.1.0-beta.3" }
+vanillite-chunk = { path = "crates/vanillite-chunk", version = "0.1.0-beta.3" }
+vanillite-command = { path = "crates/vanillite-command", version = "0.1.0-beta.3" }
+vanillite-config = { path = "crates/vanillite-config", version = "0.1.0-beta.3" }
+vanillite-data = { path = "crates/vanillite-data", version = "0.1.0-beta.3" }
+vanillite-datagen = { path = "crates/vanillite-datagen", version = "0.1.0-beta.3" }
+vanillite-datapack = { path = "crates/vanillite-datapack", version = "0.1.0-beta.3" }
+vanillite-game = { path = "crates/vanillite-game", version = "0.1.0-beta.3" }
+vanillite-light = { path = "crates/vanillite-light", version = "0.1.0-beta.3" }
+vanillite-macros = { path = "crates/vanillite-macros", version = "0.1.0-beta.3" }
+vanillite-multiversion = { path = "crates/vanillite-multiversion", version = "0.1.0-beta.3" }
+vanillite-nbt = { path = "crates/vanillite-nbt", version = "0.1.0-beta.3" }
+vanillite-net = { path = "crates/vanillite-net", version = "0.1.0-beta.3" }
+vanillite-plugin = { path = "crates/vanillite-plugin", version = "0.1.0-beta.3" }
+vanillite-plugin-host = { path = "crates/vanillite-plugin-host", version = "0.1.0-beta.3" }
+vanillite-protocol = { path = "crates/vanillite-protocol", version = "0.1.0-beta.3" }
+vanillite-proxy = { path = "crates/vanillite-proxy", version = "0.1.0-beta.3" }
+vanillite-server = { path = "crates/vanillite-server", version = "0.1.0-beta.3" }
+vanillite-storage = { path = "crates/vanillite-storage", version = "0.1.0-beta.3" }
+vanillite-test = { path = "crates/vanillite-test", version = "0.1.0-beta.3" }
+vanillite-world = { path = "crates/vanillite-world", version = "0.1.0-beta.3" }
+vanillite-worldgen = { path = "crates/vanillite-worldgen", version = "0.1.0-beta.3" }
 
 # External crates.
 bumpalo = { version = "3.20", features = ["collections"] }
-criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 ctrlc = { version = "3.5", features = ["termination"] }
 libc = "0.2"
 libloading = "0.8"

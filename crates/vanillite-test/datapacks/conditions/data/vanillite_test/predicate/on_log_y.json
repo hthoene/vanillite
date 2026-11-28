@@ -1,0 +1,1 @@
+{"type": "minecraft:location_check", "offsetY": -1, "predicate": {"block": {"blocks": "#minecraft:logs", "state": {"axis": "y"}}}}

@@ -124,6 +124,20 @@ pub fn context_shape(state: BlockState, oy: f64, bottom: Option<f64>) -> Shape {
     }
 }
 
+/// `state.getOffset(pos)` in X and Z of the blocks whose collision shape moves with their
+/// random offset (`OffsetType.XZ` with a collision shape: bamboo, pointed dripstone, sulfur
+/// spikes; other blocks have no offset or no collision): `(0, 0)` for every other block.
+pub fn collision_offset(state: BlockState, x: i32, z: i32) -> (f64, f64) {
+    let max = f64::from(state.block().info().max_horizontal_offset);
+    if max == 0.0 {
+        return (0.0, 0.0);
+    }
+    let seed = vanillite_base::math::get_seed(x, 0, z);
+    #[allow(clippy::cast_precision_loss)]
+    let at = |bits: i64| ((f64::from((bits & 15) as f32 / 15.0) - 0.5) * 0.5).clamp(-max, max);
+    (at(seed), at(seed >> 8))
+}
+
 /// How powder snow collides with an entity (`PowderSnowBlock.getCollisionShape` with the
 /// entity's context); its plain collision shape is empty.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -282,14 +296,15 @@ pub fn block_boxes_for(
                     }
                     continue;
                 }
+                let (dx, dz) = collision_offset(state, x, z);
                 for b in context_shape(state, oy, entity_bottom) {
                     let shape = Aabb {
-                        min_x: ox + b[0],
+                        min_x: ox + (b[0] + dx),
                         min_y: oy + b[1],
-                        min_z: oz + b[2],
-                        max_x: ox + b[3],
+                        min_z: oz + (b[2] + dz),
+                        max_x: ox + (b[3] + dx),
                         max_y: oy + b[4],
-                        max_z: oz + b[5],
+                        max_z: oz + (b[5] + dz),
                     };
                     if shape.intersects(area) {
                         out.push(shape);

@@ -20,6 +20,8 @@ pub(crate) struct Holder {
     pub(crate) name: String,
     /// `getFeedbackDisplayName`.
     pub(crate) display: Component,
+    /// `getDisplayName`: what a `displayAutoUpdate` objective shows (none for a plain name).
+    pub(crate) score_display: Option<Component>,
 }
 
 impl Holder {
@@ -27,15 +29,18 @@ impl Holder {
         Holder {
             name: name.to_owned(),
             display: Component::text(name),
+            score_display: None,
         }
     }
 
     fn of(target: &select::Target) -> Holder {
         let name = target.score_name();
+        let shown = target.display();
         Holder {
-            display: target
-                .display()
+            display: shown
+                .clone()
                 .hover(HoverEvent::ShowText(Component::text(name.as_str()))),
+            score_display: Some(shown),
             name,
         }
     }
@@ -590,7 +595,7 @@ pub(crate) fn run(
                         S::Add => before.wrapping_add(amount),
                         _ => before.wrapping_sub(amount),
                     };
-                    board.set_score(&holder.name, &name, value, Some(&holder.display));
+                    board.set_score(&holder.name, &name, value, holder.score_display.as_ref());
                     tracker.track(holder, value);
                 }
             }
@@ -817,14 +822,14 @@ pub(crate) fn run(
                             &target.name,
                             &target_objective,
                             new_a,
-                            Some(&target.display),
+                            target.score_display.as_ref(),
                         );
                         if *operation == ScoreOperation::Swap {
                             board.set_score(
                                 &from.name,
                                 &source_objective,
                                 new_b,
-                                Some(&from.display),
+                                from.score_display.as_ref(),
                             );
                         }
                     }

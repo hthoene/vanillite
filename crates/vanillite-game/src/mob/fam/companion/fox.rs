@@ -46,6 +46,11 @@ pub enum Goal {
     SeekShelter { interval: i32, wanted: Vec3 },
     /// `FoxMeleeAttackGoal` guard (the melee itself is the shared goal).
     Sleep { countdown: i32 },
+    /// `FoxStrollThroughVillageGoal`: the reduced interval and the wanted village spot.
+    StrollThroughVillage {
+        interval: i32,
+        wanted: Option<BlockPos>,
+    },
     /// `FoxEatBerriesGoal`.
     EatBerries { base: MoveToBlock, waited: i32 },
     /// `FoxSearchForItemsGoal`.
@@ -70,7 +75,10 @@ pub fn flags(g: &Goal) -> u8 {
     match g {
         Goal::Float => JUMP,
         Goal::Faceplant { .. } => LOOK | JUMP | MOVE,
-        Goal::Panic { .. } | Goal::Avoid(_) | Goal::SeekShelter { .. } => MOVE,
+        Goal::Panic { .. }
+        | Goal::Avoid(_)
+        | Goal::SeekShelter { .. }
+        | Goal::StrollThroughVillage { .. } => MOVE,
         Goal::StalkPrey | Goal::PerchAndSearch { .. } => MOVE | LOOK,
         Goal::Pounce => JUMP | MOVE,
         Goal::Sleep { .. } => MOVE | LOOK | JUMP,
@@ -108,6 +116,80 @@ fn clear_states(t: &mut Tick<'_, '_>) {
         s.fox_flags = 0;
         t.core_mut().mark_data_dirty();
     }
+}
+
+/// `FoxPounceGoal.tick`'s pitch: back to level when it hardly moves up or down, else along its
+/// motion (rising steeper while jumping).
+fn pounce_pitch(t: &mut Tick<'_, '_>) {
+    let v = t.velocity();
+    let mut rot = t.core().rot();
+    if v.y * v.y < f64::from(0.03_f32) && rot.x_rot != 0.0 {
+        rot.x_rot += 0.2 * vanillite_base::math::wrap_degrees_f(0.0 - rot.x_rot);
+    } else {
+        let horizontal = (v.x * v.x + v.z * v.z).sqrt();
+        let bias: f32 = if t.mob_ref().jumping && v.y > 0.0 {
+            6.5
+        } else {
+            1.0
+        };
+        let y = v.y * f64::from(bias);
+        let len = (horizontal * horizontal + y * y).sqrt();
+        if len <= f64::from(1.0e-5_f32) {
+            return;
+        }
+        // `Math.signum(-y)`: a zero keeps its sign.
+        let sign = if y == 0.0 {
+            -y
+        } else if y < 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+        let r = sign * (horizontal / len).acos() * 180.0 / f64::from(std::f32::consts::PI);
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            rot.x_rot = nav::clamp_x_rot(r as f32);
+        }
+    }
+    t.core_mut().set_rot(rot);
+}
+
+/// `FoxMeleeAttackGoal.canUse`'s own part.
+pub(crate) fn can_melee(m: &MobData) -> bool {
+    !flag_of(m, SITTING)
+        && !flag_of(m, SLEEPING)
+        && !flag_of(m, CROUCHING)
+        && !flag_of(m, FACEPLANTED)
+}
+
+/// `FoxMeleeAttackGoal.start`: no longer interested.
+pub(crate) fn melee_start(t: &mut Tick<'_, '_>) {
+    set_flag(t, INTERESTED, false);
+}
+
+/// `Fox.tick` after `super.tick()`: the crouch amount.
+pub fn after_tick(t: &mut Tick<'_, '_>) {
+    let crouching = flag_of(t.mob_ref(), CROUCHING);
+    let s = st_mut(t.mob());
+    if crouching {
+        s.crouch_amount = (s.crouch_amount + 0.2).min(5.0);
+    } else {
+        s.crouch_amount = 0.0;
+    }
+}
+
+/// `FoxLookControl.tick`: a sleeping fox does not look around; a pouncing, crouching,
+/// interested or faceplanted one keeps its pitch (`resetXRotOnTick`).
+pub fn look_control(t: &mut Tick<'_, '_>) {
+    let m = t.mob_ref();
+    if flag_of(m, SLEEPING) {
+        return;
+    }
+    let reset = !flag_of(m, POUNCING)
+        && !flag_of(m, CROUCHING)
+        && !flag_of(m, INTERESTED)
+        && !flag_of(m, FACEPLANTED);
+    nav::default_look_tick(t, reset);
 }
 
 fn can_move(m: &MobData) -> bool {
@@ -201,7 +283,13 @@ pub fn register_goals(m: &mut MobData) {
             recalc: 0,
         },
     );
-    // 9: `FoxStrollThroughVillageGoal` needs village POIs (not available yet).
+    g.add(
+        9,
+        fam(FamGoal::Fox(Goal::StrollThroughVillage {
+            interval: reduced(200),
+            wanted: None,
+        })),
+    );
     g.add(
         10,
         fam(FamGoal::Fox(Goal::EatBerries {
@@ -237,6 +325,7 @@ pub fn register_goals(m: &mut MobData) {
         })),
     );
     m.can_pick_up_loot = true;
+    m.look.kind = crate::mob::nav::LookKind::Custom;
     m.nav.can_float = true;
     let follow = m.attrs.follow_range;
     m.nav.set_required_path_length(32.0, follow);
@@ -696,8 +785,89 @@ fn nearest_item(t: &Tick<'_, '_>) -> Option<Vec3> {
     first
 }
 
+/// `FoxStrollThroughVillageGoal.canFoxMove`.
+fn can_fox_move(m: &MobData) -> bool {
+    !flag_of(m, SLEEPING) && !flag_of(m, SITTING) && !flag_of(m, DEFENDING) && m.target.is_none()
+}
+
+/// `StrollThroughVillageGoal.canUse`: at night, now and then, a land spot nearer to the village
+/// centre of a village within 6 sections.
+fn stroll_through_village(t: &mut Tick<'_, '_>, interval: i32) -> Option<BlockPos> {
+    if crate::mob::has_controlling_passenger(t.ents, t.id) || t.cx.env.is_bright_outside() {
+        return None;
+    }
+    if t.mob().random.next_int_bounded(interval) != 0 {
+        return None;
+    }
+    if !t.ents.poi.is_close_to_village(t.block_pos(), 6) {
+        return None;
+    }
+    let land = crate::mob::randompos::land_pos_weighted(t, 15, 7, |t, p| {
+        -f64::from(t.ents.poi.sections_to_village(p.section()))
+    })?;
+    Some(BlockPos::containing(land.x, land.y, land.z))
+}
+
+/// `StrollThroughVillageGoal.tick`: towards the wanted spot in steps of 10 blocks, else
+/// somewhere near (`moveRandomly`).
+fn stroll_through_village_tick(t: &mut Tick<'_, '_>, wanted: BlockPos) {
+    let pos = t.pos();
+    let center = Vec3::new(
+        f64::from(wanted.x) + 0.5,
+        f64::from(wanted.y) + 0.5,
+        f64::from(wanted.z) + 0.5,
+    );
+    if !t.nav_ref().is_done() || center.distance_to_sqr(pos) < 100.0 {
+        return;
+    }
+    let target = crate::mob::randompos::bottom_center(wanted);
+    let far = Vec3::new(
+        (pos.x - target.x) * 0.4 + target.x,
+        (pos.y - target.y) * 0.4 + target.y,
+        (pos.z - target.z) * 0.4 + target.z,
+    );
+    let d = Vec3::new(far.x - pos.x, far.y - pos.y, far.z - pos.z);
+    let len = d.length_sqr().sqrt();
+    let n = if len < f64::from(1.0e-5_f32) {
+        Vec3::ZERO
+    } else {
+        Vec3::new(d.x / len, d.y / len, d.z / len)
+    };
+    let to = Vec3::new(pos.x + n.x * 10.0, pos.y + n.y * 10.0, pos.z + n.z * 10.0);
+    let to = BlockPos::containing(to.x, to.y, to.z);
+    let to = surface(t, to.x, to.z);
+    if !nav::move_to_pos(t, to_vec(to), 1.0) {
+        let p = t.block_pos();
+        let r = &mut t.mob().random;
+        let dx = -8 + r.next_int_bounded(16);
+        let dz = -8 + r.next_int_bounded(16);
+        let to = surface(t, p.x + dx, p.z + dz);
+        nav::move_to_pos(t, to_vec(to), 1.0);
+    }
+}
+
+/// `getHeightmapPos(MOTION_BLOCKING_NO_LEAVES, (x, z))`.
+fn surface(t: &Tick<'_, '_>, x: i32, z: i32) -> BlockPos {
+    let y = crate::mob::spawn::surface_y(
+        t.level,
+        vanillite_chunk::HeightmapKind::MotionBlockingNoLeaves,
+        x,
+        z,
+    );
+    BlockPos::new(x, y, z)
+}
+
+/// `moveTo(x, y, z, speed)` of whole block coordinates.
+fn to_vec(p: BlockPos) -> Vec3 {
+    Vec3::new(f64::from(p.x), f64::from(p.y), f64::from(p.z))
+}
+
 pub fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
     match g {
+        Goal::StrollThroughVillage { interval, wanted } => {
+            *wanted = stroll_through_village(t, *interval);
+            wanted.is_some() && can_fox_move(t.mob_ref())
+        }
         Goal::Float => {
             let f = t.mob_ref().fluids;
             f.water_height > 0.25 || f.in_lava()
@@ -748,7 +918,9 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
         }
         Goal::Pounce => {
             let m = t.mob_ref();
-            if !flag_of(m, CROUCHING) {
+            // `isFullyCrouched`.
+            #[allow(clippy::float_cmp)]
+            if st(m).crouch_amount != 5.0 {
                 return false;
             }
             let Some(target) = m.target else {
@@ -864,6 +1036,12 @@ fn can_sleep(t: &mut Tick<'_, '_>, countdown: &mut i32) -> bool {
 
 pub fn can_continue(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
     match g {
+        Goal::StrollThroughVillage { wanted, .. } => {
+            wanted.is_some()
+                && !t.nav_ref().is_done()
+                && t.nav_ref().target_pos() == *wanted
+                && can_fox_move(t.mob_ref())
+        }
         Goal::Faceplant { countdown } => flag_of(t.mob_ref(), FACEPLANTED) && *countdown > 0,
         Goal::Panic { .. } | Goal::SeekShelter { .. } => !t.nav_ref().is_done(),
         Goal::Avoid(cg) => crate::mob::common::can_continue(t, cg),
@@ -891,6 +1069,7 @@ pub fn can_continue(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
 
 pub fn start(t: &mut Tick<'_, '_>, g: &mut Goal) {
     match g {
+        Goal::StrollThroughVillage { .. } => clear_states(t),
         Goal::Float => clear_states(t),
         Goal::Faceplant { countdown } => *countdown = reduced(40),
         Goal::Panic { pos } => {
@@ -1002,6 +1181,7 @@ pub fn stop(t: &mut Tick<'_, '_>, g: &mut Goal) {
         }
         Goal::Pounce => {
             set_flag(t, CROUCHING, false);
+            st_mut(t.mob()).crouch_amount = 0.0;
             set_flag(t, INTERESTED, false);
             set_flag(t, POUNCING, false);
         }
@@ -1024,6 +1204,12 @@ pub fn stop(t: &mut Tick<'_, '_>, g: &mut Goal) {
 
 pub fn tick(t: &mut Tick<'_, '_>, g: &mut Goal) {
     match g {
+        Goal::StrollThroughVillage {
+            wanted: Some(w), ..
+        } => {
+            let w = *w;
+            stroll_through_village_tick(t, w);
+        }
         Goal::Float => {
             if t.mob().random.next_float() < 0.8 {
                 t.mob().jumping = true;
@@ -1055,8 +1241,12 @@ pub fn tick(t: &mut Tick<'_, '_>, g: &mut Goal) {
                     .look
                     .set_look_at(Vec3::new(o.pos.x, o.eye_y, o.pos.z), 60.0, 30.0);
             }
+            if !flag_of(t.mob_ref(), FACEPLANTED) {
+                pounce_pitch(t);
+            }
+            #[allow(clippy::cast_possible_truncation)]
             if let (Some(id), Some(o)) = (target, o)
-                && o.pos.distance_to_sqr(t.pos()) <= 4.0
+                && (o.pos.distance_to_sqr(t.pos()).sqrt() as f32) <= 2.0
             {
                 crate::mob::combat::base_mob_attack(t, id);
             } else if t.core().rot().x_rot > 0.0

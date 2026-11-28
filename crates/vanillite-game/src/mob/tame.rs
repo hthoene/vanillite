@@ -415,13 +415,15 @@ pub fn drop_leashes_of(ents: &mut Entities, env: &mut Env<'_>, holder: EntityId)
     !mine.is_empty()
 }
 
-/// `Entity.shearOffAllLeashConnections(null)` (a dispenser's shears): the entity's own lead
-/// and the leads tied to it drop, `SHEAR` at the entity, the snip sound at its block in its
-/// sound source; `true` when there was a lead.
+/// `Entity.shearOffAllLeashConnections(player)` (a player's or, with `None`, a dispenser's
+/// shears): the entity's own lead and the leads tied to it drop, `SHEAR` at the entity, the
+/// snip sound at its block in the player's (else the entity's) sound source; `true` when there
+/// was a lead.
 pub fn shear_off_all_leash_connections(
     ents: &mut Entities,
     env: &mut Env<'_>,
     id: EntityId,
+    player: Option<EntityId>,
 ) -> bool {
     let mut tied: Vec<EntityId> = ents
         .leashes
@@ -444,10 +446,13 @@ pub fn shear_off_all_leash_connections(
         return true;
     };
     let event = crate::level::game_event::events().shear;
-    super::animal::entity_game_event(ents, env, id, event, None);
-    let source = ents
-        .mob(id)
-        .map_or(SoundSource::Neutral, |m| m.sound_source());
+    super::animal::entity_game_event(ents, env, id, event, player);
+    let source = if player.is_some() {
+        SoundSource::Players
+    } else {
+        ents.mob(id)
+            .map_or(SoundSource::Neutral, |m| m.sound_source())
+    };
     let block = BlockPos::containing(pos.x, pos.y, pos.z);
     let at = Vec3::new(
         f64::from(block.x) + 0.5,
@@ -632,14 +637,13 @@ pub fn leash_interact(
         || ents.boat(target).is_some();
     let baby = ents.mob(target).is_some_and(|m| m.baby);
     if sneaking && leashable && !baby {
-        // The player's leashed mobs nearby get tied to the target.
-        let mine = leashed_by(ents, player, target, 10.0);
+        // The player's leashed mobs around the target that can be tied to it
+        // (`leashableInArea` + `canHaveALeashAttachedTo`).
+        let mine = leashed_to_attachable_around(ents, target, player, target);
         let mut any = false;
         for m in mine {
-            if m != target {
-                set_leashed_to(ents, env, m, target);
-                any = true;
-            }
+            set_leashed_to(ents, env, m, target);
+            any = true;
         }
         if any {
             // `gameEvent(ENTITY_ACTION, blockPosition(), Context.of(player))`.
@@ -670,12 +674,10 @@ pub fn leash_interact(
             .unwrap_or_default()
     };
     let name = crate::item::item_id(&stack).name();
-    if name == "minecraft:shears" && leash_holder(ents, target).is_some() && !sneaking {
-        drop_leash(ents, env, target, true);
-        // `dropAllLeashConnections`.
-        let event = crate::level::game_event::events().shear;
-        super::animal::entity_game_event(ents, env, target, event, Some(player));
-        entity_sound(ents, env, target, "minecraft:item.shears.snip");
+    if name == "minecraft:shears"
+        && shear_off_all_leash_connections(ents, env, target, Some(player))
+    {
+        super::animal::hurt_held(ents, env, player, hand, 1);
         return Interaction::Success;
     }
     if name == "minecraft:shears" && !sneaking && shear_equipment(ents, env, player, target, hand) {
@@ -724,28 +726,6 @@ pub fn leash_interact(
         }
     }
     Interaction::Pass
-}
-
-/// The mobs within `radius` of `around` whose leads `holder` holds (`leashableInArea`).
-fn leashed_by(ents: &Entities, holder: EntityId, around: EntityId, radius: f64) -> Vec<EntityId> {
-    let Some(c) = ents.store.get(around).map(|e| e.pos()) else {
-        return Vec::new();
-    };
-    let area = Aabb::new(
-        c.x - radius,
-        c.y - radius,
-        c.z - radius,
-        c.x + radius,
-        c.y + radius,
-        c.z + radius,
-    );
-    let mut out = Vec::new();
-    ents.store.for_each_in(&area, false, |id| {
-        if ents.leashes.get(&id) == Some(&holder) {
-            out.push(id);
-        }
-    });
-    out
 }
 
 /// Whether a block holds leash knots (`#minecraft:leash_knots`: the fences).
@@ -891,6 +871,17 @@ pub fn bind_player_mobs(
 /// filtered by `canHaveALeashAttachedTo(other)`: within the snap distance of `other` and
 /// leashable.
 fn leashed_to_attachable(ents: &Entities, holder: EntityId, other: EntityId) -> Vec<EntityId> {
+    leashed_to_attachable_around(ents, holder, holder, other)
+}
+
+/// `Leashable.leashableInArea(around, l -> l.getLeashHolder() == holder)` (a 32 block cube
+/// around `around`'s box centre) filtered by `canHaveALeashAttachedTo(other)`.
+fn leashed_to_attachable_around(
+    ents: &Entities,
+    around: EntityId,
+    holder: EntityId,
+    other: EntityId,
+) -> Vec<EntityId> {
     let center = |id: EntityId| {
         ents.store.get(id).map(|e| {
             let b = e.aabb();
@@ -901,7 +892,7 @@ fn leashed_to_attachable(ents: &Entities, holder: EntityId, other: EntityId) -> 
             )
         })
     };
-    let (Some(hc), Some(oc)) = (center(holder), center(other)) else {
+    let (Some(hc), Some(oc)) = (center(around), center(other)) else {
         return Vec::new();
     };
     let area = Aabb::new(
@@ -952,7 +943,7 @@ pub fn knot_interact(
 ) -> Interaction {
     let stack = super::animal::held(ents, player, hand);
     if vanillite_data::registry::ITEM.name(stack.item) == Some("minecraft:shears")
-        && shear_off_all_leash_connections(ents, env, knot)
+        && shear_off_all_leash_connections(ents, env, knot, Some(player))
     {
         super::animal::hurt_held(ents, env, player, hand, 1);
         discard_if_empty(ents, knot, discarded);
@@ -989,22 +980,15 @@ fn discard_if_empty(ents: &Entities, knot: EntityId, discarded: &mut Vec<EntityI
     }
 }
 
-/// A player hit or used a knot: it breaks and drops the leads tied to it.
+/// A knot is hit or its fence is gone: it goes (`kill`, `dropItem`: the untie sound). Its
+/// mobs drop their leads in their next `tickLeash` (only with `entityDrops`), see
+/// [`tick_leashes`].
 pub fn break_knot(
     ents: &mut Entities,
     env: &mut Env<'_>,
     knot: EntityId,
     discarded: &mut Vec<EntityId>,
 ) {
-    let tied: Vec<EntityId> = ents
-        .leashes
-        .iter()
-        .filter(|&(_, &h)| h == knot)
-        .map(|(&m, _)| m)
-        .collect();
-    for m in tied {
-        drop_leash(ents, env, m, true);
-    }
     entity_sound(ents, env, knot, "minecraft:item.lead.untied");
     discarded.push(knot);
 }

@@ -1253,6 +1253,7 @@ impl Session {
         switch: bool,
     ) {
         self.clear_heads();
+        self.pistons.clear();
         let Some(w) = &mut self.world else {
             return;
         };

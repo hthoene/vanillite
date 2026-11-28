@@ -1,0 +1,123 @@
+{
+  "description": "Block tags in block predicates (#283): location_check with a Vanilla block tag, a data pack tag that includes another tag and a tag plus block state, and match_block with tags in a block loot table (mined with loot ... mine); results stored into a probe chest.",
+  "tier": "fast",
+  "dimensions": true,
+  "block_entities": true,
+  "region": [
+    [
+      -16,
+      -61,
+      -16
+    ],
+    [
+      31,
+      -58,
+      31
+    ]
+  ],
+  "ticks": 3,
+  "datapack": "conditions",
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        1.5,
+        -60.0,
+        2.5
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 0 -60 0 minecraft:chest"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace block 0 -60 0 container.0 with minecraft:paper"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 4 -61 4 minecraft:oak_log"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 6 -61 4 minecraft:emerald_block"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 8 -61 4 minecraft:birch_log[axis=x]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 10 -60 4 minecraft:oak_planks"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 2 -60 0 minecraft:barrel"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b1 int 1 run execute positioned 4 -60 4 if predicate vanillite_test:on_log"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b2 int 1 run execute positioned 1 -60 1 if predicate vanillite_test:on_log"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b3 int 1 run execute positioned 6 -60 4 if predicate vanillite_test:on_probe"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b4 int 1 run execute positioned 4 -60 4 if predicate vanillite_test:on_probe"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b5 int 1 run execute positioned 1 -60 1 if predicate vanillite_test:on_probe"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b6 int 1 run execute positioned 8 -60 4 if predicate vanillite_test:on_log"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b7 int 1 run execute positioned 8 -60 4 if predicate vanillite_test:on_log_y"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p b8 int 1 run execute positioned 4 -60 4 if predicate vanillite_test:on_log_y"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p l1 int 1 run loot insert 2 -60 0 mine 10 -60 4 minecraft:diamond_pickaxe"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "data modify storage t:p barrel set from block 2 -60 0 Items"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "data modify block 0 -60 0 Items[0].components.\"minecraft:custom_data\" set from storage t:p"
+    }
+  ]
+}

@@ -242,7 +242,7 @@ pub fn tick(t: &mut SpecialTick<'_, '_>) {
         v = t.ents.store.get(id).map_or(v, |e| e.velocity());
     }
     // `applyGravity`, `applyInertia`.
-    v.y -= 0.05;
+    v = v + Vec3::new(0.0, -0.05, 0.0);
     // `isInWater()`: water reaches into the box (where the last tick's `baseTick` saw it).
     let in_water = crate::experience_orb::touching_water(t.level, &aabb);
     v = v * f64::from(if in_water { 0.8_f32 } else { 0.99_f32 });

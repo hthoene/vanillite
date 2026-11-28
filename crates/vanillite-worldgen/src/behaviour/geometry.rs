@@ -8,6 +8,7 @@
 use vanillite_base::Direction;
 use vanillite_data::block::Shape;
 
+use super::SupportType;
 use super::props::{Axis, axis};
 
 /// A rectangle `[min_u, min_v, max_u, max_v]` in the plane of a face (for vertical faces `u` is
@@ -18,7 +19,7 @@ pub(crate) type Rect = [f64; 4];
 pub(crate) const FULL: Rect = [0.0, 0.0, 1.0, 1.0];
 
 /// Iterates the rectangles of `shape`'s face slice in `direction`.
-fn face_rects(shape: Shape, direction: Direction) -> impl Iterator<Item = Rect> {
+fn face_rects(shape: &[[f64; 6]], direction: Direction) -> impl Iterator<Item = Rect> {
     // Index of the box coordinates along the face's axis and of the two in-plane axes.
     let (along, u, v) = match axis(direction) {
         Axis::X => (0, 1, 2),
@@ -85,6 +86,43 @@ pub(crate) fn face_covers(shape: Shape, direction: Direction, target: Rect) -> b
     }
     let rects: Vec<Rect> = face_rects(shape, direction).collect();
     covers(&rects, target)
+}
+
+/// `SupportType.isSupporting` for a shape that is not a block state's own (a moving piston's,
+/// from its block entity; it may reach out of the block): full support needs the face to be
+/// exactly the block's face (`Block.isFaceFull`), centre and rigid support need it to cover
+/// `Block.column(2, 0, 10)` or `Shapes.block()` without `Block.column(12, 0, 16)`.
+pub(crate) fn boxes_support(
+    boxes: &[[f64; 6]],
+    direction: Direction,
+    support: SupportType,
+) -> bool {
+    let rects: Vec<Rect> = face_rects(boxes, direction).collect();
+    let (lo, hi, top) = (7.0 / 16.0, 9.0 / 16.0, 10.0 / 16.0);
+    let (rim_lo, rim_hi) = (2.0 / 16.0, 14.0 / 16.0);
+    match (support, axis(direction)) {
+        (SupportType::Full, _) => {
+            rects
+                .iter()
+                .all(|r| r[0] >= 0.0 && r[1] >= 0.0 && r[2] <= 1.0 && r[3] <= 1.0)
+                && covers(&rects, FULL)
+        }
+        // The column stands along Y: on the X faces `u` is Y and `v` Z, on the Z faces `u` is
+        // X and `v` Y.
+        (SupportType::Center, Axis::Y) => covers(&rects, [lo, lo, hi, hi]),
+        (SupportType::Center, Axis::X) => covers(&rects, [0.0, lo, top, hi]),
+        (SupportType::Center, Axis::Z) => covers(&rects, [lo, 0.0, hi, top]),
+        (SupportType::Rigid, Axis::Y) => [
+            [0.0, 0.0, 1.0, rim_lo],
+            [0.0, rim_hi, 1.0, 1.0],
+            [0.0, 0.0, rim_lo, 1.0],
+            [rim_hi, 0.0, 1.0, 1.0],
+        ]
+        .into_iter()
+        .all(|target| covers(&rects, target)),
+        // The rim reaches every point of a side face.
+        (SupportType::Rigid, _) => covers(&rects, FULL),
+    }
 }
 
 /// `Block.isFaceFull(shape, direction)`.

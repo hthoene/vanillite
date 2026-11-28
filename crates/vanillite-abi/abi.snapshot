@@ -1,4 +1,4 @@
-abi 1.12
+abi 1.13
 type Status = i32
 type PluginId = u32
 type EntryFn = unsafeextern"C"fn()->*constPluginInfo
@@ -95,6 +95,7 @@ const event::ENTITY_TRANSFORM: u32 = 51
 const event::ENTITY_RESURRECT: u32 = 52
 const event::SHEEP_DYE_WOOL: u32 = 53
 const event::ENTITY_DROP_ITEM: u32 = 54
+const event::ENTITY_ATTRIBUTE_CHANGE: u32 = 55
 const event::BLOCK_DROP: u32 = 60
 const event::BLOCK_GROW: u32 = 61
 const event::BLOCK_FORM: u32 = 62
@@ -405,6 +406,9 @@ const entity_prop::NETWORK_ID: u32 = 22
 const attribute_op::ADD_VALUE: u32 = 0
 const attribute_op::ADD_MULTIPLIED_BASE: u32 = 1
 const attribute_op::ADD_MULTIPLIED_TOTAL: u32 = 2
+const attribute_change::BASE: u32 = 0
+const attribute_change::MODIFIER_ADD: u32 = 1
+const attribute_change::MODIFIER_REMOVE: u32 = 2
 const goal_flag::MOVE: u32 = 1
 const goal_flag::LOOK: u32 = 2
 const goal_flag::JUMP: u32 = 4

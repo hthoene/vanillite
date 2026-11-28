@@ -646,14 +646,15 @@ fn block_boxes(
                 // movement below 1.0E-7.
                 let start = out.len();
                 let mut overlaps = false;
+                let (ox, oz) = crate::mob::physics::collision_offset(state, x, z);
                 for b in crate::mob::physics::context_shape(state, dy, Some(bottom)) {
                     let shape = Aabb::new(
-                        b[0] + dx,
+                        (b[0] + ox) + dx,
                         b[1] + dy,
-                        b[2] + dz,
-                        b[3] + dx,
+                        (b[2] + oz) + dz,
+                        (b[3] + ox) + dx,
                         b[4] + dy,
-                        b[5] + dz,
+                        (b[5] + oz) + dz,
                     );
                     overlaps |= shape.intersects(area);
                     out.push(shape);
@@ -962,7 +963,10 @@ pub fn tick(
             moved
         };
         out.pos = moved.pos;
-        out.on_ground = moved.hit_y && delta.y < 0.0;
+        // `Entity.move` with `noPhysics` leaves the ground flag as it was.
+        if !no_physics {
+            out.on_ground = moved.hit_y && delta.y < 0.0;
+        }
         // `checkFallDamage` (not in `noPhysics` moves).
         if !no_physics {
             if !data.in_water && moved.movement.y < 0.0 {
@@ -1067,9 +1071,6 @@ pub fn tick(
     out.moved_block = floor(old.x) != floor(out.pos.x)
         || floor(old.y) != floor(out.pos.y)
         || floor(old.z) != floor(out.pos.z);
-    if data.age != UNLIMITED_LIFETIME {
-        data.age = data.age.saturating_add(1);
-    }
     // The second `updateFluidInteraction`, where the item is now.
     let touched = if out.pos == old {
         touched
@@ -1084,10 +1085,59 @@ pub fn tick(
     let dy = v.y - old_velocity.y;
     let dz = v.z - old_velocity.z;
     out.needs_sync = in_fluid || dx * dx + dy * dy + dz * dz > 0.01;
-    if data.age >= input.lifetime && data.age != UNLIMITED_LIFETIME {
-        out.discard = true;
-    }
     out
+}
+
+/// The end of `ItemEntity.tick`, after `mergeWithNeighbours`: `age++` (not for an unlimited
+/// lifetime), then whether it reached `lifetime` and is discarded.
+pub fn age_tick(data: &mut ItemData, lifetime: i16) -> bool {
+    if data.age != UNLIMITED_LIFETIME {
+        data.age = data.age.saturating_add(1);
+    }
+    data.age >= lifetime && data.age != UNLIMITED_LIFETIME
+}
+
+/// `state.isCollisionShapeFullBlock(level, pos)`: a moving piston's shape comes from its block
+/// entity (it has a dynamic shape), so it is full only where the moved block stands whole.
+fn collision_full_block(block: &dyn crate::mob::physics::Blocks, pos: BlockPos) -> bool {
+    let state = block.state(pos);
+    if state.block() != vanillite_data::block::ids::MOVING_PISTON {
+        return state.has(block_flags::COLLISION_FULL_BLOCK);
+    }
+    let mut boxes = Vec::new();
+    block.moving_piston_boxes(pos, &mut boxes);
+    // `Block.isShapeFullBlock`: the union is exactly the unit cube.
+    if boxes
+        .iter()
+        .any(|b| b[0] < 0.0 || b[1] < 0.0 || b[2] < 0.0 || b[3] > 1.0 || b[4] > 1.0 || b[5] > 1.0)
+    {
+        return false;
+    }
+    let cuts = |axis: usize| {
+        let mut c = vec![0.0, 1.0];
+        for b in &boxes {
+            c.push(b[axis]);
+            c.push(b[axis + 3]);
+        }
+        c.sort_by(f64::total_cmp);
+        c.dedup();
+        c
+    };
+    let (xs, ys, zs) = (cuts(0), cuts(1), cuts(2));
+    xs.windows(2).all(|x| {
+        ys.windows(2).all(|y| {
+            zs.windows(2).all(|z| {
+                let p = [
+                    (x[0] + x[1]) / 2.0,
+                    (y[0] + y[1]) / 2.0,
+                    (z[0] + z[1]) / 2.0,
+                ];
+                boxes
+                    .iter()
+                    .any(|b| (0..3).all(|a| b[a] < p[a] && p[a] < b[a + 3]))
+            })
+        })
+    })
 }
 
 /// `Entity.moveTowardsClosestSpace`: pushes an entity stuck in a block out of it.
@@ -1120,7 +1170,7 @@ pub(crate) fn move_towards_closest_space(
             base.y.wrapping_add(dy),
             base.z.wrapping_add(dz),
         );
-        if !block.state(n).has(block_flags::COLLISION_FULL_BLOCK) {
+        if !collision_full_block(block, n) {
             let axis_delta = delta.get(axis).copied().unwrap_or(0.0);
             let distance = if positive {
                 1.0 - axis_delta

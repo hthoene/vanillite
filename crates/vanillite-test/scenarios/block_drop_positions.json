@@ -1,0 +1,12 @@
+{
+  "description": "Blocks destroyed with drops (#264): the items appear at the block centre plus Mth.nextDouble(-0.25, 0.25), added in Vanilla's order to the last bit.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [7, -58, 7]],
+  "ticks": 6,
+  "setup": [
+    {"op": "fill", "from": [0, -60, 0], "to": [7, -60, 7], "block": "minecraft:dirt"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "fill 0 -60 0 7 -60 7 minecraft:air destroy"}
+  ]
+}

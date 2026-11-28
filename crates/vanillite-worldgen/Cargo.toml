@@ -12,7 +12,10 @@ repository.workspace = true
 # Gzip of structure template files (`data/<ns>/structure/**.nbt`).
 libdeflater.workspace = true
 rustc-hash.workspace = true
-serde_json.workspace = true
+# Doubles parsed correctly rounded, as Java does (the default parser can be one ulp off for 17
+# digits; the structure goldens need it). A normal, not a dev-dependency feature: one only for
+# tests would make `cargo test` recompile every crate that uses serde_json.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 vanillite-base.workspace = true
 vanillite-chunk.workspace = true
 vanillite-data.workspace = true
@@ -20,9 +23,6 @@ vanillite-datapack.workspace = true
 vanillite-nbt.workspace = true
 
 [dev-dependencies]
-# The structure goldens hold doubles in decimal (entity positions, NBT): parse them correctly
-# rounded, as Java wrote them (the default parser can be one ulp off for 17 digits).
-serde_json = { workspace = true, features = ["float_roundtrip"] }
 # Reads Vanilla worlds in the comparison test.
 vanillite-storage.workspace = true
 

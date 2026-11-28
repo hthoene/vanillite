@@ -7,6 +7,7 @@ use vanillite_base::random::RandomSource;
 use vanillite_base::{BlockPos, ChunkPos};
 use vanillite_worldgen::behaviour as shared;
 
+use super::tiles::{PHASE_PART, Phases};
 use super::{BlockEvent, Level, update};
 use crate::block::{self, fluid};
 use vanillite_data::block::BlockState;
@@ -87,24 +88,44 @@ impl Level {
 
     /// `ServerChunkCache.tickChunks` as far as blocks go: random ticks of every chunk in
     /// simulation distance (`ServerLevel.tickChunk`).
-    pub fn tick_chunks(&mut self, scratch: &mut Vec<ChunkPos>) {
+    pub fn tick_chunks(&mut self, scratch: &mut Vec<ChunkPos>, phases: &Phases<'_>) {
         let speed = self.settings.random_tick_speed;
         scratch.clear();
-        self.chunks.random_ticking_chunks(scratch);
+        self.random_ticking_chunks(scratch, phases);
         for (i, &chunk) in scratch.iter().enumerate() {
             // The chunks ahead start loading into the cache while this one ticks.
-            for (ahead, stage) in [(3, 0), (2, 1), (1, 2)] {
+            for (ahead, stage) in [(4, 0), (3, 1), (2, 2)] {
                 if let Some(&next) = scratch.get(i + ahead) {
                     self.chunks.prefetch(next, stage);
                 }
             }
-            self.tick_chunk(chunk, speed);
+            self.tick_chunk(chunk, speed, scratch.get(i + 1).copied());
         }
     }
 
+    /// The chunks that get random ticks this tick, in Vanilla's order
+    /// ([`Chunks::random_ticking_chunks`](vanillite_world::chunks::Chunks::random_ticking_chunks)):
+    /// the ticking checks run as a parallel phase.
+    fn random_ticking_chunks(&self, out: &mut Vec<ChunkPos>, phases: &Phases<'_>) {
+        if phases.threads <= 1 {
+            self.chunks.random_ticking_chunks(out);
+            return;
+        }
+        let mut candidates = Vec::new();
+        self.chunks.random_ticking_candidates(&mut candidates);
+        out.extend(phases.map(&candidates, PHASE_PART, |part, out| {
+            out.extend(
+                part.iter()
+                    .copied()
+                    .filter(|&c| self.chunks.is_random_ticking(c)),
+            );
+        }));
+    }
+
     /// `ServerLevel.tickChunk`: precipitation checks and `randomTickSpeed` random ticks per
-    /// section that has randomly ticking blocks or fluids.
-    pub(super) fn tick_chunk(&mut self, chunk: ChunkPos, speed: i32) {
+    /// section that has randomly ticking blocks or fluids. `next` is the chunk that ticks
+    /// next: the blocks its random ticks will probably pick start loading into the cache.
+    pub(super) fn tick_chunk(&mut self, chunk: ChunkPos, speed: i32, next: Option<ChunkPos>) {
         let min_x = chunk.x * 16;
         let min_z = chunk.z * 16;
         for _ in 0..speed {
@@ -115,6 +136,9 @@ impl Level {
         }
         if speed <= 0 {
             return;
+        }
+        if let Some(next) = next {
+            self.prefetch_picks(chunk, next, speed);
         }
         let min_section = self.min_y >> 4;
         // The section being ticked and the picks it has left. The next randomly ticking
@@ -163,6 +187,42 @@ impl Level {
             if let Some((pos, state)) = hit {
                 self.random_tick_state(pos, state);
             }
+        }
+    }
+
+    /// Prefetch hint for the random ticks of `next` after `chunk`: the blocks they pick if the
+    /// randomly ticking sections of both stay as they are and `next` draws no precipitation
+    /// position, or one (each section's picks plus one). Only reads; a wrong guess only costs
+    /// the cache lines.
+    fn prefetch_picks(&self, chunk: ChunkPos, next: ChunkPos, speed: i32) {
+        if speed > MAX_PREFETCH_SPEED {
+            return;
+        }
+        let (Some(here), Some(there)) = (self.chunks.chunk(chunk), self.chunks.chunk(next)) else {
+            return;
+        };
+        let mut value = self.rand_value;
+        let mut index = 0;
+        while let Some(found) = here.chunk.next_randomly_ticking(index) {
+            for _ in 0..speed {
+                random_pos(&mut value, 0, 0, 0, 0);
+            }
+            index = found + 1;
+        }
+        let sections = there.chunk.sections();
+        let mut index = 0;
+        while let Some(found) = there.chunk.next_randomly_ticking(index) {
+            let section = &sections[found];
+            let mut pick = value;
+            for _ in 0..=speed {
+                let pos = random_pos(&mut pick, 0, 0, 0, 15);
+                #[allow(clippy::cast_sign_loss)]
+                section.prefetch_block(pos.x as u32, pos.y as u32, pos.z as u32);
+            }
+            for _ in 0..speed {
+                random_pos(&mut value, 0, 0, 0, 0);
+            }
+            index = found + 1;
         }
     }
 
@@ -227,6 +287,9 @@ impl Level {
         self.handling_tick = false;
     }
 }
+
+/// Above this `randomTickSpeed`, the picks of the next chunk are not prefetched.
+const MAX_PREFETCH_SPEED: i32 = 16;
 
 /// `getBlockRandomPos` over a `randValue`: the level's, or a tile's in tile region mode.
 #[inline]

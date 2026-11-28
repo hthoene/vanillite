@@ -93,6 +93,30 @@ impl Border {
     }
 }
 
+/// Half the width of a player (the border stops its bounding box).
+const HALF_WIDTH: f64 = 0.3;
+
+/// Where a move from `from` to `to` ends at the border: `to` with x and z clamped when the
+/// player was inside and would leave (Java's border collides only with entities inside it, so
+/// a player outside after the border shrank may walk freely). `None` when the move is free.
+fn clamp_move(bounds: [f64; 4], from: [f64; 3], to: [f64; 3]) -> Option<[f64; 3]> {
+    let [min_x, min_z, max_x, max_z] = bounds;
+    let (lo_x, hi_x) = (min_x + HALF_WIDTH, max_x - HALF_WIDTH);
+    let (lo_z, hi_z) = (min_z + HALF_WIDTH, max_z - HALF_WIDTH);
+    // A little slack: the last position may already be clamped.
+    const SLACK: f64 = 1e-3;
+    let inside = from[0] >= lo_x - SLACK
+        && from[0] <= hi_x + SLACK
+        && from[2] >= lo_z - SLACK
+        && from[2] <= hi_z + SLACK;
+    if !inside || lo_x > hi_x || lo_z > hi_z {
+        return None;
+    }
+    let x = to[0].clamp(lo_x, hi_x);
+    let z = to[2].clamp(lo_z, hi_z);
+    (x != to[0] || z != to[2]).then_some([x, to[1], z])
+}
+
 /// The points of the wall near `pos` (6 wide, 5 high) on the sides the player is close to.
 fn wall(bounds: [f64; 4], warning: f64, pos: [f64; 3]) -> Vec<[f32; 3]> {
     let [min_x, min_z, max_x, max_z] = bounds;
@@ -236,6 +260,12 @@ impl Session {
         }
     }
 
+    /// The border collision of a Bedrock move (Bedrock has no border): the position the player
+    /// stops at when the move from `from` to `to` would cross it.
+    pub(super) fn border_stop(&self, from: [f64; 3], to: [f64; 3]) -> Option<[f64; 3]> {
+        clamp_move(self.border.bounds(Instant::now()), from, to)
+    }
+
     /// The wall near the player, five times a second.
     pub(super) fn draw_border(&mut self) {
         let Some(pos) = self.world.as_ref().map(|w| w.pos) else {
@@ -333,6 +363,22 @@ pub(super) type Toasts = FxHashMap<String, Toast>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn border_stops_players_inside_only() {
+        let b = [-10.0, -10.0, 10.0, 10.0];
+        assert_eq!(clamp_move(b, [9.0, 64.0, 0.0], [9.5, 63.0, 1.0]), None);
+        assert_eq!(
+            clamp_move(b, [9.0, 64.0, 0.0], [10.5, 63.0, 1.0]),
+            Some([9.7, 63.0, 1.0])
+        );
+        assert_eq!(
+            clamp_move(b, [0.0, 64.0, -9.6], [0.0, 64.0, -11.0]),
+            Some([0.0, 64.0, -9.7])
+        );
+        // Outside (the border shrank): no collision.
+        assert_eq!(clamp_move(b, [12.0, 64.0, 0.0], [13.0, 64.0, 0.0]), None);
+    }
 
     #[test]
     fn toast_only_when_every_requirement_is_done() {

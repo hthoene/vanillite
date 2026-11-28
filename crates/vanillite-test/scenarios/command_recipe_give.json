@@ -1,0 +1,102 @@
+{
+  "description": "/recipe give and take with * on a fresh player (#283): the number of recipe displays every learnable recipe has (transmute recipes one per material count, special recipes none), given twice, taken and given again; results stored into a probe chest.",
+  "tier": "fast",
+  "dimensions": true,
+  "block_entities": true,
+  "region": [
+    [
+      -16,
+      -61,
+      -16
+    ],
+    [
+      31,
+      -58,
+      31
+    ]
+  ],
+  "ticks": 3,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        1.5,
+        -60.0,
+        2.5
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "setblock 0 -60 0 minecraft:chest"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace block 0 -60 0 container.0 with minecraft:paper"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g1 int 1 run recipe give steve *"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store success storage t:p g2 int 1 run recipe give steve *"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g3 int 1 run recipe take steve minecraft:stone_bricks"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g4 int 1 run recipe take steve *"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g5 int 1 run recipe give steve minecraft:crafting_table"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g6 int 1 run recipe give steve minecraft:bundle"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g7 int 1 run recipe give steve minecraft:tipped_arrow"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g8 int 1 run recipe give steve minecraft:leather_boots_dyed"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p g9 int 1 run recipe give steve minecraft:decorated_pot"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p ga int 1 run recipe give steve minecraft:shield_decoration"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "execute store result storage t:p gb int 1 run recipe give steve *"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "data modify block 0 -60 0 Items[0].components.\"minecraft:custom_data\" set from storage t:p"
+    }
+  ]
+}

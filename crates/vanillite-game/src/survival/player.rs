@@ -18,6 +18,7 @@ use super::damage::{DamageKind, DamageSource, DamageTypes, tag};
 use super::food::{FoodAction, FoodData, exhaustion};
 use super::rules::{Difficulty, GameRules, Rule};
 use super::{Effect, play_sound};
+use crate::item::EquipmentSlot;
 use crate::player::PlayerData;
 use crate::scoreboard::CriteriaKind;
 use crate::stats::custom;
@@ -266,6 +267,10 @@ pub struct Survival {
     /// The equipment's and the location-based enchantments' attribute modifiers as last sent
     /// to the client (`collectEquipmentChanges`).
     pub equipment_modifiers: crate::effect::attribute::Modifiers,
+    /// The attribute instances a command or plugin changed (`AttributeMap`): their base
+    /// values and permanent modifiers, saved as `attributes`; the values live in the effects'
+    /// modifiers.
+    pub attributes: crate::mob::entity_nbt::NbtAttributes,
     /// The location-based modifiers changed: the attributes are synced again.
     pub equipment_dirty: bool,
     /// `getTicksFrozen` and `isInPowderSnow`.
@@ -273,6 +278,10 @@ pub struct Survival {
     pub in_powder_snow: bool,
     /// `lastHurtMob` with the tick it was hit (`lastHurtMobTimestamp`).
     pub last_hurt_mob: Option<(vanillite_world::entity::EntityId, i32)>,
+    /// `swingState`: the ticks of the running swing and its duration.
+    pub swing: Option<(i32, i32)>,
+    /// `spawnExtraParticlesOnFall`: the next landing bursts block particles (mace smash).
+    pub spawn_extra_particles_on_fall: bool,
     /// `lastHurtByMob` with the tick it hit (`lastHurtByMobTimestamp`).
     pub last_hurt_by_mob: Option<(vanillite_world::entity::EntityId, i32)>,
     /// `lastHurtByPlayer` with the ticks it is still remembered (`lastHurtByPlayerMemoryTime`).
@@ -400,10 +409,13 @@ impl Default for Survival {
             world_actions: Vec::new(),
             location: crate::enchant::location::LocationState::default(),
             equipment_modifiers: crate::effect::attribute::Modifiers::default(),
+            attributes: crate::mob::entity_nbt::NbtAttributes::default(),
             equipment_dirty: false,
             ticks_frozen: 0,
             in_powder_snow: false,
             last_hurt_mob: None,
+            spawn_extra_particles_on_fall: false,
+            swing: None,
             last_hurt_by_mob: None,
             last_hurt_by_player: None,
             last_hurt_by_names: (None, None),
@@ -498,6 +510,8 @@ pub struct Env<'a> {
     pub game_time: i64,
     /// The world's lowest block.
     pub min_y: i32,
+    /// `logicalHeight` of the world's dimension type.
+    pub logical_height: i32,
     /// The world's dimension, e.g. `minecraft:overworld`.
     pub dimension: &'a str,
     /// `Level.isRainingAt`.
@@ -608,6 +622,7 @@ impl Survival {
         // The effects (with their modifiers) first: Health Boost raises the maximum.
         s.effects.load(data.get("active_effects"));
         s.effects.resend_all();
+        s.load_attributes(data.get("attributes"));
         let max = s.max_health();
         s.health = float(data, "Health").unwrap_or(max).clamp(0.0, max);
         s.absorption = float(data, "AbsorptionAmount")
@@ -641,6 +656,8 @@ impl Survival {
             s.raid_omen.position = Some(BlockPos::new(*x, *y, *z));
         }
         s.tracking = crate::advancements::tracking::Tracking::load(data);
+        s.spawn_extra_particles_on_fall =
+            matches!(data.get("spawn_extra_particles_on_fall"), Some(Tag::Byte(b)) if *b != 0);
         if let Some(Tag::Compound(loc)) = data.get("LastDeathLocation")
             && let (Some(Tag::String(dim)), Some(Tag::IntArray(pos))) =
                 (loc.get("dimension"), loc.get("pos"))
@@ -697,9 +714,14 @@ impl Survival {
                 out.remove("active_effects");
             }
         }
+        out.insert("attributes", self.attributes.to_list());
         self.portal.save(out);
         self.tracking.save(out);
         self.food.save(out);
+        out.insert(
+            "spawn_extra_particles_on_fall",
+            Tag::Byte(i8::from(self.spawn_extra_particles_on_fall)),
+        );
         out.remove("raid_omen_position");
         if let Some(p) = self.raid_omen.position {
             out.insert("raid_omen_position", Tag::IntArray(vec![p.x, p.y, p.z]));
@@ -745,7 +767,35 @@ impl Survival {
             s.score = self.score;
         }
         s.xp.seed = self.xp.seed;
+        // `assignBaseValues`: the base values carry over, the permanent modifiers do not.
+        s.attributes = self.attributes.clone();
+        for a in &mut s.attributes.0 {
+            a.modifiers.clear();
+        }
+        for (a, v) in self.effects.modifiers.bases() {
+            s.effects.modifiers.set_base(a, v);
+        }
+        s.effects.modifiers.take_dirty();
+        s.health = s.max_health();
         s
+    }
+
+    /// `AttributeMap.apply` of a player's `attributes` list: base values and permanent
+    /// modifiers, kept for the save.
+    fn load_attributes(&mut self, tag: Option<&Tag>) {
+        use vanillite_data::entity::ids;
+        for a in crate::mob::entity_nbt::read_attributes(ids::PLAYER, tag) {
+            let base = a.attribute.sanitize(a.base);
+            if base.to_bits() != a.attribute.base_of(ids::PLAYER).to_bits() {
+                self.effects.modifiers.set_base(a.attribute, base);
+            }
+            for x in &a.modifiers {
+                self.effects
+                    .modifiers
+                    .set(a.attribute, &x.id, x.amount, x.operation);
+            }
+            self.attributes.0.push(a);
+        }
     }
 
     /// The player was moved without walking (teleport, portal): the blocks it touches next
@@ -898,6 +948,7 @@ fn check_totem(
         .filter(|e| matches!(e, crate::consumable::ConsumeEffect::Apply(..)))
         .map(|_| player.survival.random.next_float())
         .collect();
+    let mut sounds = Vec::new();
     {
         let mut host = crate::effect::living::PlayerHost {
             entity: &mut *entity,
@@ -913,6 +964,16 @@ fn check_totem(
             vanillite_data::entity::ids::PLAYER,
             &mut host,
             &mut roll,
+            &mut |s| sounds.push(s.to_owned()),
+        );
+    }
+    let at = entity.as_ref().pos();
+    for s in sounds {
+        crate::totem::play_consume_sound(
+            env.out,
+            at,
+            &s,
+            vanillite_protocol::packets::play::clientbound::SoundSource::Players,
         );
     }
     let (id, network_id) = (entity.as_ref().id(), entity.as_ref().network_id().0);
@@ -1105,7 +1166,7 @@ pub fn hurt_with(
     // `#damages_helmet` (falling anvils, blocks, stalactites) with a helmet on: `hurtHelmet`
     // (`doHurtEquipment(HEAD)`) and three quarters of the damage.
     if types.is(kind, tag::DAMAGES_HELMET) && !player.inventory.get(39).is_empty() {
-        hurt_armor(player, env, &source, damage, 39..40);
+        hurt_armor(entity, player, env, &source, damage, 39..40);
         damage *= 0.75;
     }
     if !damage.is_finite() {
@@ -1248,8 +1309,8 @@ pub fn hurt_with(
     } else if took_full {
         player_sound(env, id, pos, types.get(kind).effects.sound());
     }
-    if !player.survival.effects.is_empty() {
-        // `onMobHurt` of the effects (Infested).
+    if !player.survival.effects.is_empty() && (!blocked || damage > 0.0) {
+        // `onMobHurt` of the effects (Infested), unless the hit was blocked completely.
         let e = entity.as_ref();
         let look = crate::effect::living::view_vector(e.rot().x_rot, e.rot().y_rot);
         let height = e.dims().height;
@@ -1326,7 +1387,7 @@ fn actually_hurt(
     let mut damage = damage;
     if !types.is(kind, tag::BYPASSES_ARMOR) {
         // `hurtArmor`, then `getDamageAfterArmorAbsorb` with the equipment's armour.
-        hurt_armor(player, env, &source, damage, 36..40);
+        hurt_armor(entity, player, env, &source, damage, 36..40);
         let (armor, toughness) = armor_values(player);
         damage = combat::damage_after_absorb_with(damage, armor, toughness, armor_effectiveness);
     }
@@ -1408,8 +1469,10 @@ pub fn armor_values(player: &PlayerData) -> (f32, f32) {
     )
 }
 
-/// `hurtArmor` → `doHurtEquipment`: each armour piece loses `max(1, damage / 4)` durability.
+/// `hurtArmor` → `doHurtEquipment`: each armour piece takes `hurtAndBreak(max(1, damage / 4))`
+/// (Unbreaking through the `item_damage` effects, the break event of its slot).
 fn hurt_armor(
+    entity: &EntityMut<'_>,
     player: &mut PlayerData,
     env: &mut Env<'_>,
     source: &DamageSource,
@@ -1422,9 +1485,6 @@ fn hurt_armor(
     #[allow(clippy::cast_possible_truncation)]
     let amount = (damage / 4.0).max(1.0) as i32;
     for index in slots {
-        let unbreaking = crate::player::play::game_data().map_or(0, |d| {
-            d.enchantment_level(player.inventory.get(index), "minecraft:unbreaking")
-        });
         let Some(stack) = player.inventory.get_mut(index) else {
             continue;
         };
@@ -1437,23 +1497,29 @@ fn hurt_armor(
         {
             continue;
         }
-        let mut n = 0;
-        for _ in 0..amount {
-            // Unbreaking on armour: a chance of 60 % + 40 % / (level + 1) to take damage.
-            #[allow(clippy::cast_precision_loss)]
-            let chance = 0.6 + 0.4 / (unbreaking.max(0) as f32 + 1.0);
-            if unbreaking <= 0 || env.random.next_float() < chance {
-                n += 1;
-            }
-        }
-        if n > 0 {
+        let n = crate::durability::change(stack, amount, false, env.random);
+        if n != 0 {
             let d = crate::item::damage(stack) + n;
-            crate::advancements::view::apply_damage(
+            let broke = crate::advancements::view::apply_damage(
                 Some(&mut player.advancements),
                 Some(&mut player.stats),
                 stack,
                 d,
             );
+            let slot = match index {
+                36 => EquipmentSlot::Feet,
+                37 => EquipmentSlot::Legs,
+                38 => EquipmentSlot::Chest,
+                _ => EquipmentSlot::Head,
+            };
+            if broke {
+                let e = entity.as_ref();
+                env.out.push(Effect::Tracking {
+                    entity: e.id(),
+                    with_self: true,
+                    packet: crate::durability::break_packet(e.network_id().0, slot),
+                });
+            }
         }
     }
 }
@@ -1603,20 +1669,11 @@ fn apply_item_blocking(
         crate::stats::Stat::of(crate::stats::StatType::Used, stack.item),
         1,
     );
-    let mut points = blocks.item_damage(blocked);
-    if points > 0 && player.game_mode != GameMode::Creative && crate::item::is_damageable(&stack) {
-        // Unbreaking (`item_damage`: `remove_binomial`) saves each point with level / (level + 1).
-        let unbreaking = crate::player::play::game_data()
-            .map_or(0, |d| d.enchantment_level(&stack, "minecraft:unbreaking"));
-        if unbreaking > 0 {
-            #[allow(clippy::cast_precision_loss)]
-            let level = unbreaking as f32;
-            let saved = (0..points)
-                .filter(|_| env.random.next_float() < level / (level + 1.0))
-                .count();
-            points -= i32::try_from(saved).unwrap_or(points);
-        }
-        if points > 0
+    let points = blocks.item_damage(blocked);
+    if points > 0 {
+        let creative = player.game_mode == GameMode::Creative;
+        let points = crate::durability::change(&stack, points, creative, env.random);
+        if points != 0
             && let Some(s) = player.inventory.get_mut(index)
         {
             let d = crate::item::damage(s) + points;
@@ -1626,10 +1683,24 @@ fn apply_item_blocking(
                 s,
                 d,
             );
-            if broke && let Some(u) = player.survival.using_item.as_mut() {
-                // Vanilla keeps using the emptied stack (`onEquippedItemBroken` does not
-                // stop it).
-                u.emptied = true;
+            if broke {
+                // `onEquippedItemBroken`: the shield's break event (sound and particles).
+                let slot = if index == crate::inventory::OFFHAND {
+                    EquipmentSlot::OffHand
+                } else {
+                    EquipmentSlot::MainHand
+                };
+                let e = entity.as_ref();
+                env.out.push(Effect::Tracking {
+                    entity: e.id(),
+                    with_self: true,
+                    packet: crate::durability::break_packet(e.network_id().0, slot),
+                });
+                if let Some(u) = player.survival.using_item.as_mut() {
+                    // Vanilla keeps using the emptied stack (`onEquippedItemBroken` does not
+                    // stop it).
+                    u.emptied = true;
+                }
             }
         }
     }
@@ -1964,6 +2035,29 @@ pub enum TickResult {
     Credits,
 }
 
+/// `LivingEntity.swing`'s `swingState.startIfAble` with `getModifiedSwingDuration`: refused
+/// while a swing is in its first half; returns whether the swing starts (and is sent).
+pub fn start_swing(s: &mut Survival, duration: i32) -> bool {
+    if let Some((ticks, current)) = s.swing
+        && ticks > 0
+        && ticks <= current / 2
+    {
+        return false;
+    }
+    let duration = if s.effects.has_dig_speed() {
+        duration - (1 + s.effects.dig_speed_amplification())
+    } else if let Some(fatigue) = s
+        .effects
+        .amplifier(crate::effect::MobEffect::MINING_FATIGUE)
+    {
+        duration + (1 + fatigue) * 2
+    } else {
+        duration
+    };
+    s.swing = Some((0, duration));
+    true
+}
+
 /// `ServerPlayer.tick`'s survival part (once per world tick, with the entities).
 pub fn tick_entity(player: &mut PlayerData) {
     let s = &mut player.survival;
@@ -1971,6 +2065,10 @@ pub fn tick_entity(player: &mut PlayerData) {
         s.damage_cooldown -= 1;
     }
     s.attack_ticker = s.attack_ticker.saturating_add(1);
+    // `SwingState.tick`.
+    if let Some((ticks, duration)) = s.swing {
+        s.swing = (ticks <= duration).then_some((ticks.saturating_add(1), duration));
+    }
     if s.take_xp_delay > 0 {
         s.take_xp_delay -= 1;
     }
@@ -2287,7 +2385,11 @@ pub fn do_tick_end(
     if player.survival.impulse_grace > 0 {
         player.survival.impulse_grace -= 1;
     }
-    crate::elytra::update_player_pose(entity, player.survival.spin_attack.is_some());
+    crate::elytra::update_player_pose(
+        entity,
+        player.survival.spin_attack.is_some(),
+        crate::effect::attribute_map::scale_of(&player.survival.effects.modifiers),
+    );
     player.survival.last_box = Some(entity.as_ref().aabb());
     // `Player.aiStep`: `handleShoulderEntities`.
     let sleeping = player.survival.sleeping_pos.is_some();
@@ -3185,6 +3287,36 @@ fn check_fall_damage(
     if !player.survival.fluids.in_water() && dy < 0.0 {
         player.survival.fall_distance -= dy;
     }
+    // `ServerPlayer.checkFallDamage`: the landing after a mace smash on the ground bursts
+    // block particles.
+    if player.survival.spawn_extra_particles_on_fall
+        && on_ground
+        && player.survival.fall_distance > 0.0
+    {
+        let center = Vec3::new(
+            f64::from(on_pos.x) + 0.5,
+            f64::from(on_pos.y) + 1.0,
+            f64::from(on_pos.z) + 0.5,
+        );
+        #[allow(clippy::cast_possible_truncation)]
+        let count = (50.0 * player.survival.fall_distance).clamp(0.0, 200.0) as i32;
+        let mut particle = crate::level::particles::simple("minecraft:block");
+        vanillite_protocol::codec::write_varint(&mut particle.options, i32::from(on_state.0));
+        let packet = crate::level::particles::packet(
+            particle,
+            center,
+            count,
+            Vec3::new(0.3, 0.3, 0.3),
+            f64::from(0.15_f32),
+        );
+        env.out.push(Effect::Nearby {
+            pos: center,
+            range: 32.0,
+            except: None,
+            packet: SharedPacket::of(&packet),
+        });
+        player.survival.spawn_extra_particles_on_fall = false;
+    }
     if on_ground {
         let fall = player.survival.fall_distance;
         if fall > 0.0 {
@@ -3808,6 +3940,10 @@ impl crate::mob::physics::Blocks for MoveBlocks<'_> {
     fn border(&self) -> Option<&crate::level::border::WorldBorder> {
         self.1
     }
+
+    fn moving_piston_boxes(&self, pos: BlockPos, out: &mut Vec<[f64; 6]>) {
+        self.0.moving_piston_boxes(pos, out);
+    }
 }
 
 /// `Entity.move(MoverType.SELF, delta)` of a player the server moves: collisions with step up,
@@ -4009,6 +4145,22 @@ fn decrease_air(player: &mut PlayerData, air: i32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// `SwingState.startIfAble`: a new swing starts unless the current one is in its first
+    /// half; Haste shortens the duration (#272, I3-16).
+    #[test]
+    fn swing_starts_only_after_half_the_current_one() {
+        let mut s = Survival::default();
+        assert!(start_swing(&mut s, 6));
+        assert_eq!(s.swing, Some((0, 6)));
+        // In the same tick (ticks 0) it starts again.
+        assert!(start_swing(&mut s, 6));
+        s.swing = Some((3, 6));
+        assert!(!start_swing(&mut s, 6));
+        s.swing = Some((4, 6));
+        assert!(start_swing(&mut s, 6));
+    }
+
     use super::*;
 
     /// `calculateFallDamage` of Vanilla 26.3: `floor(distance + 1e-6 - 3)`.

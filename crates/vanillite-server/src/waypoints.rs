@@ -317,10 +317,15 @@ fn transmit_range(player: &vanillite_game::player::PlayerData, crouching: bool) 
         // `ServerPlayer.WAYPOINT_TRANSMIT_RANGE_CROUCH_MODIFIER`.
         modifiers.push((ADD_MULTIPLIED_TOTAL, -1.0));
     }
-    let base = attribute.base_of(PLAYER);
+    // The base value a command or plugin set and the effects' and commands' modifiers.
+    let own = &player.survival.effects.modifiers;
+    let base = own
+        .base(attribute)
+        .unwrap_or_else(|| attribute.base_of(PLAYER));
+    #[allow(clippy::as_conversions)]
+    modifiers.extend(own.of(attribute).map(|m| (m.operation as u8, m.amount)));
     let (min, max) = (0.0, attribute.sanitize(f64::MAX));
-    let value = vanillite_game::item::attribute_value(base, &modifiers, min, max);
-    player.survival.effects.attribute(attribute, value)
+    vanillite_game::item::attribute_value(base, &modifiers, min, max)
 }
 
 /// What the skip check of a pair reads of its source, by slot.
@@ -615,13 +620,19 @@ impl Waypoints {
         compute.parts(&mut rows, RECEIVERS_PER_PART, |_, part| {
             let mut codec = Codec::default();
             let mut batch = Vec::new();
+            // Receivers in a crowd get batches of similar size: each starts with the capacity
+            // of the last one instead of growing from empty.
             for (receiver, kinds, angles) in part.iter_mut() {
                 ctx.receiver(*receiver, kinds, angles, &mut codec, &mut batch);
                 if !batch.is_empty()
                     && let Some((_, r)) = &ctx.now[*receiver as usize]
                 {
-                    r.sink
-                        .send_batch(std::mem::take(&mut batch), threshold, mark);
+                    let size = batch.len();
+                    r.sink.send_batch(
+                        std::mem::replace(&mut batch, Vec::with_capacity(size)),
+                        threshold,
+                        mark,
+                    );
                 }
             }
         });

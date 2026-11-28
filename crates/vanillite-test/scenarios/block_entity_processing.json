@@ -1,0 +1,32 @@
+{
+  "description": "Ticking block entities: a furnace, blast furnace and smoker smelt (fuel, a full output slot, recipes used), a campfire cooks, two brewing stands brew (fuel from blaze powder, a brew finishing), a beacon on a pyramid gives its effects to the player, a lectern turns its page for a comparator, a powered crafter crafts, a decorated pot, sign and banner keep their data. The block entities are in the frames.",
+  "tier": "fast",
+  "block_entities": true,
+  "region": [[0, -61, 0], [15, -56, 10]],
+  "ticks": 82,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [2.5, -60.0, 4.5]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "setblock 0 -60 0 minecraft:furnace[facing=south]{Items:[{Slot:0b,id:\"minecraft:raw_iron\",count:3},{Slot:1b,id:\"minecraft:coal\",count:2}],cooking_time_spent:190,cooking_total_time:200}"},
+    {"tick": 1, "op": "command", "command": "setblock 2 -60 0 minecraft:blast_furnace[facing=south]{Items:[{Slot:0b,id:\"minecraft:raw_gold\",count:2},{Slot:1b,id:\"minecraft:lava_bucket\",count:1}]}"},
+    {"tick": 1, "op": "command", "command": "setblock 4 -60 0 minecraft:smoker[facing=south]{Items:[{Slot:0b,id:\"minecraft:beef\",count:2},{Slot:1b,id:\"minecraft:oak_planks\",count:1},{Slot:2b,id:\"minecraft:cooked_beef\",count:63}]}"},
+    {"tick": 1, "op": "command", "command": "setblock 6 -60 0 minecraft:campfire[lit=true,facing=north]{Items:[{Slot:0b,id:\"minecraft:beef\",count:1},{Slot:2b,id:\"minecraft:potato\",count:1}],CookingTimes:[590,0,595,0],CookingTotalTimes:[600,600,600,600]}"},
+    {"tick": 1, "op": "command", "command": "setblock 8 -60 0 minecraft:brewing_stand{Items:[{Slot:0b,id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:water\"}}},{Slot:2b,id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:awkward\"}}},{Slot:3b,id:\"minecraft:nether_wart\",count:2},{Slot:4b,id:\"minecraft:blaze_powder\",count:1}]}"},
+    {"tick": 1, "op": "command", "command": "setblock 10 -60 0 minecraft:brewing_stand{Items:[{Slot:1b,id:\"minecraft:potion\",count:1,components:{\"minecraft:potion_contents\":{potion:\"minecraft:awkward\"}}},{Slot:3b,id:\"minecraft:sugar\",count:1}],Fuel:3,BrewTime:5}"},
+    {"tick": 1, "op": "command", "command": "fill 0 -61 6 4 -61 10 minecraft:iron_block"},
+    {"tick": 1, "op": "command", "command": "fill 1 -60 7 3 -60 9 minecraft:gold_block"},
+    {"tick": 1, "op": "command", "command": "setblock 2 -59 8 minecraft:beacon{primary_effect:\"minecraft:speed\",secondary_effect:\"minecraft:regeneration\"}"},
+    {"tick": 1, "op": "command", "command": "setblock 6 -60 8 minecraft:lectern[has_book=true]{Book:{id:\"minecraft:writable_book\",count:1,components:{\"minecraft:writable_book_content\":{pages:[\"a\",\"b\",\"c\"]}}},Page:1}"},
+    {"tick": 1, "op": "command", "command": "setblock 7 -60 8 minecraft:comparator[facing=east]"},
+    {"tick": 1, "op": "command", "command": "setblock 10 -60 8 minecraft:crafter[orientation=north_up]{Items:[{Slot:0b,id:\"minecraft:oak_log\",count:1}]}"},
+    {"tick": 1, "op": "command", "command": "setblock 12 -60 8 minecraft:decorated_pot{sherds:[\"minecraft:brick\",\"minecraft:angler_pottery_sherd\",\"minecraft:brick\",\"minecraft:brick\"],item:{id:\"minecraft:stick\",count:4}}"},
+    {"tick": 1, "op": "command", "command": "setblock 12 -60 4 minecraft:oak_sign{front_text:{messages:[\"a\",\"b\",\"c\",\"d\"],color:\"red\",has_glowing_text:1b},is_waxed:0b}"},
+    {"tick": 1, "op": "command", "command": "setblock 14 -60 4 minecraft:white_banner{patterns:[{pattern:\"minecraft:stripe_top\",color:\"red\"}],CustomName:\"B\"}"},
+    {"tick": 30, "op": "command", "command": "data merge block 6 -60 8 {Page:2}"},
+    {"tick": 31, "op": "command", "command": "setblock 11 -60 8 minecraft:redstone_block"},
+    {"tick": 40, "op": "command", "command": "item replace block 0 -60 0 container.0 with minecraft:sand 4"},
+    {"tick": 41, "op": "command", "command": "data merge block 0 -60 0 {cooking_time_spent:195}"},
+    {"tick": 50, "op": "command", "command": "setblock 6 -60 0 minecraft:campfire[lit=false,facing=north]"}
+  ]
+}

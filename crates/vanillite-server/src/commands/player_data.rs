@@ -283,8 +283,12 @@ pub(crate) fn recipe(
 
 // --- attribute ----------------------------------------------------------------------------------
 
-/// `/attribute <target> <attribute> ...`. Entities have no attribute instances yet: the base
-/// values are the type's defaults, there are no modifiers, and changes are not supported.
+/// An attribute change run in the world of a target in another world.
+type RemoteChange = Box<dyn FnOnce(&mut vanillite_game::entities::Entities, EntityId) + Send>;
+
+/// `/attribute <target> <attribute> ...` (`AttributeCommand`) over the entity's attribute map
+/// ([`vanillite_game::effect::attribute_map`]). A target in another world is changed there;
+/// its values read as the type's defaults.
 #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
 pub(crate) fn attribute(
     op: AttributeOp,
@@ -292,6 +296,9 @@ pub(crate) fn attribute(
     source: &CommandSource,
     env: &mut Env<'_>,
 ) -> Result<i32, CommandError> {
+    use vanillite_game::effect::Operation;
+    use vanillite_game::effect::attribute::Attribute;
+    use vanillite_game::effect::attribute_map::{self as map, AttributeError};
     let target = single(args, "target", source, env)?;
     let name = args
         .identifier("attribute")
@@ -301,65 +308,183 @@ pub(crate) fn attribute(
         format!("attribute.name.{}", name.rsplit(':').next().unwrap_or("")),
         vec![],
     );
-    let defaults = target.kind.info().attributes;
-    if defaults.is_empty() {
-        return Err(error(
-            "commands.attribute.failed.entity",
-            vec![ErrArg::Component(Box::new(display))],
-        ));
-    }
-    let Some(base) = ATTRIBUTE
-        .id(name)
-        .and_then(|id| defaults.iter().find(|(a, _)| *a == id))
-        .map(|(_, v)| *v)
-    else {
-        return Err(error(
-            "commands.attribute.failed.no_attribute",
-            vec![
-                ErrArg::Component(Box::new(display)),
-                ErrArg::Component(Box::new(description)),
-            ],
-        ));
-    };
-    let send = |key: &str, value: f64| {
-        source.send_success(
-            env.global,
-            Component::translatable_args(
-                key,
-                vec![
-                    Arg::from(description.clone()),
-                    Arg::from(display.clone()),
-                    Arg::Double(value),
-                ],
+    let id_arg = || args.identifier("id").cloned().ok_or_else(|| missing("id"));
+    let fail = |e: AttributeError, id: Option<&str>| -> CommandError {
+        let target = || ErrArg::Component(Box::new(display.clone()));
+        let attr = || ErrArg::Component(Box::new(description.clone()));
+        let id = || ErrArg::Str(id.unwrap_or_default().to_owned());
+        match e {
+            AttributeError::NotLiving => error("commands.attribute.failed.entity", vec![target()]),
+            AttributeError::NoAttribute => error(
+                "commands.attribute.failed.no_attribute",
+                vec![target(), attr()],
             ),
-            false,
-        );
+            AttributeError::NoModifier => error(
+                "commands.attribute.failed.no_modifier",
+                vec![attr(), target(), id()],
+            ),
+            AttributeError::ModifierPresent => error(
+                "commands.attribute.failed.modifier_already_present",
+                vec![id(), attr(), target()],
+            ),
+            AttributeError::Refused => error("command.failed", vec![]),
+        }
     };
+    let living = !target.kind.info().attributes.is_empty();
+    if !living {
+        return Err(fail(AttributeError::NotLiving, None));
+    }
+    let Some(attribute) = ATTRIBUTE
+        .id(name)
+        .and_then(|i| u8::try_from(i).ok())
+        .map(Attribute)
+        .filter(|&a| map::has_attribute(target.kind, a))
+    else {
+        return Err(fail(AttributeError::NoAttribute, None));
+    };
+    let send = |env: &Env<'_>, key: &str, args: Vec<Arg>| {
+        source.send_success(env.global, Component::translatable_args(key, args), false);
+    };
+    let on = || Arg::from(display.clone());
+    let attr = || Arg::from(description.clone());
     let scale = args.double("scale").copied().unwrap_or(1.0);
+    let local = target.entity;
+    // A target in another world: changes run there, reads see the type's defaults.
+    let remote = |env: &mut Env<'_>, f: RemoteChange| {
+        on_player(env, &target, move |level, id| f(&mut level.entities, id));
+    };
     match op {
-        AttributeOp::Get => {
-            send("commands.attribute.value.get.success", base);
-            Ok((base * scale) as i32)
+        AttributeOp::Get | AttributeOp::BaseGet => {
+            let value = match local {
+                Some(id) if op == AttributeOp::Get => {
+                    map::value(&env.level.entities, id, attribute)
+                }
+                Some(id) => map::base(&env.level.entities, id, attribute),
+                None => Ok(attribute.base_of(target.kind)),
+            }
+            .map_err(|e| fail(e, None))?;
+            let key = if op == AttributeOp::Get {
+                "commands.attribute.value.get.success"
+            } else {
+                "commands.attribute.base_value.get.success"
+            };
+            send(env, key, vec![attr(), on(), Arg::Double(value)]);
+            Ok((value * scale) as i32)
         }
-        AttributeOp::BaseGet => {
-            send("commands.attribute.base_value.get.success", base);
-            Ok((base * scale) as i32)
-        }
-        AttributeOp::BaseReset => {
-            send("commands.attribute.base_value.reset.success", base);
+        AttributeOp::BaseSet => {
+            let value = args
+                .double("value")
+                .copied()
+                .ok_or_else(|| missing("value"))?;
+            match local {
+                Some(id) => map::set_base(&mut env.level.entities, id, attribute, value, true)
+                    .map_err(|e| fail(e, None))?,
+                None => remote(
+                    env,
+                    Box::new(move |ents, id| {
+                        let _ = map::set_base(ents, id, attribute, value, true);
+                    }),
+                ),
+            }
+            send(
+                env,
+                "commands.attribute.base_value.set.success",
+                vec![attr(), on(), Arg::Double(value)],
+            );
             Ok(1)
         }
-        AttributeOp::ModifierRemove | AttributeOp::ModifierValueGet => {
-            let id = args.identifier("id").ok_or_else(|| missing("id"))?;
-            Err(error(
-                "commands.attribute.failed.no_modifier",
-                vec![
-                    ErrArg::Component(Box::new(description.clone())),
-                    ErrArg::Component(Box::new(display.clone())),
-                    ErrArg::Str(id.clone()),
-                ],
-            ))
+        AttributeOp::BaseReset => {
+            let value = match local {
+                Some(id) => map::reset_base(&mut env.level.entities, id, attribute, true)
+                    .map_err(|e| fail(e, None))?,
+                None => {
+                    remote(
+                        env,
+                        Box::new(move |ents, id| {
+                            let _ = map::reset_base(ents, id, attribute, true);
+                        }),
+                    );
+                    attribute.base_of(target.kind)
+                }
+            };
+            send(
+                env,
+                "commands.attribute.base_value.reset.success",
+                vec![attr(), on(), Arg::Double(value)],
+            );
+            Ok(1)
         }
-        AttributeOp::BaseSet | AttributeOp::ModifierAdd(_) => Err(error("command.failed", vec![])),
+        AttributeOp::ModifierAdd(operation) => {
+            let id = id_arg()?;
+            let amount = args
+                .double("value")
+                .copied()
+                .ok_or_else(|| missing("value"))?;
+            let operation = match operation {
+                vanillite_game::commands::ModifierOperation::AddValue => Operation::AddValue,
+                vanillite_game::commands::ModifierOperation::AddMultipliedBase => {
+                    Operation::AddMultipliedBase
+                }
+                vanillite_game::commands::ModifierOperation::AddMultipliedTotal => {
+                    Operation::AddMultipliedTotal
+                }
+            };
+            match local {
+                Some(e) => map::add_modifier(
+                    &mut env.level.entities,
+                    e,
+                    attribute,
+                    &id,
+                    amount,
+                    operation,
+                    true,
+                )
+                .map_err(|err| fail(err, Some(&id)))?,
+                None => {
+                    let id = id.clone();
+                    remote(
+                        env,
+                        Box::new(move |ents, e| {
+                            let _ =
+                                map::add_modifier(ents, e, attribute, &id, amount, operation, true);
+                        }),
+                    );
+                }
+            }
+            send(
+                env,
+                "commands.attribute.modifier.add.success",
+                vec![Arg::String(id.clone()), attr(), on()],
+            );
+            Ok(1)
+        }
+        AttributeOp::ModifierRemove => {
+            let id = id_arg()?;
+            match local {
+                Some(e) => map::remove_modifier(&mut env.level.entities, e, attribute, &id, true)
+                    .map_err(|err| fail(err, Some(&id)))?,
+                None => return Err(fail(AttributeError::NoModifier, Some(&id))),
+            }
+            send(
+                env,
+                "commands.attribute.modifier.remove.success",
+                vec![Arg::String(id.clone()), attr(), on()],
+            );
+            Ok(1)
+        }
+        AttributeOp::ModifierValueGet => {
+            let id = id_arg()?;
+            let value = match local {
+                Some(e) => map::modifier(&env.level.entities, e, attribute, &id)
+                    .map_err(|err| fail(err, Some(&id)))?,
+                None => return Err(fail(AttributeError::NoModifier, Some(&id))),
+            };
+            send(
+                env,
+                "commands.attribute.modifier.value.get.success",
+                vec![Arg::String(id.clone()), attr(), on(), Arg::Double(value)],
+            );
+            Ok((value * scale) as i32)
+        }
     }
 }

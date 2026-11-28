@@ -41,9 +41,9 @@ pub struct Global {
     /// Entries of data-driven registries commands refer to (timelines, world clocks,
     /// enchantments).
     pub(crate) registries: std::collections::BTreeMap<String, Vec<String>>,
-    /// Tool rules, loot tables and item data of the block and item handlers.
-    /// The game data at start; [`Global::game`] gives the current one.
-    pub(crate) game_at_start: Arc<vanillite_game::player::play::GameData>,
+    /// Tool rules, loot tables and item data of the block and item handlers: this server's
+    /// current game data (replaced by reloads), [`Global::game`].
+    pub(crate) game_data: std::sync::RwLock<Arc<vanillite_game::player::play::GameData>>,
     /// `ClientboundUpdateRecipesPacket` of the loaded recipes, encoded once.
     pub(crate) recipes_packet: std::sync::RwLock<Arc<vanillite_protocol::SharedPacket>>,
     /// `spawn-protection` radius in blocks.
@@ -96,7 +96,21 @@ impl Global {
 
     /// The current game data (loot tables, recipes, tags), replaced by `/reload`.
     pub(crate) fn game(&self) -> Arc<vanillite_game::player::play::GameData> {
-        vanillite_game::player::play::game_data().unwrap_or_else(|| Arc::clone(&self.game_at_start))
+        Arc::clone(
+            &self
+                .game_data
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// Replaces the game data after a reload (and installs it for the game crate).
+    pub(crate) fn set_game(&self, game: Arc<vanillite_game::player::play::GameData>) {
+        vanillite_game::player::play::install_game_data(Arc::clone(&game));
+        *self
+            .game_data
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = game;
     }
 
     /// A shared reference to this value (for tasks on other worlds).
