@@ -176,6 +176,9 @@ pub struct BlockEntities {
     /// The number of loaded End gateways: entities look for gateways around them only while
     /// there are any.
     gateways: usize,
+    /// The number of moving pistons (`PistonMovingBlockEntity`), whose collision boxes change
+    /// without a block change.
+    moving_pistons: usize,
 }
 
 impl BlockEntities {
@@ -214,6 +217,11 @@ impl BlockEntities {
         self.gateways > 0
     }
 
+    /// Whether a moving piston is loaded.
+    pub fn has_moving_pistons(&self) -> bool {
+        self.moving_pistons > 0
+    }
+
     /// `setBlockEntity` / `addAndRegisterBlockEntity`: replaces the block entity at `pos`; a
     /// ticking kind keeps the ticker slot of the one it replaces (`RebindableTickingBlockEntity
     /// Wrapper.rebind`) or gets a new one at the end of the tick order.
@@ -235,6 +243,7 @@ impl BlockEntities {
         };
         let new_listener = listener_of(pos, &entity);
         let gateway = matches!(entity, BlockEntity::EndGateway(_));
+        let moving = matches!(entity, BlockEntity::MovingPiston(_));
         let old = entries.insert(
             pos,
             Entry {
@@ -251,6 +260,14 @@ impl BlockEntities {
             })
         );
         self.gateways = self.gateways + usize::from(gateway) - usize::from(old_gateway);
+        let old_moving = matches!(
+            old,
+            Some(Entry {
+                entity: BlockEntity::MovingPiston(_),
+                ..
+            })
+        );
+        self.moving_pistons = self.moving_pistons + usize::from(moving) - usize::from(old_moving);
         if let Some(old) = old
             && let Some(listener) = listener_of(pos, &old.entity)
             && Some(listener) != new_listener
@@ -272,8 +289,10 @@ impl BlockEntities {
             self.chunks.remove(&chunk);
         }
         self.touched.insert(chunk);
-        if matches!(removed.entity, BlockEntity::EndGateway(_)) {
-            self.gateways -= 1;
+        match removed.entity {
+            BlockEntity::EndGateway(_) => self.gateways -= 1,
+            BlockEntity::MovingPiston(_) => self.moving_pistons -= 1,
+            _ => {}
         }
         if let Some(listener) = listener_of(pos, &removed.entity) {
             self.listeners.unregister(listener);
@@ -333,8 +352,10 @@ impl BlockEntities {
     fn remove_chunk(&mut self, chunk: ChunkPos) {
         if let Some(entries) = self.chunks.remove(&chunk) {
             for (pos, entry) in entries {
-                if matches!(entry.entity, BlockEntity::EndGateway(_)) {
-                    self.gateways -= 1;
+                match entry.entity {
+                    BlockEntity::EndGateway(_) => self.gateways -= 1,
+                    BlockEntity::MovingPiston(_) => self.moving_pistons -= 1,
+                    _ => {}
                 }
                 if let Some(listener) = listener_of(pos, &entry.entity) {
                     self.listeners.unregister(listener);

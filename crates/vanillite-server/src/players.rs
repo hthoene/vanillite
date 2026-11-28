@@ -57,6 +57,17 @@ use crate::player_list::Uuid;
 const PACKETS_PER_TICK: usize = 128;
 /// Ticks between latency updates of the tab list (Vanilla's `PlayerList.tick`).
 const LATENCY_UPDATE_TICKS: u64 = 600;
+/// Fewer players are handled on one thread: working out their collisions and walks ahead
+/// would cost more than it saves.
+const AHEAD_MIN_PLAYERS: usize = 16;
+/// Players per part of the work done ahead.
+pub(crate) const AHEAD_PART: usize = 8;
+
+/// Whether the per-player work of a phase is worked out ahead in parallel for `players`
+/// players: with several tick phase threads and enough players.
+pub(crate) fn works_ahead(compute: &Compute, players: usize) -> bool {
+    compute.phase_threads() > 1 && players >= AHEAD_MIN_PLAYERS
+}
 
 /// Viewers per fan-out job at least: fewer are sent on the world thread.
 const FAN_OUT_VIEWERS_PER_JOB: usize = 64;
@@ -460,6 +471,9 @@ pub(crate) struct WorldPlayers {
         EntityId,
         vanillite_protocol::packets::play::clientbound::UpdateAttributes,
     )>,
+    /// The collisions of the players' moves, worked out ahead on the tick phase threads (by
+    /// player row; empty while the packets are handled on one thread).
+    moves_ahead: Vec<vanillite_game::player::movement::MovesAhead>,
 }
 
 fn chunk_of(pos: Vec3) -> ChunkPos {
@@ -480,6 +494,7 @@ impl WorldPlayers {
             chatting: Vec::new(),
             respawns: Vec::new(),
             dirty_attributes: Vec::new(),
+            moves_ahead: Vec::new(),
             recording: crate::session_recording::SessionRecording::default(),
             waypoints: crate::waypoints::Waypoints::default(),
         }
@@ -769,6 +784,7 @@ impl WorldPlayers {
         global: &Global,
         world: crate::world::WorldId,
         blocks: &mut WorldBlocks<'_>,
+        compute: &Compute,
     ) {
         let (movement_check, elytra_movement_check) = {
             use vanillite_game::survival::rules::Rule;
@@ -790,6 +806,7 @@ impl WorldPlayers {
             blocks: None,
             movement_check,
             elytra_movement_check,
+            ahead: None,
         };
         let protection = self.spawn_protection(global, level);
         let dimension_name = self.level.dimension.clone();
@@ -799,6 +816,7 @@ impl WorldPlayers {
         // between adds or removes players.
         self.recording.begin_tick(&mut level.entities);
         let mut players = std::mem::take(&mut level.entities.players);
+        let ahead = self.collide_ahead(&mut players, level, ctx, compute);
         // The holders of leads (`FenceBlock.useWithoutItem` ties their mobs to fences).
         let lead_holders: FxHashSet<EntityId> = level.entities.leashes.values().copied().collect();
         let spectators: FxHashSet<EntityId> = players
@@ -807,7 +825,7 @@ impl WorldPlayers {
             .map(|(id, _)| id)
             .collect();
         let mut swings: Vec<(EntityId, (Hand, bool))> = Vec::new();
-        for (id, player) in players.iter_mut() {
+        for (row, (id, player)) in players.iter_mut().enumerate() {
             player.connection.play.fast_break_check = rules.digging.fast_break_check;
             let Some(entity) = level.entities.store.get(id) else {
                 continue;
@@ -891,6 +909,7 @@ impl WorldPlayers {
                         ),
                         no_physics: player.game_mode == GameMode::Spectator,
                         dims,
+                        ahead: ahead.then(|| self.moves_ahead.get(row)).flatten(),
                         ..ctx
                     },
                     chat,
@@ -1092,6 +1111,70 @@ impl WorldPlayers {
             self.leave(level, global, id, reason);
         }
         self.recording.end_tick(&level.entities);
+    }
+
+    /// Takes the players' packets of this tick and works out the collisions of their moves
+    /// ahead, in parallel on the tick phase threads against the blocks as they are now
+    /// ([`Connection::take_ahead`]); the handling in player order takes an answer only while
+    /// the blocks are unchanged and collides anew otherwise, so every connection sees the same
+    /// as with one thread. Only with several threads and enough players; returns whether it
+    /// ran.
+    ///
+    /// [`Connection::take_ahead`]: vanillite_game::player::connection::Connection::take_ahead
+    fn collide_ahead(
+        &mut self,
+        players: &mut vanillite_world::entity::Dense<PlayerData>,
+        level: &Level,
+        ctx: MoveContext<'_>,
+        compute: &Compute,
+    ) -> bool {
+        if !works_ahead(compute, players.len()) {
+            if !self.moves_ahead.is_empty() {
+                self.moves_ahead = Vec::new();
+            }
+            return false;
+        }
+        self.moves_ahead.clear();
+        self.moves_ahead.resize(players.len(), Default::default());
+        let (ids, rows) = players.rows_mut();
+        let store = &level.entities.store;
+        compute.parts_zip(
+            rows,
+            &mut self.moves_ahead,
+            AHEAD_PART,
+            |offset, rows, out| {
+                for (i, (player, out)) in rows.iter_mut().zip(out).enumerate() {
+                    let Some(entity) = ids.get(offset + i).and_then(|&id| store.get(id)) else {
+                        continue;
+                    };
+                    let flags = entity.flags();
+                    let rot = entity.rot();
+                    let body = Body {
+                        pos: entity.pos(),
+                        velocity: entity.velocity(),
+                        y_rot: rot.y_rot,
+                        x_rot: rot.x_rot,
+                        on_ground: flags.contains(EntityFlags::ON_GROUND),
+                        horizontal_collision: false,
+                        fall_flying: flags.contains(EntityFlags::FALL_FLYING),
+                    };
+                    let ctx = MoveContext {
+                        no_wrong_move_check: matches!(
+                            player.game_mode,
+                            GameMode::Spectator | GameMode::Creative
+                        ),
+                        no_physics: player.game_mode == GameMode::Spectator,
+                        dims: entity.dims(),
+                        blocks: Some(level),
+                        ..ctx
+                    };
+                    player
+                        .connection
+                        .take_ahead(PACKETS_PER_TICK, &body, ctx, out);
+                }
+            },
+        );
+        true
     }
 
     /// Spawn protection of this world for this tick (`isUnderSpawnProtection`).

@@ -494,6 +494,12 @@ const _: () = {
 };
 
 impl ChunkView<'_> {
+    /// [`Chunks::change_epoch`] of the chunks this views.
+    #[inline]
+    pub fn change_epoch(&self) -> u64 {
+        self.holders.epoch()
+    }
+
     /// The block state at `pos`, `None` outside full chunks and the build height.
     #[inline(always)]
     pub fn block(&self, pos: BlockPos) -> Option<BlockStateId> {
@@ -3057,6 +3063,14 @@ impl Chunks {
         chunk
             .chunk
             .block((pos.x & 15) as u32, pos.y, (pos.z & 15) as u32)
+    }
+
+    /// A number that changes whenever a chunk, a block or a chunk's level may have changed:
+    /// reads of the full chunks give the same answers while it stays the same. Work done
+    /// ahead against the blocks stays valid as long as it is unchanged.
+    #[inline]
+    pub fn change_epoch(&self) -> u64 {
+        self.holders.epoch()
     }
 
     /// The pure read view of the full chunks: reads without side effects, shareable with

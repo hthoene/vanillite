@@ -128,6 +128,37 @@ impl Compute {
         });
     }
 
+    /// [`Compute::parts`] over two lists of the same length, split alike: `job(offset, a,
+    /// b)` sees the items of both at the same positions.
+    pub fn parts_zip<A: Send, B: Send>(
+        &self,
+        a: &mut [A],
+        b: &mut [B],
+        min_part: usize,
+        job: impl Fn(usize, &mut [A], &mut [B]) + Sync,
+    ) {
+        debug_assert_eq!(a.len(), b.len());
+        let n = a.len().min(b.len());
+        let (a, b) = (&mut a[..n], &mut b[..n]);
+        let parts = self.phase_threads.min(n.div_ceil(min_part.max(1))).max(1);
+        if parts == 1 {
+            job(0, a, b);
+            return;
+        }
+        let per = n.div_ceil(parts);
+        let job = &job;
+        self.scope(|scope| {
+            let mut chunks = a.chunks_mut(per).zip(b.chunks_mut(per)).enumerate();
+            let first = chunks.next();
+            for (i, (a, b)) in chunks {
+                scope.spawn(move || job(i * per, a, b));
+            }
+            if let Some((_, (a, b))) = first {
+                job(0, a, b);
+            }
+        });
+    }
+
     /// A scheduler that runs every job inline at submission, for deterministic tests.
     pub fn inline() -> Self {
         Compute::new(Arc::new(InlineScheduler))

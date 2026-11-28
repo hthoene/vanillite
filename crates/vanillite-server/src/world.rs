@@ -121,6 +121,9 @@ pub struct ServerWorld {
     /// Loading and saving the entities of chunks.
     /// Player ids of the tick (block effects).
     player_scratch: Vec<vanillite_world::entity::EntityId>,
+    /// The players' walks for [`ServerWorld::players_inside_blocks`] worked out ahead on the
+    /// tick phase threads (by position in `player_scratch`; empty with one thread).
+    plates_ahead: Vec<vanillite_game::block::plate::PlatesAhead>,
     /// The dimension's saved data (`<dimension>/data/`: world border, chunk tickets, raids,
     /// ...); systems register here when they come.
     pub(crate) data: vanillite_storage::saved_data::SavedDataStore,
@@ -264,6 +267,7 @@ impl ServerWorld {
             survival,
             mobs,
             player_scratch: Vec::new(),
+            plates_ahead: Vec::new(),
             data,
             kept_tickets: Vec::new(),
             tickets_dirty: false,
@@ -633,6 +637,7 @@ impl ServerWorld {
                 effects: &mut self.effects,
                 tracker: &*self.tracker,
             },
+            ctx.compute,
         );
         self.effects.flush(&self.level.entities);
         // `handleTestInstanceBlockAction` of the players' packets.
@@ -683,7 +688,7 @@ impl ServerWorld {
             );
             lap!(self, Functions);
         }
-        self.players_inside_blocks();
+        self.players_inside_blocks(ctx.compute);
         lap!(self, Players);
         // The rules block behaviour reads (sculk shriekers).
         self.level.settings.peaceful =
@@ -1104,12 +1109,34 @@ impl ServerWorld {
 
     /// `applyEffectsFromBlocks` after the players' moves: pressure plates, tripwire and other
     /// blocks they stand in react (`Entity.checkInsideBlocks`).
-    fn players_inside_blocks(&mut self) {
+    /// With several threads and enough players their walks are worked out ahead in parallel
+    /// first; each player takes its walk only while the blocks are unchanged and walks anew
+    /// otherwise, so the outcome is the same as with one thread.
+    fn players_inside_blocks(&mut self, compute: &Compute) {
+        use vanillite_game::block::plate;
         self.player_scratch.clear();
         self.player_scratch
             .extend(self.level.entities.players.iter().map(|(id, _)| id));
-        for &id in &self.player_scratch {
-            vanillite_game::block::plate::check_inside_blocks(&mut self.level, id);
+        let ahead = crate::players::works_ahead(compute, self.player_scratch.len());
+        if ahead {
+            self.plates_ahead
+                .resize_with(self.player_scratch.len(), Default::default);
+            let (level, ids) = (&self.level, &self.player_scratch);
+            compute.parts(
+                &mut self.plates_ahead[..ids.len()],
+                crate::players::AHEAD_PART,
+                |offset, part| {
+                    for (out, &id) in part.iter_mut().zip(&ids[offset..]) {
+                        plate::plates_ahead(level, id, out);
+                    }
+                },
+            );
+        } else if !self.plates_ahead.is_empty() {
+            self.plates_ahead = Vec::new();
+        }
+        for (i, &id) in self.player_scratch.iter().enumerate() {
+            let ahead = self.plates_ahead.get(i).filter(|_| ahead);
+            plate::check_inside_blocks(&mut self.level, id, ahead);
         }
     }
 

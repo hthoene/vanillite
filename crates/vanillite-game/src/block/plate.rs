@@ -306,13 +306,48 @@ pub fn for_each_inside(
     });
 }
 
-/// `entityInside` of the blocks of [`for_each_inside`], right away.
+/// The blocks of [`for_each_inside`] on a way, worked out ahead ([`plates_ahead`]).
+pub type PlatesAhead = crate::survival::inside::WalkAhead<Vec<BlockPos>>;
+
+/// The blocks [`check_inside_blocks`] of the player `entity` would walk now, into `out`;
+/// read-only and on any thread.
+pub fn plates_ahead(level: &Level, entity: EntityId, out: &mut PlatesAhead) {
+    out.clear();
+    let Some(player) = level.entities.player(entity) else {
+        return;
+    };
+    let Some(e) = level.entities.store.get(entity) else {
+        return;
+    };
+    if player.game_mode == vanillite_config::GameMode::Spectator {
+        return;
+    }
+    let path = &player.connection.movement.path;
+    let view = level.view();
+    if let Some((path, cells)) = out.start(&view, e.dims(), false, path, e.pos()) {
+        cells.clear();
+        for_each_inside(level, e.dims(), path, |pos| cells.push(pos));
+    }
+}
+
+/// `entityInside` of the blocks of [`for_each_inside`], right away; `ahead` may have them
+/// worked out already.
 pub fn entity_inside_along(
     level: &mut Level,
     entity: EntityId,
     dims: vanillite_world::entity::Dimensions,
     movements: &[crate::survival::inside::Movement],
+    ahead: Option<&PlatesAhead>,
 ) {
+    if let Some(cells) = ahead.and_then(|a| a.get(&level.view(), dims, false, movements)) {
+        for &pos in cells {
+            if !level.entities.store.contains(entity) {
+                return;
+            }
+            level.entity_inside(pos, entity);
+        }
+        return;
+    }
     // Few blocks react: they wait here while the walk reads the level.
     let mut first = [BlockPos::new(0, 0, 0); 8];
     let mut count = 0;
@@ -336,8 +371,9 @@ pub fn entity_inside_along(
 /// `Entity.applyEffectsFromBlocks` for the blocks with a behaviour of their own: `stepOn` of
 /// the block below, then `entityInside` of the blocks the entity is inside on its way (a
 /// player's moves since its last tick, see [`crate::survival::inside`]). Pressure plates,
-/// tripwires and detector rails react through it.
-pub fn check_inside_blocks(level: &mut Level, entity: EntityId) {
+/// tripwires and detector rails react through it. `ahead` may have the walk worked out
+/// already ([`plates_ahead`]).
+pub fn check_inside_blocks(level: &mut Level, entity: EntityId, ahead: Option<&PlatesAhead>) {
     // `isAffectedByBlocks`: not spectators.
     if level
         .entities
@@ -372,14 +408,14 @@ pub fn check_inside_blocks(level: &mut Level, entity: EntityId) {
     match path {
         Some(mut path) => {
             crate::survival::inside::finish(&mut path, pos, pos);
-            entity_inside_along(level, entity, dims, &path);
+            entity_inside_along(level, entity, dims, &path, ahead);
             if let Some(p) = level.entities.player_mut(entity) {
                 p.connection.movement.path = path;
             }
         }
         None => {
             let still = [crate::survival::inside::Movement::still(pos)];
-            entity_inside_along(level, entity, dims, &still);
+            entity_inside_along(level, entity, dims, &still, None);
         }
     }
 }

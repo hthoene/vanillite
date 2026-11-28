@@ -260,6 +260,9 @@ pub struct Connection {
     inbound: InboundReceiver,
     /// The packets taken from `inbound` for this tick (kept for its capacity).
     taken: Vec<Inbound>,
+    /// This tick's packets are in `taken` already ([`Connection::take_ahead`]): whether the
+    /// client was gone then.
+    taken_ahead: Option<bool>,
     /// Movement validation and teleports.
     pub movement: Movement,
     /// Chunk view and sending.
@@ -340,6 +343,7 @@ impl Connection {
             sink,
             inbound,
             taken: Vec::new(),
+            taken_ahead: None,
             movement: Movement::new(pos),
             chunks: PlayerChunks::new(memory_connection),
             chat: PlayerChatState::new(chat, inbox),
@@ -366,8 +370,13 @@ impl Connection {
         budget: usize,
     ) -> Handled {
         let mut taken = std::mem::take(&mut self.taken);
-        taken.clear();
-        let disconnected = self.inbound.take(budget, &mut taken).is_err();
+        let disconnected = match self.taken_ahead.take() {
+            Some(disconnected) => disconnected,
+            None => {
+                taken.clear();
+                self.inbound.take(budget, &mut taken).is_err()
+            }
+        };
         for inbound in taken.drain(..) {
             if let Some(recorded) = &mut self.recorded {
                 recorded.push(inbound.packet.clone());
@@ -390,6 +399,23 @@ impl Connection {
         } else {
             Handled::Ok
         }
+    }
+
+    /// Takes this tick's packets (at most `budget`) before [`Connection::handle_packets`]
+    /// and works out the collisions of their moves into `out`
+    /// ([`super::Movement::collide_ahead`]), read-only towards the world and on any thread.
+    /// `ctx` and `body` are those the handling starts with.
+    pub fn take_ahead(
+        &mut self,
+        budget: usize,
+        body: &super::movement::Body,
+        ctx: MoveContext<'_>,
+        out: &mut super::movement::MovesAhead,
+    ) {
+        self.taken.clear();
+        self.taken_ahead = Some(self.inbound.take(budget, &mut self.taken).is_err());
+        self.movement
+            .collide_ahead(self.taken.iter().map(|i| &i.packet), body, ctx, out);
     }
 
     fn handle(

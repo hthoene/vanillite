@@ -61,6 +61,13 @@ impl Holders {
         }
     }
 
+    /// The epoch: it moves on with every mutable access ([`Holders::map_mut`]), so equal
+    /// epochs see equal chunks.
+    #[inline]
+    pub(super) fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
     /// The map for changes. Every section pointer a thread cached before is stale from now on.
     #[inline]
     pub(super) fn map_mut(&mut self) -> &mut FxHashMap<ChunkPos, Holder> {
