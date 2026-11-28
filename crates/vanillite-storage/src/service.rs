@@ -84,6 +84,8 @@ struct PoolInner {
     queue: Mutex<PoolQueue>,
     wake: Condvar,
     threads: Mutex<Vec<JoinHandle<()>>>,
+    /// Runs on a thread that runs out of work ([`IoPool::set_idle_hook`]).
+    idle: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 #[derive(Default)]
@@ -143,6 +145,7 @@ impl IoPool {
             queue: Mutex::new(PoolQueue::default()),
             wake: Condvar::new(),
             threads: Mutex::new(Vec::new()),
+            idle: std::sync::OnceLock::new(),
         });
         for index in 0..threads.max(1) {
             let worker = Arc::clone(&inner);
@@ -167,6 +170,19 @@ impl IoPool {
         self.inner.wake.notify_one();
     }
 
+    /// Sets what a thread runs, without the queue lock, each time it runs out of work and
+    /// after each [`IoPool::wake_idle`] (the server's memory hand-back of the thread's
+    /// allocator heap).
+    pub fn set_idle_hook(&self, hook: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.inner.idle.set(hook);
+    }
+
+    /// Wakes the idle threads so they run the idle hook.
+    pub fn wake_idle(&self) {
+        let _queue = lock(&self.inner.queue);
+        self.inner.wake.notify_all();
+    }
+
     /// Runs the queued jobs to the end and stops the threads.
     pub fn shutdown(&self) {
         lock(&self.inner.queue).stop = true;
@@ -179,6 +195,8 @@ impl IoPool {
 }
 
 fn worker_loop(pool: &PoolInner) {
+    // The idle hook ran since the last job or wake-up.
+    let mut idled = false;
     loop {
         let job = {
             let mut queue = lock(&pool.queue);
@@ -189,12 +207,21 @@ fn worker_loop(pool: &PoolInner) {
                 if queue.stop {
                     return;
                 }
+                if !idled && let Some(idle) = pool.idle.get() {
+                    drop(queue);
+                    idle();
+                    idled = true;
+                    queue = lock(&pool.queue);
+                    continue;
+                }
                 queue = pool
                     .wake
                     .wait(queue)
                     .unwrap_or_else(PoisonError::into_inner);
+                idled = false;
             }
         };
+        idled = false;
         match job.work {
             Work::File(store, key) => store.run_file(key),
             Work::Commit {

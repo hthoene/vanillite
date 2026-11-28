@@ -419,6 +419,14 @@ impl ComputePool {
                     shared.available.notify_all();
                 }
             }));
+            let weak = Arc::downgrade(&shared);
+            budget.add_idle_waker(Box::new(move || {
+                if let Some(shared) = weak.upgrade() {
+                    let _queues = shared.lock();
+                    shared.available.notify_all();
+                    shared.urgent_ready.notify_all();
+                }
+            }));
         }
         let handles = spawn_threads(&shared, count, 0)?;
         Ok(ComputePool {
@@ -481,6 +489,11 @@ fn helper(shared: &Shared, generation: u64) {
                 queues = shared.lock();
             }
             None if queues.stopping => return,
+            None if release_due(shared) => {
+                drop(queues);
+                release_thread_memory(shared);
+                queues = shared.lock();
+            }
             None => {
                 queues = shared
                     .urgent_ready
@@ -518,6 +531,12 @@ fn worker(shared: &Shared, generation: u64) {
             None => match queues.background.pop() {
                 Some(background) => background.job,
                 None if queues.stopping => return,
+                None if release_due(shared) => {
+                    drop(queues);
+                    release_thread_memory(shared);
+                    queues = shared.lock();
+                    continue;
+                }
                 None => {
                     queues = shared
                         .available
@@ -531,6 +550,22 @@ fn worker(shared: &Shared, generation: u64) {
         drop(queues);
         run_job(job);
         queues = shared.lock();
+    }
+}
+
+/// Whether this thread, out of work, should first hand back what its allocator heap keeps
+/// ([`Budget::release_thread_memory`]).
+fn release_due(shared: &Shared) -> bool {
+    shared
+        .budget
+        .as_ref()
+        .is_some_and(|budget| budget.thread_release_due())
+}
+
+/// See [`release_due`]; runs without the queue lock.
+fn release_thread_memory(shared: &Shared) {
+    if let Some(budget) = &shared.budget {
+        budget.release_thread_memory();
     }
 }
 

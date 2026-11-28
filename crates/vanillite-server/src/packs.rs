@@ -291,6 +291,7 @@ pub(crate) fn reload(global: &Global, ids: Vec<String>, source: CommandSource) {
                     let applied = Arc::clone(&global);
                     handle.run_global(move |server| {
                         applied.packs.apply(&applied, reloaded, server.network());
+                        server.release_memory_soon();
                     });
                 }
             }

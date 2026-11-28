@@ -114,6 +114,19 @@ pub struct Budget {
     wake: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// Returns freed memory to the system (registered by the binary for its allocator).
     release: OnceLock<fn()>,
+    /// Returns what the calling thread's allocator heap keeps (mimalloc: its free pages), for
+    /// allocators that cannot do that for all threads at once.
+    thread_release: OnceLock<fn()>,
+    /// Bumped by [`Budget::release_memory`]: threads that saw an older round run
+    /// `thread_release` at their next idle point ([`Budget::release_thread_memory`]).
+    release_round: AtomicU64,
+    /// Wake threads that sleep until work comes, so they reach their idle point.
+    idle_wakers: Mutex<Vec<Box<dyn Fn() + Send + Sync>>>,
+}
+
+thread_local! {
+    /// The last [`Budget::release_round`] this thread handed back.
+    static RELEASED_ROUND: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 impl std::fmt::Debug for Budget {
@@ -141,6 +154,9 @@ impl Budget {
             period: Mutex::new((Instant::now(), process_cpu())),
             wake: OnceLock::new(),
             release: OnceLock::new(),
+            thread_release: OnceLock::new(),
+            release_round: AtomicU64::new(0),
+            idle_wakers: Mutex::new(Vec::new()),
         }
     }
 
@@ -174,11 +190,64 @@ impl Budget {
         let _ = self.release.set(release);
     }
 
-    /// Returns freed memory to the system, if the allocator supports it.
+    /// Registers the allocator's way to return what the calling thread keeps: then every
+    /// [`Budget::release_memory`] has each thread run it once at its next idle point.
+    pub fn set_thread_memory_release(&self, release: fn()) {
+        let _ = self.thread_release.set(release);
+    }
+
+    /// The per-thread release ([`Budget::set_thread_memory_release`]).
+    pub fn thread_release(&self) -> Option<fn()> {
+        self.thread_release.get().copied()
+    }
+
+    /// Registers a wake-up for threads that sleep until work comes (they then call
+    /// [`Budget::release_thread_memory`] and sleep again).
+    pub fn add_idle_waker(&self, wake: Box<dyn Fn() + Send + Sync>) {
+        self.idle_wakers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(wake);
+    }
+
+    /// Returns freed memory to the system, if the allocator supports it. With a per-thread
+    /// release ([`Budget::set_thread_memory_release`]) every thread hands back its part too.
     pub fn release_memory(&self) {
         if let Some(release) = self.release.get() {
             release();
         }
+        if self.thread_release.get().is_some() {
+            let round = self.release_round.fetch_add(1, Ordering::Relaxed) + 1;
+            RELEASED_ROUND.set(round);
+            for wake in self
+                .idle_wakers
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+            {
+                wake();
+            }
+        }
+    }
+
+    /// Called by long-lived threads where they are idle (before they sleep, between ticks):
+    /// hands back what this thread's allocator heap keeps, once per [`Budget::release_memory`].
+    /// Otherwise one atomic load.
+    #[inline]
+    pub fn release_thread_memory(&self) {
+        if self.thread_release_due()
+            && let Some(release) = self.thread_release.get()
+        {
+            RELEASED_ROUND.set(self.release_round.load(Ordering::Relaxed));
+            release();
+        }
+    }
+
+    /// Whether [`Budget::release_thread_memory`] would hand back memory on this thread.
+    #[inline]
+    pub fn thread_release_due(&self) -> bool {
+        let round = self.release_round.load(Ordering::Relaxed);
+        round != 0 && RELEASED_ROUND.get() != round
     }
 
     /// [`Budget::release_memory`] for a server nobody plays on: the program's own code and

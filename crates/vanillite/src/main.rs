@@ -17,7 +17,8 @@ use vanillite_server::{ServerBuilder, StartError};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-/// Returns freed memory of the allocator to the system.
+/// Returns freed memory of the allocator to the system. mimalloc reaches only the calling
+/// thread's heap: the server runs it on every thread ([`ServerBuilder::thread_memory_release`]).
 fn release_memory() {
     #[cfg(any(target_env = "musl", feature = "mimalloc"))]
     {
@@ -126,6 +127,8 @@ fn run(mut args: impl Iterator<Item = String>) -> ExitCode {
                 let mut builder = ServerBuilder::new(dir.clone());
                 builder.version(version());
                 builder.memory_release(release_memory);
+                #[cfg(any(target_env = "musl", feature = "mimalloc"))]
+                builder.thread_memory_release(release_memory);
                 match builder.start() {
                     Ok(server) => break server,
                     Err(e @ StartError::Eula(_)) => {
