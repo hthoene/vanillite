@@ -628,7 +628,11 @@ fn set_rules(host: &str, rules: &[(String, String)]) -> Result<()> {
 
 fn deploy_or_restart(target: Target, o: &Options, host: &str, bin_dir: &Path) -> Result<()> {
     if target == Target::Vanillite {
-        set_rules(host, &o.rules)?;
+        // The rule profile is explicit (#319: the binary's default is paper); a
+        // `--rule profile=<name>` comes later and wins.
+        let mut rules = vec![("profile".to_owned(), "vanilla".to_owned())];
+        rules.extend(o.rules.iter().cloned());
+        set_rules(host, &rules)?;
     }
     match target {
         Target::Vanillite if o.deploy => {

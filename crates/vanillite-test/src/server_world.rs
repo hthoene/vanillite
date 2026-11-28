@@ -344,6 +344,7 @@ impl ServerWorld {
                 .map_err(|e| e.to_string())?;
         }
         let server = builder.start().map_err(|e| e.to_string())?;
+        crate::assert_vanilla_profile(server.config().profile);
         let selected = world_id(&server, &spec.dimension)?;
         let mut world = Self {
             server,

@@ -31,3 +31,14 @@ pub mod session;
 pub mod soak;
 pub mod trace;
 pub mod world;
+
+/// The guard of every server the harness starts: parity runs on the `vanilla` profile only
+/// (#319; the default is `paper`). Panics on any other profile, from the test directory's
+/// `vanillite.toml` or a `VANILLITE_PROFILE` in the environment.
+pub fn assert_vanilla_profile(profile: vanillite_config::Profile) {
+    assert!(
+        profile == vanillite_config::Profile::Vanilla,
+        "the parity harness runs profile \"{profile}\", but parity needs \"vanilla\": \
+         write profile = \"vanilla\" into the server's vanillite.toml and unset VANILLITE_PROFILE"
+    );
+}

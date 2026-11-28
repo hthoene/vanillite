@@ -316,6 +316,7 @@ fn command_server() -> &'static vanillite_server::Global {
             .vanilla_pack(vanillite_server::VanillaPack::Download)
             .network(false);
         let server = builder.start().expect("scenario server starts");
+        crate::assert_vanilla_profile(server.config().profile);
         let global = server.global().arc().expect("server global");
         // Kept for the whole test run: its global outlives every scenario.
         std::mem::forget(server);
