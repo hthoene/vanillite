@@ -26,7 +26,7 @@ use vanillite_data::entity::{EntityTypeId, ids};
 
 pub use dense::Dense;
 use sections::Subset;
-pub use sections::{EntityClass, SectionIndex};
+pub use sections::{EntityClass, KindSet, SectionIndex};
 pub use tick_order::TickCursor;
 
 use tick_order::TickOrder;
@@ -480,7 +480,8 @@ impl EntityStore {
             tick_order::NONE
         };
         self.order_slot.push(slot);
-        self.sections.insert(section, class_of(new.kind), id, aabb);
+        self.sections
+            .insert(section, class_of(new.kind), new.kind, id, aabb);
         match self.by_uuid.entry(new.uuid) {
             std::collections::hash_map::Entry::Vacant(e) => {
                 e.insert(id);
@@ -666,6 +667,12 @@ impl EntityStore {
         self.for_each_in_subset(aabb, subset, f);
     }
 
+    /// Like [`Self::for_each_in`] for the entities of the types in `kinds` (players too when
+    /// the set has them): the order of [`Self::for_each_in`] without the other entities.
+    pub fn for_each_of_kinds_in(&self, aabb: &Aabb, kinds: &KindSet, f: impl FnMut(EntityId)) {
+        self.sections.for_each_intersecting_of(aabb, kinds, f);
+    }
+
     /// Like [`Self::for_each_in`] for every entity that is not a player: queries for other
     /// kinds (items a player picks up) skip the players of crowded sections.
     pub fn for_each_non_player_in(&self, aabb: &Aabb, f: impl FnMut(EntityId)) {
@@ -827,9 +834,10 @@ impl EntityMut<'_> {
             self.store.sections.set_box(section, id, aabb);
         } else {
             core.section[row] = section;
-            let class = class_of(core.kind[row]);
+            let kind = core.kind[row];
+            let class = class_of(kind);
             self.store.sections.remove(old, class, id);
-            self.store.sections.insert(section, class, id, aabb);
+            self.store.sections.insert(section, class, kind, id, aabb);
             // `onMove`: ticking follows the status of the new section.
             let ticking = &self.store.ticking_chunks;
             let was = ticking.contains(&(old.x, old.z));

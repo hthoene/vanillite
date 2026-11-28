@@ -607,6 +607,12 @@ pub struct PathFinder {
 #[derive(Debug, Default)]
 struct StateCache {
     slots: Vec<std::cell::Cell<StateSlot>>,
+    /// `getPathTypeStatic` by position: a walking search asks for most positions several
+    /// times (each node checks the blocks of the mob's whole box, and every result looks at
+    /// up to 24 neighbours).
+    statics: Vec<std::cell::Cell<StaticSlot>>,
+    /// `getCachedPathType` (the type of the mob's whole box) by position, in place of a map.
+    mob_types: Vec<std::cell::Cell<StaticSlot>>,
     /// The running search; slots of earlier searches do not count.
     stamp: u32,
 }
@@ -618,9 +624,48 @@ struct StateSlot {
     state: u16,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct StaticSlot {
+    pos: BlockPos,
+    stamp: u32,
+    kind: u8,
+}
+
 impl StateCache {
     /// Slots, a power of two (`PathTypeCache.SIZE`).
     const SIZE: usize = 4096;
+
+    #[inline]
+    fn slot(pos: BlockPos) -> usize {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        let index = ((pos.as_long() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 52) as usize;
+        index
+    }
+
+    /// [`path_type_static`] once per position and search.
+    #[inline]
+    fn path_type_static(
+        &self,
+        blocks: &dyn Blocks,
+        min_y: i32,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> PathType {
+        let pos = BlockPos::new(x, y, z);
+        let slot = &self.statics[Self::slot(pos)];
+        let cached = slot.get();
+        if cached.stamp == self.stamp && cached.pos == pos {
+            return PathType::from_u8(cached.kind);
+        }
+        let kind = path_type_static(blocks, min_y, x, y, z);
+        slot.set(StaticSlot {
+            pos,
+            stamp: self.stamp,
+            kind: kind as u8,
+        });
+        kind
+    }
 
     /// Starts a search: everything cached so far is forgotten.
     fn begin(&mut self) {
@@ -628,6 +673,10 @@ impl StateCache {
         if self.slots.is_empty() || self.stamp == 0 {
             self.slots.clear();
             self.slots.resize_with(Self::SIZE, Default::default);
+            self.statics.clear();
+            self.statics.resize_with(Self::SIZE, Default::default);
+            self.mob_types.clear();
+            self.mob_types.resize_with(Self::SIZE, Default::default);
             self.stamp = 1;
         }
     }
@@ -642,9 +691,7 @@ struct SearchBlocks<'a> {
 impl Blocks for SearchBlocks<'_> {
     #[inline]
     fn state(&self, pos: BlockPos) -> BlockState {
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        let index = ((pos.as_long() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 52) as usize;
-        let slot = &self.cache.slots[index];
+        let slot = &self.cache.slots[StateCache::slot(pos)];
         let cached = slot.get();
         if cached.stamp == self.cache.stamp && cached.pos == pos {
             return BlockState(cached.state);
@@ -688,6 +735,8 @@ pub struct Search<'a> {
 
 struct Eval<'a> {
     blocks: &'a dyn Blocks,
+    /// The search's cache of [`path_type_static`] (none in tests).
+    statics: Option<&'a StateCache>,
     mob: &'a PathMob,
     search: Search<'a>,
     entity_width: i32,
@@ -835,7 +884,7 @@ impl PathFinder {
             inner: blocks,
             cache: &states,
         };
-        let path = self.find_path_in(&cached, mob, targets, search, random);
+        let path = self.find_path_in(&cached, Some(&states), mob, targets, search, random);
         self.states = states;
         path
     }
@@ -843,6 +892,7 @@ impl PathFinder {
     fn find_path_in(
         &mut self,
         blocks: &dyn Blocks,
+        statics: Option<&StateCache>,
         mob: &PathMob,
         targets: &[BlockPos],
         search: Search<'_>,
@@ -857,6 +907,7 @@ impl PathFinder {
         let h = floor(f64::from(mob.height) + 1.0);
         let eval = Eval {
             blocks,
+            statics,
             mob,
             search,
             entity_width: w,
@@ -1466,6 +1517,24 @@ impl PathFinder {
     }
 
     fn cached_type(&mut self, eval: &Eval<'_>, x: i32, y: i32, z: i32) -> PathType {
+        if let Some(cache) = eval.statics {
+            let pos = BlockPos::new(x, y, z);
+            let slot = &cache.mob_types[StateCache::slot(pos)];
+            let cached = slot.get();
+            if cached.stamp == cache.stamp && cached.pos == pos {
+                return PathType::from_u8(cached.kind);
+            }
+            let t = match eval.mob.evaluator {
+                Evaluator::Swim { .. } => Self::swim_type_of_mob(eval, x, y, z),
+                _ => Self::type_of_mob(eval, x, y, z),
+            };
+            slot.set(StaticSlot {
+                pos,
+                stamp: cache.stamp,
+                kind: t as u8,
+            });
+            return t;
+        }
         let k = key(x, y, z);
         if let Some(&t) = self.types.get(&k) {
             return t;
@@ -1499,7 +1568,10 @@ impl PathFinder {
                         return PathType::Blocked;
                     }
                 }
-                path_type_static(blocks, min_y, x, y, z)
+                match eval.statics {
+                    Some(cache) => cache.path_type_static(blocks, min_y, x, y, z),
+                    None => path_type_static(blocks, min_y, x, y, z),
+                }
             }
         }
     }
@@ -2127,6 +2199,7 @@ mod tests {
             PathFinder::swim_type_of_mob(
                 &Eval {
                     blocks: &Pool,
+                    statics: None,
                     mob: &mob(Vec3::new(1.5, 61.0, 0.5)),
                     search: search(&[]),
                     entity_width: 1,

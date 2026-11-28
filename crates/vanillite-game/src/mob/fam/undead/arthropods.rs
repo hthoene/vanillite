@@ -180,7 +180,9 @@ pub fn register_goals(m: &mut MobData) {
             g.add(1, goals::Goal::Float);
             g.add(
                 2,
-                goals::Goal::Common(CommonGoal::avoid(armadillo, 6.0, 1.0, 1.2)),
+                goals::Goal::Common(
+                    CommonGoal::avoid(armadillo, 6.0, 1.0, 1.2).of_kinds(&common::ARMADILLOS),
+                ),
             );
             g.add(
                 3,
@@ -197,11 +199,10 @@ pub fn register_goals(m: &mut MobData) {
             tg.add(2, goals::Goal::spider_target());
             tg.add(
                 3,
-                goal(Goal::SpiderTarget(CommonGoal::nearest(
-                    10,
-                    true,
-                    common::iron_golem,
-                ))),
+                goal(Goal::SpiderTarget(
+                    CommonGoal::nearest(10, true, common::iron_golem)
+                        .of_kinds(&common::IRON_GOLEMS),
+                )),
             );
             m.nav.can_float = true;
         }

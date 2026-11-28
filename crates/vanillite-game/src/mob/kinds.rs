@@ -748,12 +748,15 @@ pub fn register_goals(m: &mut MobData) {
             );
             g.add(
                 3,
-                Goal::Common(super::common::CommonGoal::avoid(
-                    |t, id| super::common::mob_of(t, id, Kind::Wolf),
-                    6.0,
-                    1.0,
-                    1.2,
-                )),
+                Goal::Common(
+                    super::common::CommonGoal::avoid(
+                        |t, id| super::common::mob_of(t, id, Kind::Wolf),
+                        6.0,
+                        1.0,
+                        1.2,
+                    )
+                    .of_kinds(&super::common::WOLVES),
+                ),
             );
             g.add(5, Goal::stroll(1.0));
             g.add(6, Goal::look_at_player(8.0));
@@ -762,19 +765,21 @@ pub fn register_goals(m: &mut MobData) {
             tg.add(2, Goal::nearest_player(true));
             tg.add(
                 3,
-                Goal::Common(super::common::CommonGoal::nearest(
-                    10,
-                    true,
-                    super::common::iron_golem,
-                )),
+                Goal::Common(
+                    super::common::CommonGoal::nearest(10, true, super::common::iron_golem)
+                        .of_kinds(&super::common::IRON_GOLEMS),
+                ),
             );
             tg.add(
                 3,
-                Goal::Common(super::common::CommonGoal::nearest(
-                    10,
-                    true,
-                    super::common::baby_turtle_on_land,
-                )),
+                Goal::Common(
+                    super::common::CommonGoal::nearest(
+                        10,
+                        true,
+                        super::common::baby_turtle_on_land,
+                    )
+                    .of_kinds(&super::common::TURTLES),
+                ),
             );
             // The constructor's `reassessWeaponGoal` (no bow yet): the melee goal.
             g.add(4, fam::undead::skeletons::melee_goal());
@@ -783,13 +788,21 @@ pub fn register_goals(m: &mut MobData) {
             g.add(1, Goal::Float);
             g.add(2, Goal::Swell);
             for kind in [Kind::Ocelot, Kind::Cat] {
-                let filter: super::common::TargetFilter = match kind {
-                    Kind::Ocelot => |t, id| super::common::mob_of(t, id, Kind::Ocelot),
-                    _ => |t, id| super::common::mob_of(t, id, Kind::Cat),
+                let (filter, kinds): (super::common::TargetFilter, _) = match kind {
+                    Kind::Ocelot => (
+                        |t, id| super::common::mob_of(t, id, Kind::Ocelot),
+                        &super::common::OCELOTS,
+                    ),
+                    _ => (
+                        |t, id| super::common::mob_of(t, id, Kind::Cat),
+                        &super::common::CATS,
+                    ),
                 };
                 g.add(
                     3,
-                    Goal::Common(super::common::CommonGoal::avoid(filter, 6.0, 1.0, 1.2)),
+                    Goal::Common(
+                        super::common::CommonGoal::avoid(filter, 6.0, 1.0, 1.2).of_kinds(kinds),
+                    ),
                 );
             }
             g.add(4, Goal::melee(MeleeKind::Plain, 1.0, false));
@@ -826,9 +839,12 @@ pub fn register_goals(m: &mut MobData) {
             tg.add(2, Goal::hurt_by(false));
             tg.add(
                 3,
-                Goal::Common(super::common::CommonGoal::nearest(10, true, |t, id| {
-                    super::common::mob_of(t, id, Kind::Endermite)
-                })),
+                Goal::Common(
+                    super::common::CommonGoal::nearest(10, true, |t, id| {
+                        super::common::mob_of(t, id, Kind::Endermite)
+                    })
+                    .of_kinds(&super::common::ENDERMITES),
+                ),
             );
             tg.add(
                 4,

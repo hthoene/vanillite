@@ -4,6 +4,7 @@ use rustc_hash::FxHashMap;
 use vanillite_base::Aabb;
 use vanillite_base::SectionPos;
 use vanillite_base::math::floor;
+use vanillite_data::entity::EntityTypeId;
 
 use super::EntityId;
 
@@ -35,9 +36,105 @@ struct Section {
     all: Vec<EntityId>,
     /// The bounding boxes of `all`, in the same order: box queries test them in one sweep
     /// instead of looking up every entity.
-    boxes: Vec<Aabb>,
+    boxes: Boxes,
+    /// The types of `all`, in the same order: typed queries skip the others without looking
+    /// up the entities (Vanilla's `ClassInstanceMultiMap.find`).
+    kinds: Vec<EntityTypeId>,
     players: Vec<EntityId>,
     others: Vec<EntityId>,
+}
+
+/// Bounding boxes as one column per coordinate, so that a box query compares eight boxes at
+/// once (the sweep over a crowded section is the hot part of `pushEntities` in mob farms).
+#[derive(Debug, Default)]
+struct Boxes {
+    min_x: Vec<f64>,
+    min_y: Vec<f64>,
+    min_z: Vec<f64>,
+    max_x: Vec<f64>,
+    max_y: Vec<f64>,
+    max_z: Vec<f64>,
+}
+
+impl Boxes {
+    fn push(&mut self, b: Aabb) {
+        self.min_x.push(b.min_x);
+        self.min_y.push(b.min_y);
+        self.min_z.push(b.min_z);
+        self.max_x.push(b.max_x);
+        self.max_y.push(b.max_y);
+        self.max_z.push(b.max_z);
+    }
+
+    fn remove(&mut self, index: usize) {
+        self.min_x.remove(index);
+        self.min_y.remove(index);
+        self.min_z.remove(index);
+        self.max_x.remove(index);
+        self.max_y.remove(index);
+        self.max_z.remove(index);
+    }
+
+    fn set(&mut self, index: usize, b: Aabb) {
+        self.min_x[index] = b.min_x;
+        self.min_y[index] = b.min_y;
+        self.min_z[index] = b.min_z;
+        self.max_x[index] = b.max_x;
+        self.max_y[index] = b.max_y;
+        self.max_z[index] = b.max_z;
+    }
+
+    /// Calls `f` with the index of every box that intersects `q` ([`Aabb::intersects`]), in
+    /// ascending order.
+    #[inline]
+    fn for_each_intersecting(&self, q: &Aabb, mut f: impl FnMut(usize)) {
+        const LANES: usize = 8;
+        let n = self.min_x.len();
+        let hit = |i: usize| {
+            (self.min_x[i] < q.max_x)
+                & (self.max_x[i] > q.min_x)
+                & (self.min_y[i] < q.max_y)
+                & (self.max_y[i] > q.min_y)
+                & (self.min_z[i] < q.max_z)
+                & (self.max_z[i] > q.min_z)
+        };
+        let lanes = |v: &[f64], i: usize| -> [f64; LANES] {
+            v[i..i + LANES].try_into().unwrap_or([f64::NAN; LANES])
+        };
+        let mut i = 0;
+        while i + LANES <= n {
+            let (ax, ay, az) = (
+                lanes(&self.min_x, i),
+                lanes(&self.min_y, i),
+                lanes(&self.min_z, i),
+            );
+            let (bx, by, bz) = (
+                lanes(&self.max_x, i),
+                lanes(&self.max_y, i),
+                lanes(&self.max_z, i),
+            );
+            let mut mask = 0u32;
+            for j in 0..LANES {
+                let h = (ax[j] < q.max_x)
+                    & (bx[j] > q.min_x)
+                    & (ay[j] < q.max_y)
+                    & (by[j] > q.min_y)
+                    & (az[j] < q.max_z)
+                    & (bz[j] > q.min_z);
+                mask |= u32::from(h) << j;
+            }
+            while mask != 0 {
+                f(i + mask.trailing_zeros() as usize);
+                mask &= mask - 1;
+            }
+            i += LANES;
+        }
+        for i in i..n {
+            if hit(i) {
+                f(i);
+            }
+        }
+    }
 }
 
 impl Section {
@@ -47,6 +144,35 @@ impl Section {
             Subset::Players => &self.players,
             Subset::Others => &self.others,
         }
+    }
+}
+
+/// A set of entity types: the classes a typed query (`getEntitiesOfClass`) looks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KindSet {
+    bits: [u64; 4],
+}
+
+impl KindSet {
+    /// The set of `kinds`. Types past the bits are never skipped (see [`Self::contains`]).
+    pub const fn of(kinds: &[EntityTypeId]) -> KindSet {
+        let mut bits = [0u64; 4];
+        let mut i = 0;
+        while i < kinds.len() {
+            let k = kinds[i].0 as usize;
+            if k < 256 {
+                bits[k >> 6] |= 1 << (k & 63);
+            }
+            i += 1;
+        }
+        KindSet { bits }
+    }
+
+    /// Whether `kind` is in the set (always for a type past the bits).
+    #[inline]
+    pub const fn contains(&self, kind: EntityTypeId) -> bool {
+        let k = kind.0 as usize;
+        k >= 256 || self.bits[k >> 6] & (1 << (k & 63)) != 0
     }
 }
 
@@ -76,6 +202,7 @@ impl SectionIndex {
         &mut self,
         section: SectionPos,
         class: EntityClass,
+        kind: EntityTypeId,
         id: EntityId,
         aabb: Aabb,
     ) {
@@ -88,6 +215,7 @@ impl SectionIndex {
         });
         entry.all.push(id);
         entry.boxes.push(aabb);
+        entry.kinds.push(kind);
         match class {
             EntityClass::Player => {
                 entry.players.push(id);
@@ -108,6 +236,7 @@ impl SectionIndex {
         if let Some(index) = entry.all.iter().position(|&e| e == id) {
             entry.all.remove(index);
             entry.boxes.remove(index);
+            entry.kinds.remove(index);
         }
         match class {
             EntityClass::Player => {
@@ -144,7 +273,7 @@ impl SectionIndex {
         if let Some(entry) = self.sections.get_mut(&section.as_long())
             && let Some(index) = entry.all.iter().position(|&e| e == id)
         {
-            entry.boxes[index] = aabb;
+            entry.boxes.set(index, aabb);
         }
     }
 
@@ -198,11 +327,25 @@ impl SectionIndex {
     /// [`Self::for_each_near`].
     pub(super) fn for_each_intersecting(&self, aabb: &Aabb, mut f: impl FnMut(EntityId)) {
         self.for_each_section_near(aabb, |section| {
-            for (&id, b) in section.all.iter().zip(&section.boxes) {
-                if b.intersects(aabb) {
-                    f(id);
+            section
+                .boxes
+                .for_each_intersecting(aabb, |i| f(section.all[i]));
+        });
+    }
+
+    /// Like [`Self::for_each_intersecting`] for the entities of the types in `kinds`.
+    pub(super) fn for_each_intersecting_of(
+        &self,
+        aabb: &Aabb,
+        kinds: &KindSet,
+        mut f: impl FnMut(EntityId),
+    ) {
+        self.for_each_section_near(aabb, |section| {
+            section.boxes.for_each_intersecting(aabb, |i| {
+                if kinds.contains(section.kinds[i]) {
+                    f(section.all[i]);
                 }
-            }
+            });
         });
     }
 
@@ -328,7 +471,7 @@ mod tests {
                 f64::from(section.z * 16),
             );
             let aabb = Aabb::new(low.0, low.1, low.2, low.0 + 1.0, low.1 + 1.0, low.2 + 1.0);
-            index.insert(section, class, id, aabb);
+            index.insert(section, class, EntityTypeId(0), id, aabb);
             placed.push((section, id));
         }
         (index, placed)
