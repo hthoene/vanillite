@@ -62,9 +62,12 @@ impl Level {
 
     /// `PersistentEntitySectionManager.tick` at the end of the level tick
     /// (`processPendingLoads`): the chunks that became visible create their stored entities;
-    /// from then on their scheduled ticks run (`isPositionTickingWithEntitiesLoaded`).
+    /// from then on their scheduled ticks run (`isPositionTickingWithEntitiesLoaded`). The
+    /// chunks load by x, then z: Vanilla creates them in the order their IO completes, which
+    /// the parity recorder fixes to this order.
     pub fn tick_entity_manager(&mut self) {
         let mut pending = std::mem::take(&mut self.pending_entity_loads);
+        pending.sort_by_key(|c| (c.x, c.z));
         for &pos in &pending {
             if self.chunks.visibility(pos) != Visibility::Hidden
                 && !self.chunks.entities_loaded(pos)

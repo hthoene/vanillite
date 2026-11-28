@@ -646,8 +646,16 @@ url = "https://github.com/Piscescup/MC-Java-Schematics/raw/7da7d7d395dab97c6cbe4
 sha256 = "ecc192a0bec4245fe2a8c27d44e1d63b038dc744b3eda7ab667d3cc7a2853a9c"
 licence = "none stated"
 source = "https://github.com/Piscescup/MC-Java-Schematics"
-contents = "10000 hoppers (10k block entities), passive"
+contents = "10000 hoppers (10k block entities); items dropped onto the top layer"
 ticks = 400
+# The hoppers are passive: stacks summoned onto the top layer (y 48) give them work.
+actions = [
+  {tick = 20, op = "command", command = "summon minecraft:item 2.5 49.25 2.5 {Item:{id:\"minecraft:cobblestone\",count:64}}"},
+  {tick = 20, op = "command", command = "summon minecraft:item 9.5 49.25 4.5 {Item:{id:\"minecraft:oak_log\",count:64}}"},
+  {tick = 20, op = "command", command = "summon minecraft:item 15.5 49.25 11.5 {Item:{id:\"minecraft:stone\",count:64}}"},
+  {tick = 20, op = "command", command = "summon minecraft:item 5.5 49.25 16.5 {Item:{id:\"minecraft:iron_ingot\",count:64}}"},
+  {tick = 20, op = "command", command = "summon minecraft:item 17.5 49.25 17.5 {Item:{id:\"minecraft:redstone\",count:64}}"},
+]
 
 [[world]]
 name = "lithium_all_entities"
@@ -665,7 +673,32 @@ url = "https://archive.org/download/3b3t-3b3t-lag-machine-2014-05-16-world-downl
 sha256 = "1675079c9ae95e2b2234afbe0245119e0906f5e688b60e12b952c83fa0043a75"
 licence = "none stated (2b2t Library)"
 source = "https://archive.org/details/3b3t-3b3t-lag-machine-2014-05-16-world-download"
-contents = "2014 3b3t lag machine world (1.21.4), around the saved player"
+contents = "2014 3b3t lag machine world (1.21.4): the start of its 380-block redstone line, pulsed"
+# The redstone line at x -934 (y 10-11, z 1047-1428) is unpowered in the save: a redstone block
+# at its start toggles it every 4 ticks.
+region = [[-938, 8, 1044], [-930, 14, 1070]]
+actions = [
+  {tick = 20, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 24, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 28, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 32, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 36, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 40, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 44, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 48, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 52, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 56, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 60, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 64, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 68, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 72, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 76, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 80, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 84, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 88, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+  {tick = 92, op = "place", pos = [-934, 11, 1046], block = "minecraft:redstone_block"},
+  {tick = 96, op = "place", pos = [-934, 11, 1046], block = "minecraft:air"},
+]
 
 [[world]]
 name = "lag_machine_2b2t_world"

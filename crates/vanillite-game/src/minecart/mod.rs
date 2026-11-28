@@ -340,6 +340,16 @@ pub fn tick(
     // `checkBelowWorld`.
     let y = ents.store.get(id).map_or(0.0, |e| e.pos().y);
     if y < f64::from(env.min_y - 64) {
+        // `onBelowWorld` → `discard`: `AbstractMinecartContainer.remove(DISCARDED)` drops the
+        // contents, every slot (empty ones draw their position too).
+        if let Some(m) = ents.minecart_mut(id)
+            && m.loot_table.is_none()
+            && !m.items.is_empty()
+        {
+            let items = std::mem::take(&mut m.items);
+            let pos = ents.store.get(id).map_or(Vec3::ZERO, |e| e.pos());
+            drop_contents(env, pos, &items);
+        }
         discard(cx, id);
         return;
     }
