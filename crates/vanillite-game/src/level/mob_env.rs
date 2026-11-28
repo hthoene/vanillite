@@ -74,6 +74,7 @@ pub fn with_mob_env<R>(
             },
             display_name: &names,
             entity_team: &|_| None,
+            inside_ahead: &[],
         };
         f(level_ref, &mut ents, &mut env, &mut cx)
     };

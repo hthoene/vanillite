@@ -46,6 +46,31 @@ pub trait Blocks {
     fn plain_collision(&self, _x: i32, _y: i32, _z: i32) -> bool {
         false
     }
+    /// Everything the collision answers depend on besides their inputs: equal stamps give
+    /// equal answers, so work done ahead with one stamp holds while it stays the same. `None`
+    /// when that cannot be told (work done ahead never holds).
+    fn stamp(&self) -> Option<Stamp> {
+        None
+    }
+}
+
+/// What the blocks looked like for a collision ([`Blocks::stamp`]): the chunks' change epoch
+/// and the world border's edges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stamp {
+    epoch: u64,
+    border: [u64; 4],
+}
+
+impl Stamp {
+    /// The stamp of the chunks at `epoch` ([`vanillite_world::chunks::Chunks::change_epoch`])
+    /// with `border`.
+    pub fn new(epoch: u64, border: Option<&WorldBorder>) -> Stamp {
+        let border = border.map_or([0; 4], |b| {
+            [b.min_x(), b.min_z(), b.max_x(), b.max_z()].map(f64::to_bits)
+        });
+        Stamp { epoch, border }
+    }
 }
 
 impl Blocks for Level {
@@ -76,6 +101,12 @@ impl Blocks for Level {
 
     fn moving_piston_boxes(&self, pos: BlockPos, out: &mut Vec<[f64; 6]>) {
         crate::block::piston::collision_boxes_at(&self.block_entities, pos, out);
+    }
+
+    /// Moving pistons change their boxes without a block change: none while one moves.
+    fn stamp(&self) -> Option<Stamp> {
+        (!self.block_entities.has_moving_pistons())
+            .then(|| Stamp::new(self.chunks.change_epoch(), Some(&self.border)))
     }
 }
 

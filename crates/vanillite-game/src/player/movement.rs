@@ -89,6 +89,8 @@ pub struct MoveContext<'a> {
     pub movement_check: bool,
     /// The `elytra_movement_check` game rule.
     pub elytra_movement_check: bool,
+    /// Collision answers of this batch's moves worked out ahead ([`Movement::collide_ahead`]).
+    pub ahead: Option<&'a MovesAhead>,
 }
 
 impl std::fmt::Debug for MoveContext<'_> {
@@ -607,7 +609,6 @@ impl Movement {
         delta: Vec3,
         ctx: MoveContext<'_>,
     ) -> (bool, Option<Vec3>) {
-        use crate::mob::physics;
         if ctx.no_physics {
             return (true, None);
         }
@@ -617,7 +618,189 @@ impl Movement {
         if !ctx.rules.wrong_movement_check {
             return (true, Some(target));
         }
-        let old_box = ctx.dims.bounding_box(body.pos);
+        let input = CollideInput {
+            pos: body.pos,
+            on_ground: body.on_ground,
+            target,
+            delta,
+            dims: ctx.dims,
+            no_wrong_move_check: ctx.no_wrong_move_check,
+        };
+        let answer = ctx
+            .ahead
+            .and_then(|ahead| ahead.answer(&input, blocks))
+            .unwrap_or_else(|| input.collide(blocks));
+        if let Some(on_ground) = answer.on_ground {
+            body.on_ground = on_ground;
+        }
+        (answer.allowed, answer.moved_to)
+    }
+
+    /// Works out the collisions of the moves in `packets` ahead, read-only and on any
+    /// thread, as [`Movement::handle_move`] would ask for them if every move passes. The
+    /// answers go to `out`; [`MoveContext::ahead`] hands them to the handling, which takes an
+    /// answer only for exactly its inputs while the blocks keep the same
+    /// [`physics::Stamp`] and collides anew otherwise, so the outcome is the same either way.
+    ///
+    /// [`physics::Stamp`]: crate::mob::physics::Stamp
+    pub fn collide_ahead<'p>(
+        &self,
+        packets: impl IntoIterator<Item = &'p vanillite_protocol::sets::ServerboundPlay>,
+        body: &Body,
+        ctx: MoveContext<'_>,
+        out: &mut MovesAhead,
+    ) {
+        use vanillite_protocol::sets::ServerboundPlay;
+        out.stamp = None;
+        out.len = 0;
+        let Some(blocks) = ctx.blocks else {
+            return;
+        };
+        if ctx.no_physics
+            || !ctx.rules.wrong_movement_check
+            || !self.has_client_loaded()
+            || self.awaiting_teleport()
+            || self.passenger
+        {
+            return;
+        }
+        let Some(stamp) = blocks.stamp() else {
+            return;
+        };
+        out.stamp = Some(stamp);
+        let (mut pos, mut on_ground) = (body.pos, body.on_ground);
+        let mut last_good = if self.tick_count == 0 {
+            body.pos
+        } else {
+            self.last_good
+        };
+        for packet in packets {
+            let (requested, flags) = match packet {
+                ServerboundPlay::MovePlayerPos(p) => (Some(Vec3::new(p.x, p.y, p.z)), p.flags),
+                ServerboundPlay::MovePlayerPosRot(p) => (Some(Vec3::new(p.x, p.y, p.z)), p.flags),
+                ServerboundPlay::MovePlayerRot(p) => (None, p.flags),
+                ServerboundPlay::MovePlayerStatusOnly(p) => (None, p.flags),
+                ServerboundPlay::AcceptTeleportation(_) => break,
+                _ => continue,
+            };
+            let Some(slot) = out.moves.get_mut(usize::from(out.len)) else {
+                break;
+            };
+            let requested = requested.unwrap_or(pos);
+            let target = Vec3::new(
+                clamp_horizontal(requested.x),
+                clamp_vertical(requested.y),
+                clamp_horizontal(requested.z),
+            );
+            let input = CollideInput {
+                pos,
+                on_ground,
+                target,
+                delta: Vec3::new(
+                    target.x - last_good.x,
+                    target.y - last_good.y,
+                    target.z - last_good.z,
+                ),
+                dims: ctx.dims,
+                no_wrong_move_check: ctx.no_wrong_move_check,
+            };
+            let answer = input.collide(blocks);
+            *slot = (input, answer);
+            out.len = out.len.saturating_add(1);
+            if !answer.allowed {
+                // The player goes back; the moves after wait for the teleport.
+                break;
+            }
+            pos = Vec3::new(
+                clamp_horizontal(target.x),
+                target.y,
+                clamp_horizontal(target.z),
+            );
+            on_ground = flags.on_ground;
+            last_good = pos;
+        }
+    }
+}
+
+/// The collision answers of one player's moves of a tick, worked out ahead
+/// ([`Movement::collide_ahead`]). Fixed size: further moves collide when they are handled.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MovesAhead {
+    stamp: Option<crate::mob::physics::Stamp>,
+    len: u8,
+    moves: [(CollideInput, Collided); 2],
+}
+
+impl MovesAhead {
+    /// The answer for exactly `input`, if the blocks still have the stamp it was worked out
+    /// with.
+    fn answer(
+        &self,
+        input: &CollideInput,
+        blocks: &dyn crate::mob::physics::Blocks,
+    ) -> Option<Collided> {
+        let moves = self.moves.get(..usize::from(self.len))?;
+        let (_, answer) = moves.iter().find(|(i, _)| i.same(input))?;
+        (self.stamp.is_some() && self.stamp == blocks.stamp()).then_some(*answer)
+    }
+}
+
+/// Everything the collision of a move reads besides the blocks.
+#[derive(Clone, Copy, Debug)]
+struct CollideInput {
+    pos: Vec3,
+    on_ground: bool,
+    target: Vec3,
+    delta: Vec3,
+    dims: vanillite_world::entity::Dimensions,
+    no_wrong_move_check: bool,
+}
+
+impl Default for CollideInput {
+    fn default() -> Self {
+        CollideInput {
+            pos: Vec3::ZERO,
+            on_ground: false,
+            target: Vec3::ZERO,
+            delta: Vec3::ZERO,
+            dims: vanillite_world::entity::Dimensions {
+                width: 0.0,
+                height: 0.0,
+            },
+            no_wrong_move_check: false,
+        }
+    }
+}
+
+/// The answer of [`CollideInput::collide`].
+#[derive(Clone, Copy, Debug, Default)]
+struct Collided {
+    allowed: bool,
+    /// Where `Entity.move` took the player, if it moved it.
+    moved_to: Option<Vec3>,
+    /// The player's `onGround` after a rejected vertical move.
+    on_ground: Option<bool>,
+}
+
+impl CollideInput {
+    /// Bit for bit the same inputs.
+    fn same(&self, other: &CollideInput) -> bool {
+        let bits = |v: Vec3| [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()];
+        bits(self.pos) == bits(other.pos)
+            && bits(self.target) == bits(other.target)
+            && bits(self.delta) == bits(other.delta)
+            && self.on_ground == other.on_ground
+            && self.dims.width.to_bits() == other.dims.width.to_bits()
+            && self.dims.height.to_bits() == other.dims.height.to_bits()
+            && self.no_wrong_move_check == other.no_wrong_move_check
+    }
+
+    /// `player.move` by `delta` from `pos`, then the "moved wrongly" and
+    /// `isEntityCollidingWithAnythingNew` checks of the move to `target`.
+    fn collide(&self, blocks: &dyn crate::mob::physics::Blocks) -> Collided {
+        use crate::mob::physics;
+        let (pos, delta, target) = (self.pos, self.delta, self.target);
+        let old_box = self.dims.bounding_box(pos);
         let mut scratch = Vec::new();
         // `Entity.move(MoverType.PLAYER, delta)`.
         let movement = physics::collide(
@@ -625,31 +808,29 @@ impl Movement {
             old_box,
             delta,
             PLAYER_STEP_HEIGHT,
-            body.on_ground,
+            self.on_ground,
             &mut scratch,
         );
         let length = movement.length_sqr();
         let moved = length > 1.0e-7 || delta.length_sqr() - length < 1.0e-7;
         let moved_to = if moved {
-            Vec3::new(
-                body.pos.x + movement.x,
-                body.pos.y + movement.y,
-                body.pos.z + movement.z,
-            )
+            Vec3::new(pos.x + movement.x, pos.y + movement.y, pos.z + movement.z)
         } else {
-            body.pos
+            pos
         };
         // The vertical difference never counts (`yDist > -0.5 || yDist < 0.5`).
         let (dx, dz) = (target.x - moved_to.x, target.z - moved_to.z);
-        let fail = dx * dx + dz * dz > 0.0625 && !ctx.no_wrong_move_check;
-        let new_box = ctx.dims.bounding_box(target);
+        let fail = dx * dx + dz * dz > 0.0625 && !self.no_wrong_move_check;
+        let new_box = self.dims.bounding_box(target);
         let allowed = (!fail || !physics::no_collision(blocks, &old_box, &mut scratch))
             && !physics::collides_with_anything_new(blocks, &old_box, &new_box);
-        if !allowed && delta.y.abs() > 0.0 {
+        Collided {
+            allowed,
+            moved_to: moved.then_some(moved_to),
             // `setOnGroundWithMovement(verticalCollisionBelow, ...)` of the move.
-            body.on_ground = delta.y != movement.y && delta.y < 0.0;
+            on_ground: (!allowed && delta.y.abs() > 0.0)
+                .then_some(delta.y != movement.y && delta.y < 0.0),
         }
-        (allowed, moved.then_some(moved_to))
     }
 }
 
@@ -762,4 +943,223 @@ pub fn teleport_within_world(
         entity.set_old_pos();
     }
     Some(body.pos)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
+mod tests {
+    use std::cell::Cell;
+    use std::sync::{Arc, Mutex};
+
+    use vanillite_base::BlockPos;
+    use vanillite_data::block::BlockState;
+    use vanillite_protocol::SharedPacket;
+    use vanillite_protocol::packets::play::serverbound::{
+        MoveFlags, MovePlayerPos, MovePlayerStatusOnly,
+    };
+    use vanillite_protocol::sets::ServerboundPlay;
+
+    use super::*;
+    use crate::mob::physics::{Blocks, Stamp};
+
+    /// A stone floor below y 64 and, when `wall` is set, a wall at x 2; reads are counted.
+    #[derive(Default)]
+    struct World {
+        wall: Cell<bool>,
+        epoch: Cell<u64>,
+        reads: Cell<usize>,
+    }
+
+    impl Blocks for World {
+        fn state(&self, pos: BlockPos) -> BlockState {
+            self.reads.set(self.reads.get() + 1);
+            if pos.y < 64 || (self.wall.get() && pos.x == 2) {
+                vanillite_data::block::ids::STONE.default_state()
+            } else {
+                BlockState::AIR
+            }
+        }
+
+        fn stamp(&self) -> Option<Stamp> {
+            Some(Stamp::new(self.epoch.get(), None))
+        }
+    }
+
+    #[derive(Default)]
+    struct Sink(Mutex<Vec<Vec<u8>>>);
+
+    impl PacketSink for Sink {
+        fn send_body(&self, body: Vec<u8>) -> bool {
+            self.0.lock().unwrap().push(body);
+            true
+        }
+        fn send_shared(&self, packet: &Arc<SharedPacket>) -> bool {
+            self.0.lock().unwrap().push(packet.body().to_vec());
+            true
+        }
+        fn close(&self) {}
+        fn is_closed(&self) -> bool {
+            false
+        }
+        fn latency_ms(&self) -> u32 {
+            0
+        }
+    }
+
+    fn rules() -> MovementRules {
+        <vanillite_config::WorldRules as vanillite_config::RuleSet>::for_profile(
+            vanillite_config::Profile::Vanilla,
+        )
+        .movement
+    }
+
+    fn ctx<'a>(rules: &'a MovementRules, blocks: &'a World) -> MoveContext<'a> {
+        MoveContext {
+            runs_normally: true,
+            rules,
+            no_wrong_move_check: false,
+            no_physics: false,
+            dims: vanillite_world::entity::Dimensions {
+                width: 0.6,
+                height: 1.8,
+            },
+            blocks: Some(blocks),
+            movement_check: true,
+            elytra_movement_check: true,
+            ahead: None,
+        }
+    }
+
+    fn walk(x: f64) -> ServerboundPlay {
+        ServerboundPlay::MovePlayerPos(MovePlayerPos {
+            x,
+            y: 64.0,
+            z: 0.5,
+            flags: MoveFlags {
+                on_ground: true,
+                horizontal_collision: false,
+            },
+        })
+    }
+
+    /// Two moves in one tick, a still one, then one into the wall (when it stands).
+    fn packets() -> Vec<ServerboundPlay> {
+        vec![
+            walk(0.8),
+            ServerboundPlay::MovePlayerStatusOnly(MovePlayerStatusOnly {
+                flags: MoveFlags {
+                    on_ground: true,
+                    horizontal_collision: false,
+                },
+            }),
+            walk(1.2),
+            walk(1.9),
+        ]
+    }
+
+    fn start() -> (Movement, Body) {
+        let pos = Vec3::new(0.5, 64.0, 0.5);
+        let mut movement = Movement::new(pos);
+        movement.mark_client_loaded();
+        movement.tick_count = 1;
+        let body = Body {
+            pos,
+            velocity: Vec3::ZERO,
+            y_rot: 0.0,
+            x_rot: 0.0,
+            on_ground: true,
+            horizontal_collision: false,
+            fall_flying: false,
+        };
+        (movement, body)
+    }
+
+    /// Handles `packets`' moves (with `ahead`, if given): every body after a move, the moves
+    /// taken and the packets sent.
+    fn handle(
+        world: &World,
+        packets: &[ServerboundPlay],
+        ahead: Option<&MovesAhead>,
+    ) -> (Vec<Body>, usize, Vec<Vec<u8>>) {
+        let rules = rules();
+        let (mut movement, mut body) = start();
+        let sink = Sink::default();
+        let mut bodies = Vec::new();
+        for packet in packets {
+            let ctx = MoveContext {
+                ahead,
+                ..ctx(&rules, world)
+            };
+            let request = match packet {
+                ServerboundPlay::MovePlayerPos(p) => MoveRequest {
+                    pos: Some(Vec3::new(p.x, p.y, p.z)),
+                    rot: None,
+                    on_ground: p.flags.on_ground,
+                    horizontal_collision: p.flags.horizontal_collision,
+                },
+                ServerboundPlay::MovePlayerStatusOnly(p) => MoveRequest {
+                    pos: None,
+                    rot: None,
+                    on_ground: p.flags.on_ground,
+                    horizontal_collision: p.flags.horizontal_collision,
+                },
+                _ => unreachable!(),
+            };
+            // One position per client tick.
+            movement.client_tick_end();
+            movement
+                .handle_move(request, &mut body, ctx, &sink)
+                .unwrap();
+            bodies.push(body);
+        }
+        let sent = sink.0.into_inner().unwrap();
+        (bodies, movement.moves.len(), sent)
+    }
+
+    fn ahead(world: &World, packets: &[ServerboundPlay]) -> MovesAhead {
+        let rules = rules();
+        let (movement, body) = start();
+        let mut out = MovesAhead::default();
+        movement.collide_ahead(packets, &body, ctx(&rules, world), &mut out);
+        out
+    }
+
+    /// The moves handled with their collisions worked out ahead give the same bodies, moves
+    /// and packets as handled one by one, and read no block while the blocks are unchanged.
+    #[test]
+    fn moves_worked_out_ahead_handle_like_serial_ones() {
+        for wall in [false, true] {
+            let world = World::default();
+            world.wall.set(wall);
+            let serial = handle(&world, &packets(), None);
+            let serial_reads = world.reads.replace(0);
+            let ahead = ahead(&world, &packets());
+            assert_eq!(ahead.len, 2);
+            world.reads.set(0);
+            let with_ahead = handle(&world, &packets(), Some(&ahead));
+            assert_eq!(serial, with_ahead, "wall {wall}");
+            // The first two moves took their answers: fewer blocks were read.
+            assert!(world.reads.get() < serial_reads, "wall {wall}");
+        }
+        // The wall turns the last move back: a teleport goes out.
+        let world = World::default();
+        world.wall.set(true);
+        assert!(!handle(&world, &packets(), None).2.is_empty());
+    }
+
+    /// A block change between working out ahead and handling: the moves collide anew with
+    /// the changed blocks, as when handled one by one.
+    #[test]
+    fn a_block_change_after_working_out_ahead_collides_anew() {
+        let world = World::default();
+        let packets = [walk(1.2), walk(1.9)];
+        let ahead = ahead(&world, &packets);
+        world.wall.set(true);
+        world.epoch.set(1);
+        let serial = handle(&world, &packets, None);
+        assert_eq!(serial, handle(&world, &packets, Some(&ahead)));
+        // Without the new stamp the old answers would let the player into the wall.
+        world.epoch.set(0);
+        assert_ne!(serial, handle(&world, &packets, Some(&ahead)));
+    }
 }

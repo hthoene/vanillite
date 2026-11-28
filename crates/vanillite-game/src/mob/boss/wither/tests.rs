@@ -158,6 +158,7 @@ fn with_tick<R>(
         entity_team: &|_| None,
         random: &mut random,
         out: &mut out,
+        inside_ahead: &[],
     };
     let mut ents = std::mem::take(&mut level.entities);
     let r = {
@@ -259,6 +260,7 @@ fn skull_hit_withers_by_difficulty() {
             entity_team: &|_| None,
             random: &mut random,
             out: &mut out,
+            inside_ahead: &[],
         };
         let mut ents = std::mem::take(&mut level.entities);
         {
@@ -365,6 +367,7 @@ fn powered_wither_ignores_arrows() {
             entity_team: &|_| None,
             random: &mut random,
             out: &mut out,
+            inside_ahead: &[],
         };
         let mut ents = std::mem::take(&mut level.entities);
         let r = filter_hurt(level, &mut ents, &mut env, cx, wither, &source, 5.0);

@@ -10,6 +10,11 @@ use vanillite_worldgen::behaviour::StateExt;
 pub trait BlockAccess {
     /// The block state at `pos`.
     fn block_state(&self, pos: BlockPos) -> Option<BlockState>;
+    /// A number that stays the same while every block state reads the same
+    /// ([`vanillite_world::chunks::Chunks::change_epoch`]); `None` when that cannot be told.
+    fn stamp(&self) -> Option<u64> {
+        None
+    }
     /// The collision boxes (relative to `pos`) of the moving piston at `pos`, from its block
     /// entity; none without one or without access to block entities.
     fn moving_piston_boxes(&self, _pos: BlockPos, _out: &mut Vec<[f64; 6]>) {}
@@ -507,6 +512,28 @@ impl Inside {
         last.melt_snow = last.melt_snow.or(step.melt_snow);
         last.cauldron = last.cauldron.or(step.cauldron);
         last.extinguish |= step.extinguish;
+    }
+}
+
+/// [`inside_blocks`] worked out ahead: what it gives and the blocks `each` sees.
+pub type InsideAhead = super::inside::WalkAhead<(Inside, Vec<super::inside::Cell>)>;
+
+/// [`inside_blocks`] of `movements` finished at `pos` ([`super::inside::finish`]) into `out`,
+/// read-only and on any thread; [`super::inside::WalkAhead::get`] hands it to the tick.
+pub fn inside_blocks_ahead(
+    blocks: &dyn BlockAccess,
+    facts: &BlockFacts,
+    dims: vanillite_world::entity::Dimensions,
+    fast_fall: bool,
+    movements: &[super::inside::Movement],
+    pos: vanillite_base::Vec3,
+    out: &mut InsideAhead,
+) {
+    if let Some((path, (inside, cells))) = out.start(blocks, dims, fast_fall, movements, pos) {
+        cells.clear();
+        *inside = inside_blocks(blocks, facts, dims, fast_fall, path, |cell| {
+            cells.push(*cell)
+        });
     }
 }
 

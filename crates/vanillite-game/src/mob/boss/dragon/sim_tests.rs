@@ -92,6 +92,7 @@ impl World {
             entity_team: &|_| None,
             random: &mut self.random,
             out: &mut self.out,
+            inside_ahead: &[],
         };
         let mut ents = std::mem::take(&mut self.level.entities);
         let r = f(&self.level, &mut ents, &mut env, &mut self.cx);
@@ -290,6 +291,7 @@ fn respawn_stages_take_604_ticks() {
             entity_team: &|_| None,
             random,
             out,
+            inside_ahead: &[],
         };
         fight.tick_respawn(level, &mut env, cx);
         level.output().explosion_hurts.clear();
@@ -350,6 +352,7 @@ impl World {
             entity_team: &|_| None,
             random,
             out,
+            inside_ahead: &[],
         };
         fight.tick(level, &mut env, cx);
     }
@@ -475,6 +478,7 @@ fn kill_removes_the_fight_dragon_at_once_and_ends_the_fight() {
         entity_team: &|_| None,
         random,
         out,
+        inside_ahead: &[],
     };
     for event in events {
         fight.handle(level, &mut env, cx, event);

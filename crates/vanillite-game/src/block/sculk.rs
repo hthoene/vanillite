@@ -425,7 +425,7 @@ mod tests {
             if let Some(mut e) = level.entities.store.get_mut(id) {
                 e.set_flags(EntityFlags::ON_GROUND, true);
             }
-            crate::block::plate::check_inside_blocks(&mut level, id);
+            crate::block::plate::check_inside_blocks(&mut level, id, None);
             let Some(BlockEntity::SculkSensor(sensor)) = level.block_entity(pos) else {
                 panic!("no sensor block entity");
             };

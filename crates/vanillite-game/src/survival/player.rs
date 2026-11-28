@@ -537,6 +537,9 @@ pub struct Env<'a> {
     /// `Entity.getTeam` by score holder (a player's name, another entity's UUID string): its
     /// scoreboard team.
     pub entity_team: &'a dyn Fn(&str) -> Option<crate::scoreboard::TeamFacts>,
+    /// The players' walks through the blocks of this tick (`applyEffectsFromBlocks`) worked
+    /// out ahead, by player row ([`blocks::inside_blocks_ahead`]); empty: none.
+    pub inside_ahead: &'a [blocks::InsideAhead],
 }
 
 impl std::fmt::Debug for Env<'_> {
@@ -2723,6 +2726,7 @@ fn apply_block_effects(entity: &mut EntityMut<'_>, player: &mut PlayerData, env:
     let e = entity.as_ref();
     let pos = e.pos();
     let id = e.id();
+    let row = usize::try_from(e.kind_row()).unwrap_or(usize::MAX);
     let flags = e.flags();
     let aabb = e.aabb();
     let dims = e.dims();
@@ -2762,25 +2766,28 @@ fn apply_block_effects(entity: &mut EntityMut<'_>, player: &mut PlayerData, env:
     let enter_block = crate::advancements::trigger::TriggerKind::ENTER_BLOCK;
     let listens = player.advancements.listens(enter_block);
     let mut entered = Vec::new();
-    let inside = blocks::inside_blocks(
-        env.blocks,
-        env.facts,
-        dims,
-        player.survival.fall_distance > 2.5,
-        &path,
-        |cell| {
-            if listens && cell.in_block {
-                entered.push(cell.state);
-            }
-            if cell.state.block() == vanillite_data::block::ids::HONEY_BLOCK {
-                honey.push((cell.pos, cell.state));
-            } else if cell.state.block() == vanillite_data::block::ids::BUBBLE_COLUMN
-                && cell.precise
-            {
-                bubbles.push(cell.pos);
-            }
-        },
-    );
+    let mut each = |cell: &crate::survival::inside::Cell| {
+        if listens && cell.in_block {
+            entered.push(cell.state);
+        }
+        if cell.state.block() == vanillite_data::block::ids::HONEY_BLOCK {
+            honey.push((cell.pos, cell.state));
+        } else if cell.state.block() == vanillite_data::block::ids::BUBBLE_COLUMN && cell.precise {
+            bubbles.push(cell.pos);
+        }
+    };
+    let fast_fall = player.survival.fall_distance > 2.5;
+    let ahead = env
+        .inside_ahead
+        .get(row)
+        .and_then(|a| a.get(env.blocks, dims, fast_fall, &path));
+    let inside = match ahead {
+        Some((inside, cells)) => {
+            cells.iter().for_each(&mut each);
+            *inside
+        }
+        None => blocks::inside_blocks(env.blocks, env.facts, dims, fast_fall, &path, each),
+    };
     // `BubbleColumnBlock.entityInside` of a player that does not fly: the particles at the
     // top of the column (the drag is the client's), the fall distance reset inside it.
     if !player.survival.flying {

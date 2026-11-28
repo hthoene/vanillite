@@ -292,7 +292,7 @@ pub fn tick_entity(level: &mut Level, id: EntityId) {
             original: Some(velocity),
         }
     };
-    super::plate::entity_inside_along(level, id, dims, &[way]);
+    super::plate::entity_inside_along(level, id, dims, &[way], None);
     // `BubbleColumnBlock.entityInside`.
     let mut pushed = level.entities.store.get(id).map(|e| e.velocity());
     if let Some(v) = pushed.as_mut()

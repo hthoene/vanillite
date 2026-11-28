@@ -806,6 +806,7 @@ impl GameWorld {
                             .map(vanillite_game::scoreboard::Team::facts)
                     }
                 },
+                inside_ahead: &[],
             };
             f(level, &mut ents, &mut env, &mut self.mobs)
         };
@@ -2887,6 +2888,7 @@ impl GameWorld {
             blocks: None,
             movement_check: self.rules.bool(Rule::PLAYER_MOVEMENT_CHECK),
             elytra_movement_check: self.rules.bool(Rule::ELYTRA_MOVEMENT_CHECK),
+            ahead: None,
         };
         let ids: Vec<EntityId> = self.clients.iter().map(|c| c.id).collect();
         let mut players = std::mem::take(&mut self.level.entities.players);

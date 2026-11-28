@@ -84,4 +84,15 @@ impl<T> Dense<T> {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
         self.ids.iter().copied().zip(&mut self.values)
     }
+
+    /// The entities and their rows side by side (row `i` belongs to entity `i`): for work
+    /// that splits the rows between threads.
+    pub fn rows(&self) -> (&[EntityId], &[T]) {
+        (&self.ids, &self.values)
+    }
+
+    /// [`Dense::rows`] with the rows mutably.
+    pub fn rows_mut(&mut self) -> (&[EntityId], &mut [T]) {
+        (&self.ids, &mut self.values)
+    }
 }

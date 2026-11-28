@@ -74,6 +74,7 @@ fn with_tick<R>(level: &mut Level, id: EntityId, f: impl FnOnce(&mut Tick<'_, '_
             entity_team: &|_| None,
             random: &mut random,
             out: &mut out,
+            inside_ahead: &[],
         };
         let mut t = Tick {
             level: level_ref,

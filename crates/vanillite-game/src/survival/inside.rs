@@ -64,6 +64,70 @@ pub fn finish(movements: &mut Vec<Movement>, old_pos: Vec3, pos: Vec3) {
     }
 }
 
+/// What a walk ([`Walker::walk`]) gave, worked out ahead on any thread (`value`): it stands
+/// for the walk of exactly the same way, size and fall while the blocks keep the same
+/// [`BlockAccess::stamp`], so the walk can be left out then ([`WalkAhead::get`]).
+#[derive(Clone, Debug, Default)]
+pub struct WalkAhead<T> {
+    stamp: Option<u64>,
+    dims: [u32; 2],
+    fast_fall: bool,
+    path: Vec<Movement>,
+    value: T,
+}
+
+impl<T> WalkAhead<T> {
+    /// Starts the walk of `path` finished at `pos` ([`finish`]) for an entity of the size
+    /// `dims` against `blocks`: returns the way to walk and the value to fill, or `None` when
+    /// `blocks` cannot tell when they change (nothing is kept then).
+    pub fn start(
+        &mut self,
+        blocks: &dyn BlockAccess,
+        dims: Dimensions,
+        fast_fall: bool,
+        path: &[Movement],
+        pos: Vec3,
+    ) -> Option<(&[Movement], &mut T)> {
+        self.stamp = blocks.stamp();
+        self.stamp?;
+        self.dims = [dims.width.to_bits(), dims.height.to_bits()];
+        self.fast_fall = fast_fall;
+        self.path.clear();
+        self.path.extend_from_slice(path);
+        finish(&mut self.path, pos, pos);
+        Some((&self.path, &mut self.value))
+    }
+
+    /// Keeps nothing: [`WalkAhead::get`] gives nothing until the next start.
+    pub fn clear(&mut self) {
+        self.stamp = None;
+    }
+
+    /// The value of the walk worked out ahead, if it was for exactly this walk and the
+    /// blocks did not change since.
+    pub fn get(
+        &self,
+        blocks: &dyn BlockAccess,
+        dims: Dimensions,
+        fast_fall: bool,
+        path: &[Movement],
+    ) -> Option<&T> {
+        let bits = |v: Vec3| [v.x.to_bits(), v.y.to_bits(), v.z.to_bits()];
+        let same = |a: &Movement, b: &Movement| {
+            bits(a.from) == bits(b.from)
+                && bits(a.to) == bits(b.to)
+                && a.original.map(bits) == b.original.map(bits)
+        };
+        (self.stamp.is_some()
+            && self.dims == [dims.width.to_bits(), dims.height.to_bits()]
+            && self.fast_fall == fast_fall
+            && self.path.len() == path.len()
+            && self.path.iter().zip(path).all(|(a, b)| same(a, b))
+            && self.stamp == blocks.stamp())
+        .then_some(&self.value)
+    }
+}
+
 /// A block the entity is inside on its way.
 #[derive(Clone, Copy, Debug)]
 pub struct Cell {
@@ -639,5 +703,62 @@ mod tests {
         };
         assert_eq!(visited(&blocks, &[axes]).len(), 1);
         assert!(visited(&blocks, &[Movement::still(to)]).is_empty());
+    }
+
+    /// [`Blocks`] that tell when they change.
+    struct Stamped(Blocks, std::cell::Cell<u64>);
+
+    impl BlockAccess for Stamped {
+        fn block_state(&self, pos: BlockPos) -> Option<BlockState> {
+            self.0.block_state(pos)
+        }
+        fn stamp(&self) -> Option<u64> {
+            Some(self.1.get())
+        }
+    }
+
+    /// A walk worked out ahead gives what the walk gives, and stands only for the same way,
+    /// size and fall while the blocks keep their stamp.
+    #[test]
+    fn a_walk_worked_out_ahead_stands_only_for_the_same_walk() {
+        use super::super::blocks::{BlockFacts, InsideAhead, inside_blocks, inside_blocks_ahead};
+        let bush = vanillite_data::block::ids::SWEET_BERRY_BUSH.default_state();
+        let blocks = Stamped(
+            Blocks(vec![(BlockPos::new(2, -60, 8), bush)]),
+            std::cell::Cell::new(0),
+        );
+        let dims = Dimensions {
+            width: 0.6,
+            height: 1.8,
+        };
+        let facts = BlockFacts::default();
+        let (from, to) = (Vec3::new(3.5, -57.0, 8.5), Vec3::new(1.19, -59.69, 8.56));
+        let path = [Movement::plain(from, to)];
+        let mut ahead = InsideAhead::default();
+        inside_blocks_ahead(&blocks, &facts, dims, false, &path, to, &mut ahead);
+        let mut way = path.to_vec();
+        finish(&mut way, to, to);
+        let mut cells = Vec::new();
+        let inside = inside_blocks(&blocks, &facts, dims, false, &way, |c| {
+            cells.push((c.pos, c.step));
+        });
+        assert!(inside.berry_bush.is_some());
+        let (ahead_inside, ahead_cells) = ahead.get(&blocks, dims, false, &way).unwrap();
+        assert_eq!(*ahead_inside, inside);
+        let ahead_cells: Vec<_> = ahead_cells.iter().map(|c| (c.pos, c.step)).collect();
+        assert_eq!(ahead_cells, cells);
+        // Another fall, size or way: walked anew.
+        assert!(ahead.get(&blocks, dims, true, &way).is_none());
+        let small = Dimensions {
+            width: 0.6,
+            height: 1.5,
+        };
+        assert!(ahead.get(&blocks, small, false, &way).is_none());
+        let mut longer = way.clone();
+        finish(&mut longer, to, from);
+        assert!(ahead.get(&blocks, dims, false, &longer).is_none());
+        // Changed blocks: walked anew.
+        blocks.1.set(1);
+        assert!(ahead.get(&blocks, dims, false, &way).is_none());
     }
 }

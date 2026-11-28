@@ -44,9 +44,53 @@ impl BlockAccess for WorldBlocks<'_> {
         self.0.block(pos).map(BlockState)
     }
 
+    #[inline]
+    fn stamp(&self) -> Option<u64> {
+        Some(self.0.change_epoch())
+    }
+
     fn block_states_in(&self, min: BlockPos, max: BlockPos, f: &mut dyn FnMut(Option<BlockState>)) {
         self.0.blocks_in(min, max, |state| f(state.map(BlockState)));
     }
+}
+
+/// The players' walks through the blocks of their tick (`applyEffectsFromBlocks`) worked out
+/// ahead into `out` (by player row), in parallel against the blocks as they are now; each
+/// player's tick takes its walk only for the same way while the blocks are unchanged.
+fn inside_ahead(
+    compute: &Compute,
+    entities: &vanillite_game::entities::Entities,
+    blocks: &WorldBlocks<'_>,
+    facts: &vanillite_game::survival::blocks::BlockFacts,
+    out: &mut Vec<vanillite_game::survival::blocks::InsideAhead>,
+) {
+    let store = &entities.store;
+    let (ids, rows) = entities.players.rows();
+    out.resize_with(rows.len(), Default::default);
+    compute.parts(
+        &mut out[..rows.len()],
+        crate::players::AHEAD_PART,
+        |offset, part| {
+            for (out, (id, player)) in part
+                .iter_mut()
+                .zip(ids[offset..].iter().zip(&rows[offset..]))
+            {
+                out.clear();
+                let Some(e) = store.get(*id) else {
+                    continue;
+                };
+                vanillite_game::survival::blocks::inside_blocks_ahead(
+                    blocks,
+                    facts,
+                    e.dims(),
+                    player.survival.fall_distance > 2.5,
+                    &player.connection.movement.path,
+                    e.pos(),
+                    out,
+                );
+            }
+        },
+    );
 }
 
 /// What the players' tick asks of the world's portals.
@@ -85,6 +129,9 @@ pub(crate) struct WorldSurvival {
     scratch: Vec<EntityId>,
     /// The players of a tick (reused).
     ticking: Vec<EntityId>,
+    /// The players' walks through the blocks of their tick, worked out ahead on the tick
+    /// phase threads (by player row; empty with one thread).
+    inside_ahead: Vec<vanillite_game::survival::blocks::InsideAhead>,
     /// The delivered packets per receiver.
     outgoing: Outgoing,
     /// The compute pool for the parallel delivery to crowds (set by the world's tick).
@@ -362,6 +409,7 @@ impl WorldSurvival {
             receivers: Vec::new(),
             scratch: Vec::new(),
             ticking: Vec::new(),
+            inside_ahead: Vec::new(),
             outgoing: Outgoing::default(),
             compute: None,
         }
@@ -451,6 +499,7 @@ impl WorldSurvival {
             hook_world: vanillite_game::hooks::HookWorld::NONE,
             display_name,
             entity_team,
+            inside_ahead: &[],
         }
     }
 
@@ -571,6 +620,17 @@ impl WorldSurvival {
         let raining = |pos| raining_at(chunks, climate.as_deref(), &weather, pos);
         let mut removed = std::mem::take(&mut self.scratch);
         let mut ids = std::mem::take(&mut self.ticking);
+        let mut ahead = std::mem::take(&mut self.inside_ahead);
+        if arrived.is_none()
+            && let Some(compute) = self
+                .compute
+                .as_ref()
+                .filter(|c| crate::players::works_ahead(c, entities.players.len()))
+        {
+            inside_ahead(compute, entities, &blocks, &level.block_facts, &mut ahead);
+        } else if !ahead.is_empty() {
+            ahead = Vec::new();
+        }
         {
             let hooks = crate::plugins::Hooks::of(global, dimension);
             let names = |name: &str, uuid| crate::scoreboard::display_name(global, name, uuid);
@@ -601,6 +661,7 @@ impl WorldSurvival {
                 &teams,
             );
             env.border = Some(&world.border);
+            env.inside_ahead = &ahead;
             ids.clear();
             ids.extend(
                 entities
@@ -674,6 +735,7 @@ impl WorldSurvival {
             }
         }
         self.ticking = ids;
+        self.inside_ahead = ahead;
         for id in removed.drain(..) {
             // `remove(KILLED)`: the entity leaves the others' view; the player itself stays
             // until it respawns.
@@ -801,6 +863,7 @@ impl WorldSurvival {
                 enter_gateway: &mut no_gateway,
                 random: &mut random,
                 out: &mut out,
+                inside_ahead: &[],
             };
             f(level, &mut ents, &mut env, &mut cx)
         };
@@ -893,6 +956,7 @@ impl WorldSurvival {
             enter_gateway: &mut no_gateway,
             random,
             out: &mut out,
+            inside_ahead: &[],
         };
         let Entities { store, players, .. } = entities;
         let Some(mut entity) = store.get_mut(id) else {
