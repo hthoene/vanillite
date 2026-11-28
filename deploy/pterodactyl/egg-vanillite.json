@@ -43,9 +43,9 @@
     },
     {
       "name": "Profile",
-      "description": "Preset of all technical settings below: vanilla (exactly like Vanilla), technical (Vanilla plus what technical players need), paper or spigot (their defaults) or performance (faster, deviates a little from Vanilla).",
+      "description": "Preset of all technical settings below: paper (the default: behaves like a default Paper server), vanilla (reproduces Vanilla behaviour as exactly as possible: choose it for exact Vanilla), technical (Vanilla plus what technical players need), spigot (its defaults) or performance (faster, deviates a little from Vanilla).",
       "env_variable": "VANILLITE_PROFILE",
-      "default_value": "vanilla",
+      "default_value": "paper",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:vanilla,technical,paper,spigot,performance",
@@ -623,7 +623,7 @@
     },
     {
       "name": "Performance: Tick › Parallel Dimensions",
-      "description": "Dimensions tick in parallel, each on its own thread (decision D2). Cross-dimension effects then apply at the end of the tick instead of immediately: an entity entering a portal from the overworld arrives one tick later, `execute in` other dimensions runs at the end of the tick. `false` (the `vanilla` and `technical` profiles) ticks the dimensions one after another in Vanilla's exact order. default: the profile's value (vanilla profile: false). vanillite.toml: performance.tick.parallel-dimensions.",
+      "description": "Dimensions tick in parallel, each on its own thread (decision D2). Cross-dimension effects then apply at the end of the tick instead of immediately: an entity entering a portal from the overworld arrives one tick later, `execute in` other dimensions runs at the end of the tick. `false` (the `vanilla` and `technical` profiles) ticks the dimensions one after another in Vanilla's exact order. default: the profile's value (paper profile: true). vanillite.toml: performance.tick.parallel-dimensions.",
       "env_variable": "VANILLITE_PERFORMANCE__TICK__PARALLEL_DIMENSIONS",
       "default_value": "default",
       "user_viewable": true,
@@ -633,7 +633,7 @@
     },
     {
       "name": "Performance: Threads › Compute",
-      "description": "Worker threads of the compute pool (world generation, lighting, saving, parallel tick phases). 0 = the cores the server may use (`performance.budget.cpu`, the cgroup CPU quota and the CPU affinity): the workers run at a lower OS priority (`compute-nice`), so the tick threads still get a core whenever they need one. Range: 0 to 1024. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.threads.compute.",
+      "description": "Worker threads of the compute pool (world generation, lighting, saving, parallel tick phases). 0 = the cores the server may use (`performance.budget.cpu`, the cgroup CPU quota and the CPU affinity): the workers run at a lower OS priority (`compute-nice`), so the tick threads still get a core whenever they need one. Range: 0 to 1024. Empty: the profile's value (paper profile: 0). vanillite.toml: performance.threads.compute.",
       "env_variable": "VANILLITE_PERFORMANCE__THREADS__COMPUTE",
       "default_value": "",
       "user_viewable": true,
@@ -643,7 +643,7 @@
     },
     {
       "name": "Performance: Threads › Compute Nice",
-      "description": "Nice value of the compute workers (Linux; the tick threads stay at 0). Higher values leave the CPU to the tick threads sooner: 10 gives a tick thread sharing a core with a worker about 90 % of it. 0 = the same priority as the tick threads. Range: 0 to 19. Empty: the profile's value (vanilla profile: 10). vanillite.toml: performance.threads.compute-nice.",
+      "description": "Nice value of the compute workers (Linux; the tick threads stay at 0). Higher values leave the CPU to the tick threads sooner: 10 gives a tick thread sharing a core with a worker about 90 % of it. 0 = the same priority as the tick threads. Range: 0 to 19. Empty: the profile's value (paper profile: 10). vanillite.toml: performance.threads.compute-nice.",
       "env_variable": "VANILLITE_PERFORMANCE__THREADS__COMPUTE_NICE",
       "default_value": "",
       "user_viewable": true,
@@ -653,7 +653,7 @@
     },
     {
       "name": "Performance: Threads › Network",
-      "description": "I/O threads of the network (connections, encryption, compression of outgoing packets). 0 = one per two cores, at least 2; 1 with less than two cores, so the tick keeps the only core. Range: 0 to 64. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.threads.network.",
+      "description": "I/O threads of the network (connections, encryption, compression of outgoing packets). 0 = one per two cores, at least 2; 1 with less than two cores, so the tick keeps the only core. Range: 0 to 64. Empty: the profile's value (paper profile: 0). vanillite.toml: performance.threads.network.",
       "env_variable": "VANILLITE_PERFORMANCE__THREADS__NETWORK",
       "default_value": "",
       "user_viewable": true,
@@ -663,7 +663,7 @@
     },
     {
       "name": "Performance: Threads › Tick Phases",
-      "description": "Threads that share a parallel phase of a world's tick (in crowds: the entity packets, the delivery of sounds and particles, the advancement checks; with players spread out: the ticking checks of the chunks for natural spawning and random ticks; the tiles of `region-threading`), the tick thread included. 0 = one per core the server may use; 1 = the tick thread alone. The other threads are tick helpers at the tick threads' OS priority (not the compute workers, which run below it). The result is the same with any number, only the speed differs. Range: 0 to 1024. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.threads.tick-phases.",
+      "description": "Threads that share a parallel phase of a world's tick (in crowds: the entity packets, the delivery of sounds and particles, the advancement checks; with players spread out: the ticking checks of the chunks for natural spawning and random ticks; the tiles of `region-threading`), the tick thread included. 0 = one per core the server may use; 1 = the tick thread alone. The other threads are tick helpers at the tick threads' OS priority (not the compute workers, which run below it). The result is the same with any number, only the speed differs. Range: 0 to 1024. Empty: the profile's value (paper profile: 0). vanillite.toml: performance.threads.tick-phases.",
       "env_variable": "VANILLITE_PERFORMANCE__THREADS__TICK_PHASES",
       "default_value": "",
       "user_viewable": true,
@@ -673,7 +673,7 @@
     },
     {
       "name": "Performance: Budget › Cpu",
-      "description": "CPU cores the server may use. 0 = detect: the cgroup CPU quota (`cpu.max`, Docker `--cpus`, Pterodactyl's CPU limit) and the CPU affinity. Range: 0 to 1024. Empty: the profile's value (vanilla profile: 0.0). vanillite.toml: performance.budget.cpu.",
+      "description": "CPU cores the server may use. 0 = detect: the cgroup CPU quota (`cpu.max`, Docker `--cpus`, Pterodactyl's CPU limit) and the CPU affinity. Range: 0 to 1024. Empty: the profile's value (paper profile: 0.0). vanillite.toml: performance.budget.cpu.",
       "env_variable": "VANILLITE_PERFORMANCE__BUDGET__CPU",
       "default_value": "",
       "user_viewable": true,
@@ -683,7 +683,7 @@
     },
     {
       "name": "Performance: Budget › Memory",
-      "description": "Memory in MiB the server should stay far below; caches are sized from it. 0 = detect: the cgroup memory limit (`memory.max`), none without a container. Range: 0 to 16777216. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.budget.memory.",
+      "description": "Memory in MiB the server should stay far below; caches are sized from it. 0 = detect: the cgroup memory limit (`memory.max`), none without a container. Range: 0 to 16777216. Empty: the profile's value (paper profile: 0). vanillite.toml: performance.budget.memory.",
       "env_variable": "VANILLITE_PERFORMANCE__BUDGET__MEMORY",
       "default_value": "",
       "user_viewable": true,
@@ -693,7 +693,7 @@
     },
     {
       "name": "Performance: Memory › Release When Empty",
-      "description": "Seconds without players after which the server frees what it can build again: the tables of the world generators, structure templates and caches. They come back in the background when a player joins (new chunks then start a moment later, chunks from disk do not wait). In-game behaviour does not change; disabled keeps everything in memory. Range: 1 to 86400. Also accepts disabled. Empty: the profile's value (vanilla profile: 60). vanillite.toml: performance.memory.release-when-empty.",
+      "description": "Seconds without players after which the server frees what it can build again: the tables of the world generators, structure templates and caches. They come back in the background when a player joins (new chunks then start a moment later, chunks from disk do not wait). In-game behaviour does not change; disabled keeps everything in memory. Range: 1 to 86400. Also accepts disabled. Empty: the profile's value (paper profile: 60). vanillite.toml: performance.memory.release-when-empty.",
       "env_variable": "VANILLITE_PERFORMANCE__MEMORY__RELEASE_WHEN_EMPTY",
       "default_value": "",
       "user_viewable": true,
@@ -703,7 +703,7 @@
     },
     {
       "name": "Performance: Autosave › Interval",
-      "description": "Ticks between autosaves. Vanilla saves every 5 minutes of game time. Range: 20 to 1728000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.autosave.interval.",
+      "description": "Ticks between autosaves. Vanilla saves every 5 minutes of game time. Range: 20 to 1728000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.autosave.interval.",
       "env_variable": "VANILLITE_PERFORMANCE__AUTOSAVE__INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -713,7 +713,7 @@
     },
     {
       "name": "Performance: Survival › Time Sync Interval",
-      "description": "Ticks between the game time packets every player gets (Vanilla: every second). Clients run the clocks themselves in between; a longer interval saves traffic with many players, the game time on the client may then lag behind a little. Range: 1 to 1200. Empty: the profile's value (vanilla profile: 20). vanillite.toml: performance.survival.time-sync-interval.",
+      "description": "Ticks between the game time packets every player gets (Vanilla: every second). Clients run the clocks themselves in between; a longer interval saves traffic with many players, the game time on the client may then lag behind a little. Range: 1 to 1200. Empty: the profile's value (paper profile: 20). vanillite.toml: performance.survival.time-sync-interval.",
       "env_variable": "VANILLITE_PERFORMANCE__SURVIVAL__TIME_SYNC_INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -723,7 +723,7 @@
     },
     {
       "name": "Performance: Redstone › Implementation",
-      "description": "The redstone wire implementation. \"vanilla\" is tick-exact. \"alternate-current\" follows Alternate Current (by Space Walker, MIT): a change computes the power of the whole connected wire network in one pass and then updates every block around the changed wires once, instead of Vanilla's recursive updates with thousands of redundant ones. Final wire powers are the same as Vanilla's, but the order of the neighbour and shape updates differs: it follows the direction power flows in (front, back, right, left, down, up of each wire, wires nearest the change first) instead of Vanilla's location-dependent hash order, so a circuit behaves the same in every rotation and place, but contraptions that depend on Vanilla's update order (some piston and observer builds) can behave differently. Wires powered only by blocks update north first. Only the `performance` profile uses it (Paper's own default is its vanilla wire); set \"vanilla\" there if such a contraption breaks. default: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.redstone.implementation.",
+      "description": "The redstone wire implementation. \"vanilla\" is tick-exact. \"alternate-current\" follows Alternate Current (by Space Walker, MIT): a change computes the power of the whole connected wire network in one pass and then updates every block around the changed wires once, instead of Vanilla's recursive updates with thousands of redundant ones. Final wire powers are the same as Vanilla's, but the order of the neighbour and shape updates differs: it follows the direction power flows in (front, back, right, left, down, up of each wire, wires nearest the change first) instead of Vanilla's location-dependent hash order, so a circuit behaves the same in every rotation and place, but contraptions that depend on Vanilla's update order (some piston and observer builds) can behave differently. Wires powered only by blocks update north first. Only the `performance` profile uses it (Paper's own default is its vanilla wire); set \"vanilla\" there if such a contraption breaks. default: the profile's value (paper profile: vanilla). vanillite.toml: performance.redstone.implementation.",
       "env_variable": "VANILLITE_PERFORMANCE__REDSTONE__IMPLEMENTATION",
       "default_value": "default",
       "user_viewable": true,
@@ -733,7 +733,7 @@
     },
     {
       "name": "Performance: Distances › View Distance",
-      "description": "View distance in chunks; \"vanilla\" uses `view-distance` of server.properties. Applies to every world. Range: 2 to 32. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.distances.view-distance.",
+      "description": "View distance in chunks; \"vanilla\" uses `view-distance` of server.properties. Applies to every world. Range: 2 to 32. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.distances.view-distance.",
       "env_variable": "VANILLITE_PERFORMANCE__DISTANCES__VIEW_DISTANCE",
       "default_value": "",
       "user_viewable": true,
@@ -743,7 +743,7 @@
     },
     {
       "name": "Performance: Distances › Simulation Distance",
-      "description": "Simulation distance in chunks; \"vanilla\" uses `simulation-distance` of server.properties. Applies to every world. Range: 2 to 32. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.distances.simulation-distance.",
+      "description": "Simulation distance in chunks; \"vanilla\" uses `simulation-distance` of server.properties. Applies to every world. Range: 2 to 32. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.distances.simulation-distance.",
       "env_variable": "VANILLITE_PERFORMANCE__DISTANCES__SIMULATION_DISTANCE",
       "default_value": "",
       "user_viewable": true,
@@ -753,7 +753,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Player Range",
-      "description": "Tracking range of players. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.entity-tracking.player-range.",
+      "description": "Tracking range of players. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: 128). vanillite.toml: performance.entity-tracking.player-range.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__PLAYER_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -763,7 +763,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Animal Range",
-      "description": "Tracking range of animals, ambient and water mobs. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.entity-tracking.animal-range.",
+      "description": "Tracking range of animals, ambient and water mobs. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: 96). vanillite.toml: performance.entity-tracking.animal-range.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__ANIMAL_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -773,7 +773,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Monster Range",
-      "description": "Tracking range of monsters. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.entity-tracking.monster-range.",
+      "description": "Tracking range of monsters. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: 96). vanillite.toml: performance.entity-tracking.monster-range.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__MONSTER_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -783,7 +783,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Misc Range",
-      "description": "Tracking range of everything else (items, projectiles, vehicles, decorations). Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.entity-tracking.misc-range.",
+      "description": "Tracking range of everything else (items, projectiles, vehicles, decorations). Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: 96). vanillite.toml: performance.entity-tracking.misc-range.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__MISC_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -793,7 +793,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Overload Tick Millis",
-      "description": "Overload protection: while a world tick takes longer than this many milliseconds (smoothed), movement updates of tracked entities (position, rotation, head) are sent less often, up to `overload-max-interval-scale` times their Vanilla interval, and back at the Vanilla rate once ticks are fast again. Spawns, removals and entity data are never delayed. \"disabled\" keeps Vanilla's intervals: an overloaded server then slows down like Vanilla. Applies to every world. Range: 1 to 1000. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: performance.entity-tracking.overload-tick-millis.",
+      "description": "Overload protection: while a world tick takes longer than this many milliseconds (smoothed), movement updates of tracked entities (position, rotation, head) are sent less often, up to `overload-max-interval-scale` times their Vanilla interval, and back at the Vanilla rate once ticks are fast again. Spawns, removals and entity data are never delayed. \"disabled\" keeps Vanilla's intervals: an overloaded server then slows down like Vanilla. Applies to every world. Range: 1 to 1000. Also accepts disabled. Empty: the profile's value (paper profile: disabled). vanillite.toml: performance.entity-tracking.overload-tick-millis.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__OVERLOAD_TICK_MILLIS",
       "default_value": "",
       "user_viewable": true,
@@ -803,7 +803,7 @@
     },
     {
       "name": "Performance: Entity Tracking › Overload Max Interval Scale",
-      "description": "Largest factor on the movement update interval under overload. Applies to every world. Range: 1 to 20. Empty: the profile's value (vanilla profile: 4). vanillite.toml: performance.entity-tracking.overload-max-interval-scale.",
+      "description": "Largest factor on the movement update interval under overload. Applies to every world. Range: 1 to 20. Empty: the profile's value (paper profile: 4). vanillite.toml: performance.entity-tracking.overload-max-interval-scale.",
       "env_variable": "VANILLITE_PERFORMANCE__ENTITY_TRACKING__OVERLOAD_MAX_INTERVAL_SCALE",
       "default_value": "",
       "user_viewable": true,
@@ -853,7 +853,7 @@
     },
     {
       "name": "Performance: Chunks › Unload Delay",
-      "description": "Ticks a chunk stays loaded after no player or ticket needs it, so walking back does not load it again. Applies to every world. Range: 0 to 6000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.chunks.unload-delay.",
+      "description": "Ticks a chunk stays loaded after no player or ticket needs it, so walking back does not load it again. Applies to every world. Range: 0 to 6000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.chunks.unload-delay.",
       "env_variable": "VANILLITE_PERFORMANCE__CHUNKS__UNLOAD_DELAY",
       "default_value": "",
       "user_viewable": true,
@@ -863,7 +863,7 @@
     },
     {
       "name": "Performance: Chunks › Max Jobs",
-      "description": "Background chunk jobs (loads, generation steps, light) in flight per world. Higher values load faster with many players at the cost of memory for queued work. Applies to every world. Range: 1 to 4096. Empty: the profile's value (vanilla profile: 64). vanillite.toml: performance.chunks.max-jobs.",
+      "description": "Background chunk jobs (loads, generation steps, light) in flight per world. Higher values load faster with many players at the cost of memory for queued work. Applies to every world. Range: 1 to 4096. Empty: the profile's value (paper profile: 64). vanillite.toml: performance.chunks.max-jobs.",
       "env_variable": "VANILLITE_PERFORMANCE__CHUNKS__MAX_JOBS",
       "default_value": "",
       "user_viewable": true,
@@ -873,7 +873,7 @@
     },
     {
       "name": "Performance: Region Threading › Enabled",
-      "description": "Turns the tile region mode on: natural mob spawning and random ticks of a world are worked out per tile (a fixed square of chunks) on several cores. Faster when players are spread out; no gain for a crowd in one place. Deviation: these phases draw their random numbers per tile, so a seeded world differs from Vanilla (same rates), and a player's mob cap can be exceeded by one tick's spawns at a tile border. On in the performance profile; `false` keeps Vanilla's exact serial order at no cost. Applies to every world. default: the profile's value (vanilla profile: false). vanillite.toml: performance.region-threading.enabled.",
+      "description": "Turns the tile region mode on: natural mob spawning and random ticks of a world are worked out per tile (a fixed square of chunks) on several cores. Faster when players are spread out; no gain for a crowd in one place. Deviation: these phases draw their random numbers per tile, so a seeded world differs from Vanilla (same rates), and a player's mob cap can be exceeded by one tick's spawns at a tile border. On in the performance profile; `false` keeps Vanilla's exact serial order at no cost. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: performance.region-threading.enabled.",
       "env_variable": "VANILLITE_PERFORMANCE__REGION_THREADING__ENABLED",
       "default_value": "default",
       "user_viewable": true,
@@ -883,7 +883,7 @@
     },
     {
       "name": "Performance: Region Threading › Tile Size",
-      "description": "Edge of a tile in chunks. Smaller tiles balance better over the cores, larger ones cost less bookkeeping. Applies to every world. Range: 8 to 32. Empty: the profile's value (vanilla profile: 16). vanillite.toml: performance.region-threading.tile-size.",
+      "description": "Edge of a tile in chunks. Smaller tiles balance better over the cores, larger ones cost less bookkeeping. Applies to every world. Range: 8 to 32. Empty: the profile's value (paper profile: 16). vanillite.toml: performance.region-threading.tile-size.",
       "env_variable": "VANILLITE_PERFORMANCE__REGION_THREADING__TILE_SIZE",
       "default_value": "",
       "user_viewable": true,
@@ -893,7 +893,7 @@
     },
     {
       "name": "Performance: Simulation › Max Block Ticks",
-      "description": "Scheduled block ticks run per tick. Applies to every world. Range: 1 to 1000000. Empty: the profile's value (vanilla profile: 65536). vanillite.toml: performance.simulation.max-block-ticks.",
+      "description": "Scheduled block ticks run per tick. Applies to every world. Range: 1 to 1000000. Empty: the profile's value (paper profile: 65536). vanillite.toml: performance.simulation.max-block-ticks.",
       "env_variable": "VANILLITE_PERFORMANCE__SIMULATION__MAX_BLOCK_TICKS",
       "default_value": "",
       "user_viewable": true,
@@ -903,7 +903,7 @@
     },
     {
       "name": "Performance: Simulation › Max Fluid Ticks",
-      "description": "Scheduled fluid ticks run per tick. Applies to every world. Range: 1 to 1000000. Empty: the profile's value (vanilla profile: 65536). vanillite.toml: performance.simulation.max-fluid-ticks.",
+      "description": "Scheduled fluid ticks run per tick. Applies to every world. Range: 1 to 1000000. Empty: the profile's value (paper profile: 65536). vanillite.toml: performance.simulation.max-fluid-ticks.",
       "env_variable": "VANILLITE_PERFORMANCE__SIMULATION__MAX_FLUID_TICKS",
       "default_value": "",
       "user_viewable": true,
@@ -913,7 +913,7 @@
     },
     {
       "name": "Performance: Simulation › Max Chained Neighbor Updates",
-      "description": "Chained neighbour and shape updates of one block change before the rest is skipped; \"vanilla\" uses `max-chained-neighbor-updates` of server.properties. Applies to every world. Range: 1 to 100000000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.simulation.max-chained-neighbor-updates.",
+      "description": "Chained neighbour and shape updates of one block change before the rest is skipped; \"vanilla\" uses `max-chained-neighbor-updates` of server.properties. Applies to every world. Range: 1 to 100000000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.simulation.max-chained-neighbor-updates.",
       "env_variable": "VANILLITE_PERFORMANCE__SIMULATION__MAX_CHAINED_NEIGHBOR_UPDATES",
       "default_value": "",
       "user_viewable": true,
@@ -923,7 +923,7 @@
     },
     {
       "name": "Performance: Simulation › Max Relights Per Tick",
-      "description": "Chunks whose light is updated together after block changes, in one background job that recomputes only the cells the changes reach; the rest follows in the next job. Lower values split bursts into smaller jobs. Applies to every world. Range: 1 to 65536. Empty: the profile's value (vanilla profile: 1024). vanillite.toml: performance.simulation.max-relights-per-tick.",
+      "description": "Chunks whose light is updated together after block changes, in one background job that recomputes only the cells the changes reach; the rest follows in the next job. Lower values split bursts into smaller jobs. Applies to every world. Range: 1 to 65536. Empty: the profile's value (paper profile: 1024). vanillite.toml: performance.simulation.max-relights-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__SIMULATION__MAX_RELIGHTS_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -933,7 +933,7 @@
     },
     {
       "name": "Performance: Collisions › Max Entity Collisions",
-      "description": "Entities a mob pushes and is pushed by per tick (`pushEntities`). Saves the push work in crowded mob pens and farms. Deviation: in a crowd of more entities only the first ones push, so crowds spread more slowly; cramming damage still counts every entity. \"vanilla\" pushes all. Applies to every world. Range: 0 to 1024. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.collisions.max-entity-collisions.",
+      "description": "Entities a mob pushes and is pushed by per tick (`pushEntities`). Saves the push work in crowded mob pens and farms. Deviation: in a crowd of more entities only the first ones push, so crowds spread more slowly; cramming damage still counts every entity. \"vanilla\" pushes all. Applies to every world. Range: 0 to 1024. Also accepts vanilla. Empty: the profile's value (paper profile: 8). vanillite.toml: performance.collisions.max-entity-collisions.",
       "env_variable": "VANILLITE_PERFORMANCE__COLLISIONS__MAX_ENTITY_COLLISIONS",
       "default_value": "",
       "user_viewable": true,
@@ -943,7 +943,7 @@
     },
     {
       "name": "Performance: Mobs › Path Nodes Per Tick",
-      "description": "Path finding nodes all mobs of the world may visit per tick; searches over the budget fail and are retried later. 0 = unlimited (Vanilla). Applies to every world. Range: 0 to 10000000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.mobs.path-nodes-per-tick.",
+      "description": "Path finding nodes all mobs of the world may visit per tick; searches over the budget fail and are retried later. 0 = unlimited (Vanilla). Applies to every world. Range: 0 to 10000000. Empty: the profile's value (paper profile: 0). vanillite.toml: performance.mobs.path-nodes-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__MOBS__PATH_NODES_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -953,7 +953,7 @@
     },
     {
       "name": "Performance: Activation Range › Animals",
-      "description": "Range of animals (`creature` and `ambient` mobs: cows, sheep, bats, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.animals.",
+      "description": "Range of animals (`creature` and `ambient` mobs: cows, sheep, bats, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 32). vanillite.toml: performance.activation-range.animals.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__ANIMALS",
       "default_value": "",
       "user_viewable": true,
@@ -963,7 +963,7 @@
     },
     {
       "name": "Performance: Activation Range › Monsters",
-      "description": "Range of monsters (`monster` mobs that are no raiders or flyers). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.monsters.",
+      "description": "Range of monsters (`monster` mobs that are no raiders or flyers). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 32). vanillite.toml: performance.activation-range.monsters.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__MONSTERS",
       "default_value": "",
       "user_viewable": true,
@@ -973,7 +973,7 @@
     },
     {
       "name": "Performance: Activation Range › Raiders",
-      "description": "Range of raiders (pillagers, vindicators, evokers, illusioners, witches and ravagers). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.raiders.",
+      "description": "Range of raiders (pillagers, vindicators, evokers, illusioners, witches and ravagers). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 64). vanillite.toml: performance.activation-range.raiders.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__RAIDERS",
       "default_value": "",
       "user_viewable": true,
@@ -983,7 +983,7 @@
     },
     {
       "name": "Performance: Activation Range › Misc",
-      "description": "Range of the other mobs (golems, armor stands, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.misc.",
+      "description": "Range of the other mobs (golems, armor stands, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 16). vanillite.toml: performance.activation-range.misc.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__MISC",
       "default_value": "",
       "user_viewable": true,
@@ -993,7 +993,7 @@
     },
     {
       "name": "Performance: Activation Range › Water",
-      "description": "Range of water mobs (fish, squid, dolphins, axolotls, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.water.",
+      "description": "Range of water mobs (fish, squid, dolphins, axolotls, ...). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 16). vanillite.toml: performance.activation-range.water.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WATER",
       "default_value": "",
       "user_viewable": true,
@@ -1003,7 +1003,7 @@
     },
     {
       "name": "Performance: Activation Range › Villagers",
-      "description": "Range of villagers and wandering traders. Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.villagers.",
+      "description": "Range of villagers and wandering traders. Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 32). vanillite.toml: performance.activation-range.villagers.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__VILLAGERS",
       "default_value": "",
       "user_viewable": true,
@@ -1013,7 +1013,7 @@
     },
     {
       "name": "Performance: Activation Range › Flying",
-      "description": "Range of flying monsters (ghasts, phantoms, blazes, vexes). Applies to every world. Range: 0 to 128. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.flying.",
+      "description": "Range of flying monsters (ghasts, phantoms, blazes, vexes). Applies to every world. Range: 0 to 128. Empty: the profile's value (paper profile: 32). vanillite.toml: performance.activation-range.flying.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__FLYING",
       "default_value": "",
       "user_viewable": true,
@@ -1023,7 +1023,7 @@
     },
     {
       "name": "Performance: Activation Range › Villagers Work Immunity After",
-      "description": "Ticks an inactive villager must have been inactive before it becomes active while it works at its job site, so workstations keep restocking trades; 0 = never. Applies to every world. Range: 0 to 12000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.villagers-work-immunity-after.",
+      "description": "Ticks an inactive villager must have been inactive before it becomes active while it works at its job site, so workstations keep restocking trades; 0 = never. Applies to every world. Range: 0 to 12000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.activation-range.villagers-work-immunity-after.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__VILLAGERS_WORK_IMMUNITY_AFTER",
       "default_value": "",
       "user_viewable": true,
@@ -1033,7 +1033,7 @@
     },
     {
       "name": "Performance: Activation Range › Villagers Work Immunity For",
-      "description": "Ticks a working villager then stays active. Applies to every world. Range: 0 to 12000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.villagers-work-immunity-for.",
+      "description": "Ticks a working villager then stays active. Applies to every world. Range: 0 to 12000. Empty: the profile's value (paper profile: 20). vanillite.toml: performance.activation-range.villagers-work-immunity-for.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__VILLAGERS_WORK_IMMUNITY_FOR",
       "default_value": "",
       "user_viewable": true,
@@ -1043,7 +1043,7 @@
     },
     {
       "name": "Performance: Activation Range › Villagers Active For Panic",
-      "description": "Panicking villagers stay active (they flee and alarm the village, which spawns iron golems). Applies to every world. default: the profile's value (vanilla profile: false). vanillite.toml: performance.activation-range.villagers-active-for-panic.",
+      "description": "Panicking villagers stay active (they flee and alarm the village, which spawns iron golems). Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: performance.activation-range.villagers-active-for-panic.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__VILLAGERS_ACTIVE_FOR_PANIC",
       "default_value": "default",
       "user_viewable": true,
@@ -1053,7 +1053,7 @@
     },
     {
       "name": "Performance: Activation Range › Inactive Mob Goal Selector Throttle",
-      "description": "Ticks between the goal and target selector runs of an inactive mob between its full ticks: it notices targets, food and partners sooner, but does not move before its next full tick. Lower values cost more. \"disabled\": inactive mobs choose goals only in their full ticks (cheapest). Applies to every world. Range: 1 to 20. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: performance.activation-range.inactive-mob-goal-selector-throttle.",
+      "description": "Ticks between the goal and target selector runs of an inactive mob between its full ticks: it notices targets, food and partners sooner, but does not move before its next full tick. Lower values cost more. \"disabled\": inactive mobs choose goals only in their full ticks (cheapest). Applies to every world. Range: 1 to 20. Also accepts disabled. Empty: the profile's value (paper profile: 10). vanillite.toml: performance.activation-range.inactive-mob-goal-selector-throttle.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__INACTIVE_MOB_GOAL_SELECTOR_THROTTLE",
       "default_value": "",
       "user_viewable": true,
@@ -1063,7 +1063,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Animals Max Per Tick",
-      "description": "Animals woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.wake-up-inactive.animals-max-per-tick.",
+      "description": "Animals woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (paper profile: 4). vanillite.toml: performance.activation-range.wake-up-inactive.animals-max-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__ANIMALS_MAX_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1073,7 +1073,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Animals Every",
-      "description": "Ticks animals must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (vanilla profile: 1200). vanillite.toml: performance.activation-range.wake-up-inactive.animals-every.",
+      "description": "Ticks animals must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (paper profile: 1200). vanillite.toml: performance.activation-range.wake-up-inactive.animals-every.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__ANIMALS_EVERY",
       "default_value": "",
       "user_viewable": true,
@@ -1083,7 +1083,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Animals For",
-      "description": "Ticks woken up animals stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.animals-for.",
+      "description": "Ticks woken up animals stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.animals-for.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__ANIMALS_FOR",
       "default_value": "",
       "user_viewable": true,
@@ -1093,7 +1093,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Villagers Max Per Tick",
-      "description": "Villagers woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-max-per-tick.",
+      "description": "Villagers woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (paper profile: 4). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-max-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__VILLAGERS_MAX_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1103,7 +1103,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Villagers Every",
-      "description": "Ticks villagers must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (vanilla profile: 600). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-every.",
+      "description": "Ticks villagers must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (paper profile: 600). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-every.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__VILLAGERS_EVERY",
       "default_value": "",
       "user_viewable": true,
@@ -1113,7 +1113,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Villagers For",
-      "description": "Ticks woken up villagers stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-for.",
+      "description": "Ticks woken up villagers stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.villagers-for.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__VILLAGERS_FOR",
       "default_value": "",
       "user_viewable": true,
@@ -1123,7 +1123,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Monsters Max Per Tick",
-      "description": "Monsters woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-max-per-tick.",
+      "description": "Monsters woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (paper profile: 8). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-max-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__MONSTERS_MAX_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1133,7 +1133,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Monsters Every",
-      "description": "Ticks monsters must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (vanilla profile: 400). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-every.",
+      "description": "Ticks monsters must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (paper profile: 400). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-every.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__MONSTERS_EVERY",
       "default_value": "",
       "user_viewable": true,
@@ -1143,7 +1143,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Monsters For",
-      "description": "Ticks woken up monsters stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-for.",
+      "description": "Ticks woken up monsters stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.monsters-for.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__MONSTERS_FOR",
       "default_value": "",
       "user_viewable": true,
@@ -1153,7 +1153,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Flying Max Per Tick",
-      "description": "Flying woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.activation-range.wake-up-inactive.flying-max-per-tick.",
+      "description": "Flying woken up per tick at most. Applies to every world. Range: 0 to 1000. Empty: the profile's value (paper profile: 8). vanillite.toml: performance.activation-range.wake-up-inactive.flying-max-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__FLYING_MAX_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1163,7 +1163,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Flying Every",
-      "description": "Ticks flying must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (vanilla profile: 200). vanillite.toml: performance.activation-range.wake-up-inactive.flying-every.",
+      "description": "Ticks flying must have been inactive before they may be woken up. Applies to every world. Range: 1 to 1728000. Empty: the profile's value (paper profile: 200). vanillite.toml: performance.activation-range.wake-up-inactive.flying-every.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__FLYING_EVERY",
       "default_value": "",
       "user_viewable": true,
@@ -1173,7 +1173,7 @@
     },
     {
       "name": "Performance: Activation Range Wake Up Inactive › Flying For",
-      "description": "Ticks woken up flying stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.flying-for.",
+      "description": "Ticks woken up flying stay active. Applies to every world. Range: 1 to 12000. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.activation-range.wake-up-inactive.flying-for.",
       "env_variable": "VANILLITE_PERFORMANCE__ACTIVATION_RANGE__WAKE_UP_INACTIVE__FLYING_FOR",
       "default_value": "",
       "user_viewable": true,
@@ -1183,7 +1183,7 @@
     },
     {
       "name": "Performance: Items › Despawn Ticks",
-      "description": "Ticks an item lies on the ground before it despawns. Lower values keep fewer item entities around on busy servers. Applies to every world. Range: 20 to 32766. Empty: the profile's value (vanilla profile: 6000). vanillite.toml: performance.items.despawn-ticks.",
+      "description": "Ticks an item lies on the ground before it despawns. Lower values keep fewer item entities around on busy servers. Applies to every world. Range: 20 to 32766. Empty: the profile's value (paper profile: 6000). vanillite.toml: performance.items.despawn-ticks.",
       "env_variable": "VANILLITE_PERFORMANCE__ITEMS__DESPAWN_TICKS",
       "default_value": "",
       "user_viewable": true,
@@ -1193,7 +1193,7 @@
     },
     {
       "name": "Performance: Items › Merge Radius",
-      "description": "Horizontal radius in blocks within which equal item stacks merge into one entity (vertically the radius minus 0.5). Fewer item entities to tick, track and send near farms and mob grinders. Deviation: with more than Vanilla's 0.5, items lying apart jump together into one stack. Applies to every world. Range: 0.5 to 16. Empty: the profile's value (vanilla profile: 0.5). vanillite.toml: performance.items.merge-radius.",
+      "description": "Horizontal radius in blocks within which equal item stacks merge into one entity (vertically the radius minus 0.5). Fewer item entities to tick, track and send near farms and mob grinders. Deviation: with more than Vanilla's 0.5, items lying apart jump together into one stack. Applies to every world. Range: 0.5 to 16. Empty: the profile's value (paper profile: 0.5). vanillite.toml: performance.items.merge-radius.",
       "env_variable": "VANILLITE_PERFORMANCE__ITEMS__MERGE_RADIUS",
       "default_value": "",
       "user_viewable": true,
@@ -1203,7 +1203,7 @@
     },
     {
       "name": "Performance: Items › XP Merge Radius",
-      "description": "Radius in blocks within which experience orbs of the same value merge (Vanilla's scan every 20 ticks). Fewer orb entities after mob grinders. Deviation: with more than Vanilla's 0.5, orbs lying apart merge and fly to the player as one. Applies to every world. Range: 0.5 to 16. Empty: the profile's value (vanilla profile: 0.5). vanillite.toml: performance.items.xp-merge-radius.",
+      "description": "Radius in blocks within which experience orbs of the same value merge (Vanilla's scan every 20 ticks). Fewer orb entities after mob grinders. Deviation: with more than Vanilla's 0.5, orbs lying apart merge and fly to the player as one. Applies to every world. Range: 0.5 to 16. Empty: the profile's value (paper profile: 0.5). vanillite.toml: performance.items.xp-merge-radius.",
       "env_variable": "VANILLITE_PERFORMANCE__ITEMS__XP_MERGE_RADIUS",
       "default_value": "",
       "user_viewable": true,
@@ -1213,7 +1213,7 @@
     },
     {
       "name": "Performance: Items › Arrow Despawn Ticks",
-      "description": "Ticks an arrow stuck in a block stays before it despawns. Fewer arrow entities on PvP servers and around skeletons. Deviation: arrows vanish earlier than Vanilla's 60 seconds. Applies to every world. Range: 20 to 1200. Empty: the profile's value (vanilla profile: 1200). vanillite.toml: performance.items.arrow-despawn-ticks.",
+      "description": "Ticks an arrow stuck in a block stays before it despawns. Fewer arrow entities on PvP servers and around skeletons. Deviation: arrows vanish earlier than Vanilla's 60 seconds. Applies to every world. Range: 20 to 1200. Empty: the profile's value (paper profile: 1200). vanillite.toml: performance.items.arrow-despawn-ticks.",
       "env_variable": "VANILLITE_PERFORMANCE__ITEMS__ARROW_DESPAWN_TICKS",
       "default_value": "",
       "user_viewable": true,
@@ -1223,7 +1223,7 @@
     },
     {
       "name": "Performance: Spawning › Spawn Interval",
-      "description": "Ticks between natural spawn rounds of monsters, ambient and water mobs (animals keep Vanilla's 400). Saves spawn attempts, which cost a lot with many players. Deviation: caps refill more slowly after mobs die (mob farms produce less). Applies to every world. Range: 1 to 400. Empty: the profile's value (vanilla profile: 1). vanillite.toml: performance.spawning.spawn-interval.",
+      "description": "Ticks between natural spawn rounds of monsters, ambient and water mobs (animals keep Vanilla's 400). Saves spawn attempts, which cost a lot with many players. Deviation: caps refill more slowly after mobs die (mob farms produce less). Applies to every world. Range: 1 to 400. Empty: the profile's value (paper profile: 1). vanillite.toml: performance.spawning.spawn-interval.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__SPAWN_INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -1233,7 +1233,7 @@
     },
     {
       "name": "Performance: Spawning › Monster Cap",
-      "description": "Mob cap of monsters (Vanilla 70). Fewer mobs to tick; fewer monsters at night. Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.monster-cap.",
+      "description": "Mob cap of monsters (Vanilla 70). Fewer mobs to tick; fewer monsters at night. Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.monster-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__MONSTER_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1243,7 +1243,7 @@
     },
     {
       "name": "Performance: Spawning › Creature Cap",
-      "description": "Mob cap of animals (`creature`, Vanilla 10). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.creature-cap.",
+      "description": "Mob cap of animals (`creature`, Vanilla 10). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.creature-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__CREATURE_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1253,7 +1253,7 @@
     },
     {
       "name": "Performance: Spawning › Ambient Cap",
-      "description": "Mob cap of bats (`ambient`, Vanilla 15). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.ambient-cap.",
+      "description": "Mob cap of bats (`ambient`, Vanilla 15). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.ambient-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__AMBIENT_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1263,7 +1263,7 @@
     },
     {
       "name": "Performance: Spawning › Axolotls Cap",
-      "description": "Mob cap of axolotls (Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.axolotls-cap.",
+      "description": "Mob cap of axolotls (Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.axolotls-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__AXOLOTLS_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1273,7 +1273,7 @@
     },
     {
       "name": "Performance: Spawning › Underground Water Creature Cap",
-      "description": "Mob cap of glow squids (`underground_water_creature`, Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.underground-water-creature-cap.",
+      "description": "Mob cap of glow squids (`underground_water_creature`, Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.underground-water-creature-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__UNDERGROUND_WATER_CREATURE_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1283,7 +1283,7 @@
     },
     {
       "name": "Performance: Spawning › Water Creature Cap",
-      "description": "Mob cap of squids and dolphins (`water_creature`, Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.water-creature-cap.",
+      "description": "Mob cap of squids and dolphins (`water_creature`, Vanilla 5). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.water-creature-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__WATER_CREATURE_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1293,7 +1293,7 @@
     },
     {
       "name": "Performance: Spawning › Water Ambient Cap",
-      "description": "Mob cap of fish (`water_ambient`, Vanilla 20). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.water-ambient-cap.",
+      "description": "Mob cap of fish (`water_ambient`, Vanilla 20). Applies to every world. Range: 0 to 1000. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.water-ambient-cap.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__WATER_AMBIENT_CAP",
       "default_value": "",
       "user_viewable": true,
@@ -1303,7 +1303,7 @@
     },
     {
       "name": "Performance: Spawning › Hard Despawn Range",
-      "description": "Blocks from the nearest player beyond which a mob that may despawn is removed at once, and beyond which no mob spawns (Vanilla 128, fish 64). Fewer far mobs to tick. Deviation: mobs disappear closer to players. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.hard-despawn-range.",
+      "description": "Blocks from the nearest player beyond which a mob that may despawn is removed at once, and beyond which no mob spawns (Vanilla 128, fish 64). Fewer far mobs to tick. Deviation: mobs disappear closer to players. Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.hard-despawn-range.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__HARD_DESPAWN_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -1313,7 +1313,7 @@
     },
     {
       "name": "Performance: Spawning › Soft Despawn Range",
-      "description": "Blocks from the nearest player beyond which an idle mob may despawn by chance (Vanilla 32). Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (vanilla profile: vanilla). vanillite.toml: performance.spawning.soft-despawn-range.",
+      "description": "Blocks from the nearest player beyond which an idle mob may despawn by chance (Vanilla 32). Applies to every world. Range: 8 to 512. Also accepts vanilla. Empty: the profile's value (paper profile: vanilla). vanillite.toml: performance.spawning.soft-despawn-range.",
       "env_variable": "VANILLITE_PERFORMANCE__SPAWNING__SOFT_DESPAWN_RANGE",
       "default_value": "",
       "user_viewable": true,
@@ -1323,7 +1323,7 @@
     },
     {
       "name": "Performance: Explosions › Max TNT Per Tick",
-      "description": "Primed TNT entities ticked per world tick; the rest wait (their fuse pauses) until a later tick. Keeps huge TNT chains from stalling the server. Deviation: above the limit, TNT explodes later than in Vanilla. Applies to every world. Range: 1 to 100000. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: performance.explosions.max-tnt-per-tick.",
+      "description": "Primed TNT entities ticked per world tick; the rest wait (their fuse pauses) until a later tick. Keeps huge TNT chains from stalling the server. Deviation: above the limit, TNT explodes later than in Vanilla. Applies to every world. Range: 1 to 100000. Also accepts disabled. Empty: the profile's value (paper profile: 100). vanillite.toml: performance.explosions.max-tnt-per-tick.",
       "env_variable": "VANILLITE_PERFORMANCE__EXPLOSIONS__MAX_TNT_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1333,7 +1333,7 @@
     },
     {
       "name": "Performance: Hoppers › Transfer Cooldown",
-      "description": "Ticks a hopper waits after it moved an item (Vanilla 8). Higher values move items more slowly. Applies to every world. Range: 1 to 64. Empty: the profile's value (vanilla profile: 8). vanillite.toml: performance.hoppers.transfer-cooldown.",
+      "description": "Ticks a hopper waits after it moved an item (Vanilla 8). Higher values move items more slowly. Applies to every world. Range: 1 to 64. Empty: the profile's value (paper profile: 8). vanillite.toml: performance.hoppers.transfer-cooldown.",
       "env_variable": "VANILLITE_PERFORMANCE__HOPPERS__TRANSFER_COOLDOWN",
       "default_value": "",
       "user_viewable": true,
@@ -1343,7 +1343,7 @@
     },
     {
       "name": "Performance: Hoppers › Check Cooldown",
-      "description": "Ticks a hopper waits after it found nothing to move (Vanilla 1: it tries every tick). Saves the container and item lookups of idle hoppers. Deviation: a hopper notices new items up to this many ticks later; item sorters and clocks built on hopper timing run differently. Applies to every world. Range: 1 to 64. Empty: the profile's value (vanilla profile: 1). vanillite.toml: performance.hoppers.check-cooldown.",
+      "description": "Ticks a hopper waits after it found nothing to move (Vanilla 1: it tries every tick). Saves the container and item lookups of idle hoppers. Deviation: a hopper notices new items up to this many ticks later; item sorters and clocks built on hopper timing run differently. Applies to every world. Range: 1 to 64. Empty: the profile's value (paper profile: 1). vanillite.toml: performance.hoppers.check-cooldown.",
       "env_variable": "VANILLITE_PERFORMANCE__HOPPERS__CHECK_COOLDOWN",
       "default_value": "",
       "user_viewable": true,
@@ -1353,7 +1353,7 @@
     },
     {
       "name": "Storage: Layout",
-      "description": "Folder layout of the dimensions: `\"vanilla\"` keeps every dimension in `<level>/dimensions/` like Vanilla and Paper; `\"spigot\"` puts the nether into `<level>_nether/` and the end into `<level>_the_end/` like Spigot and CraftBukkit, so the world can be opened by Spigot without conversion. A world found in the other layout is moved into this one once at startup. default: the profile's value (vanilla profile: vanilla). vanillite.toml: storage.layout.",
+      "description": "Folder layout of the dimensions: `\"vanilla\"` keeps every dimension in `<level>/dimensions/` like Vanilla and Paper; `\"spigot\"` puts the nether into `<level>_nether/` and the end into `<level>_the_end/` like Spigot and CraftBukkit, so the world can be opened by Spigot without conversion. A world found in the other layout is moved into this one once at startup. default: the profile's value (paper profile: vanilla). vanillite.toml: storage.layout.",
       "env_variable": "VANILLITE_STORAGE__LAYOUT",
       "default_value": "default",
       "user_viewable": true,
@@ -1363,7 +1363,7 @@
     },
     {
       "name": "Storage: World Format",
-      "description": "Format of the chunk, entity and POI files of new worlds: `\"vanillite\"`, the own format (about 1.75 × smaller than Anvil, loads and saves several times faster, `vanillite export` writes a Vanilla copy), or `\"anvil\"`, Vanilla's region files. An existing world keeps its format unless `convert-world` is set. default: the profile's value (vanilla profile: vanillite). vanillite.toml: storage.world-format.",
+      "description": "Format of the chunk, entity and POI files of new worlds: `\"vanillite\"`, the own format (about 1.75 × smaller than Anvil, loads and saves several times faster, `vanillite export` writes a Vanilla copy), or `\"anvil\"`, Vanilla's region files. An existing world keeps its format unless `convert-world` is set. default: the profile's value (paper profile: vanillite). vanillite.toml: storage.world-format.",
       "env_variable": "VANILLITE_STORAGE__WORLD_FORMAT",
       "default_value": "default",
       "user_viewable": true,
@@ -1373,7 +1373,7 @@
     },
     {
       "name": "Storage: Convert World",
-      "description": "Converts an existing world into `world-format` at startup, before it loads. The new files are read back and compared before the old ones are removed; if that fails, the world stays as it is and the server starts with it. default: the profile's value (vanilla profile: false). vanillite.toml: storage.convert-world.",
+      "description": "Converts an existing world into `world-format` at startup, before it loads. The new files are read back and compared before the old ones are removed; if that fails, the world stays as it is and the server starts with it. default: the profile's value (paper profile: false). vanillite.toml: storage.convert-world.",
       "env_variable": "VANILLITE_STORAGE__CONVERT_WORLD",
       "default_value": "default",
       "user_viewable": true,
@@ -1383,7 +1383,7 @@
     },
     {
       "name": "Storage: Keep Converted Files",
-      "description": "After a conversion the original files are moved into `world-format-backup/<time>/` in the server folder instead of being deleted. default: the profile's value (vanilla profile: true). vanillite.toml: storage.keep-converted-files.",
+      "description": "After a conversion the original files are moved into `world-format-backup/<time>/` in the server folder instead of being deleted. default: the profile's value (paper profile: true). vanillite.toml: storage.keep-converted-files.",
       "env_variable": "VANILLITE_STORAGE__KEEP_CONVERTED_FILES",
       "default_value": "default",
       "user_viewable": true,
@@ -1393,7 +1393,7 @@
     },
     {
       "name": "Storage: Compression Level",
-      "description": "zstd level of chunk records in the own format, 1 (fastest) to 19 (smallest). Takes effect for chunks saved from then on. Range: 1 to 19. Empty: the profile's value (vanilla profile: 3). vanillite.toml: storage.compression-level.",
+      "description": "zstd level of chunk records in the own format, 1 (fastest) to 19 (smallest). Takes effect for chunks saved from then on. Range: 1 to 19. Empty: the profile's value (paper profile: 3). vanillite.toml: storage.compression-level.",
       "env_variable": "VANILLITE_STORAGE__COMPRESSION_LEVEL",
       "default_value": "",
       "user_viewable": true,
@@ -1403,7 +1403,7 @@
     },
     {
       "name": "Storage: IO Threads",
-      "description": "Disk IO threads shared by all dimensions. They only read and write files; compression runs on the compute pool. More help on network volumes with high latency. Range: 1 to 16. Empty: the profile's value (vanilla profile: 2). vanillite.toml: storage.io-threads.",
+      "description": "Disk IO threads shared by all dimensions. They only read and write files; compression runs on the compute pool. More help on network volumes with high latency. Range: 1 to 16. Empty: the profile's value (paper profile: 2). vanillite.toml: storage.io-threads.",
       "env_variable": "VANILLITE_STORAGE__IO_THREADS",
       "default_value": "",
       "user_viewable": true,
@@ -1413,7 +1413,7 @@
     },
     {
       "name": "Storage: Commit Interval",
-      "description": "Seconds after which saves of unloaded chunks are made durable (synced when `sync-chunk-writes` is on). Save rounds and `save-all flush` commit at their end. Range: 5 to 300. Empty: the profile's value (vanilla profile: 30). vanillite.toml: storage.commit-interval.",
+      "description": "Seconds after which saves of unloaded chunks are made durable (synced when `sync-chunk-writes` is on). Save rounds and `save-all flush` commit at their end. Range: 5 to 300. Empty: the profile's value (paper profile: 30). vanillite.toml: storage.commit-interval.",
       "env_variable": "VANILLITE_STORAGE__COMMIT_INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -1423,7 +1423,7 @@
     },
     {
       "name": "Storage: Read Ahead",
-      "description": "Reads the neighbours of a loaded chunk in its 4 × 4 tile along when they lie next to it in the file, and keeps them for a short time: fewer disk reads for moving players. default: the profile's value (vanilla profile: true). vanillite.toml: storage.read-ahead.",
+      "description": "Reads the neighbours of a loaded chunk in its 4 × 4 tile along when they lie next to it in the file, and keeps them for a short time: fewer disk reads for moving players. default: the profile's value (paper profile: true). vanillite.toml: storage.read-ahead.",
       "env_variable": "VANILLITE_STORAGE__READ_AHEAD",
       "default_value": "default",
       "user_viewable": true,
@@ -1433,7 +1433,7 @@
     },
     {
       "name": "Storage: Read Cache",
-      "description": "MiB of chunk records read ahead kept per dimension; under a memory limit (`performance.budget.memory`) at most 1/32 of it. Range: 0 to 65536. Empty: the profile's value (vanilla profile: 64). vanillite.toml: storage.read-cache.",
+      "description": "MiB of chunk records read ahead kept per dimension; under a memory limit (`performance.budget.memory`) at most 1/32 of it. Range: 0 to 65536. Empty: the profile's value (paper profile: 64). vanillite.toml: storage.read-cache.",
       "env_variable": "VANILLITE_STORAGE__READ_CACHE",
       "default_value": "",
       "user_viewable": true,
@@ -1443,7 +1443,7 @@
     },
     {
       "name": "Storage: Max Open Files",
-      "description": "Region files kept open per dimension while unused; files in use always stay open. Range: 16 to 65536. Empty: the profile's value (vanilla profile: 256). vanillite.toml: storage.max-open-files.",
+      "description": "Region files kept open per dimension while unused; files in use always stay open. Range: 16 to 65536. Empty: the profile's value (paper profile: 256). vanillite.toml: storage.max-open-files.",
       "env_variable": "VANILLITE_STORAGE__MAX_OPEN_FILES",
       "default_value": "",
       "user_viewable": true,
@@ -1453,7 +1453,7 @@
     },
     {
       "name": "Storage: Max Pending Writes",
-      "description": "MiB of saved chunks waiting for the disk per dimension above which no more saves are queued: changed chunks stay loaded and save rounds pause until the disk caught up. Bounds RAM on slow disks. Range: 4 to 65536. Empty: the profile's value (vanilla profile: 64). vanillite.toml: storage.max-pending-writes.",
+      "description": "MiB of saved chunks waiting for the disk per dimension above which no more saves are queued: changed chunks stay loaded and save rounds pause until the disk caught up. Bounds RAM on slow disks. Range: 4 to 65536. Empty: the profile's value (paper profile: 64). vanillite.toml: storage.max-pending-writes.",
       "env_variable": "VANILLITE_STORAGE__MAX_PENDING_WRITES",
       "default_value": "",
       "user_viewable": true,
@@ -1463,7 +1463,7 @@
     },
     {
       "name": "Storage: Autosave › Tick Budget",
-      "description": "Most microseconds of one tick spent capturing chunks for a save round; only the time left in the tick is used. ~380 chunks fit into the default. Range: 100 to 10000. Empty: the profile's value (vanilla profile: 500). vanillite.toml: storage.autosave.tick-budget.",
+      "description": "Most microseconds of one tick spent capturing chunks for a save round; only the time left in the tick is used. ~380 chunks fit into the default. Range: 100 to 10000. Empty: the profile's value (paper profile: 500). vanillite.toml: storage.autosave.tick-budget.",
       "env_variable": "VANILLITE_STORAGE__AUTOSAVE__TICK_BUDGET",
       "default_value": "",
       "user_viewable": true,
@@ -1473,7 +1473,7 @@
     },
     {
       "name": "Storage: Autosave › Min Chunks Per Tick",
-      "description": "Chunks captured per tick even when the tick has no time left, so a round ends on an overloaded server. Range: 1 to 1024. Empty: the profile's value (vanilla profile: 16). vanillite.toml: storage.autosave.min-chunks-per-tick.",
+      "description": "Chunks captured per tick even when the tick has no time left, so a round ends on an overloaded server. Range: 1 to 1024. Empty: the profile's value (paper profile: 16). vanillite.toml: storage.autosave.min-chunks-per-tick.",
       "env_variable": "VANILLITE_STORAGE__AUTOSAVE__MIN_CHUNKS_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1483,7 +1483,7 @@
     },
     {
       "name": "Backup: Interval",
-      "description": "Minutes between backups; disabled makes none. The first one is made one interval after the start. Range: 1 to 525600. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: backup.interval.",
+      "description": "Minutes between backups; disabled makes none. The first one is made one interval after the start. Range: 1 to 525600. Also accepts disabled. Empty: the profile's value (paper profile: disabled). vanillite.toml: backup.interval.",
       "env_variable": "VANILLITE_BACKUP__INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -1493,7 +1493,7 @@
     },
     {
       "name": "Backup: Keep",
-      "description": "Backups kept; older ones are deleted after a new one is complete. 0 keeps all. Range: 0 to 10000. Empty: the profile's value (vanilla profile: 10). vanillite.toml: backup.keep.",
+      "description": "Backups kept; older ones are deleted after a new one is complete. 0 keeps all. Range: 0 to 10000. Empty: the profile's value (paper profile: 10). vanillite.toml: backup.keep.",
       "env_variable": "VANILLITE_BACKUP__KEEP",
       "default_value": "",
       "user_viewable": true,
@@ -1503,7 +1503,7 @@
     },
     {
       "name": "Backup: Directory",
-      "description": "Folder of the archives, relative to the server folder. Empty: the profile's value (vanilla profile: backups). vanillite.toml: backup.directory.",
+      "description": "Folder of the archives, relative to the server folder. Empty: the profile's value (paper profile: backups). vanillite.toml: backup.directory.",
       "env_variable": "VANILLITE_BACKUP__DIRECTORY",
       "default_value": "",
       "user_viewable": true,
@@ -1513,7 +1513,7 @@
     },
     {
       "name": "Backup: Compression Level",
-      "description": "Deflate level of the archives, 1 (fast) to 9 (small); 0 stores without compression. Region files are compressed already, so higher levels gain little. Range: 0 to 9. Empty: the profile's value (vanilla profile: 1). vanillite.toml: backup.compression-level.",
+      "description": "Deflate level of the archives, 1 (fast) to 9 (small); 0 stores without compression. Region files are compressed already, so higher levels gain little. Range: 0 to 9. Empty: the profile's value (paper profile: 1). vanillite.toml: backup.compression-level.",
       "env_variable": "VANILLITE_BACKUP__COMPRESSION_LEVEL",
       "default_value": "",
       "user_viewable": true,
@@ -1523,7 +1523,7 @@
     },
     {
       "name": "Watchdog: Early Warning After",
-      "description": "Seconds without a finished tick after which a first warning is logged. Range: 1 to 3600. Also accepts disabled. Empty: the profile's value (vanilla profile: 10). vanillite.toml: watchdog.early-warning-after.",
+      "description": "Seconds without a finished tick after which a first warning is logged. Range: 1 to 3600. Also accepts disabled. Empty: the profile's value (paper profile: 10). vanillite.toml: watchdog.early-warning-after.",
       "env_variable": "VANILLITE_WATCHDOG__EARLY_WARNING_AFTER",
       "default_value": "",
       "user_viewable": true,
@@ -1533,7 +1533,7 @@
     },
     {
       "name": "Watchdog: Warning Interval",
-      "description": "Seconds between further warnings while the server hangs. Range: 1 to 3600. Empty: the profile's value (vanilla profile: 5). vanillite.toml: watchdog.warning-interval.",
+      "description": "Seconds between further warnings while the server hangs. Range: 1 to 3600. Empty: the profile's value (paper profile: 5). vanillite.toml: watchdog.warning-interval.",
       "env_variable": "VANILLITE_WATCHDOG__WARNING_INTERVAL",
       "default_value": "",
       "user_viewable": true,
@@ -1543,7 +1543,7 @@
     },
     {
       "name": "Security: Max Joins Per Tick",
-      "description": "Logins accepted into the game per tick. Protects the tick from join floods. Range: 1 to 1000. Empty: the profile's value (vanilla profile: 5). vanillite.toml: security.max-joins-per-tick.",
+      "description": "Logins accepted into the game per tick. Protects the tick from join floods. Range: 1 to 1000. Empty: the profile's value (paper profile: 5). vanillite.toml: security.max-joins-per-tick.",
       "env_variable": "VANILLITE_SECURITY__MAX_JOINS_PER_TICK",
       "default_value": "",
       "user_viewable": true,
@@ -1553,7 +1553,7 @@
     },
     {
       "name": "Admin: RCON Bind",
-      "description": "Address RCON listens on. Vanilla listens on `server-ip` (all interfaces when empty); Vanillite listens on the loopback interface unless this is changed. Empty = `server-ip` like Vanilla. Empty: the profile's value (vanilla profile: 127.0.0.1). vanillite.toml: admin.rcon-bind.",
+      "description": "Address RCON listens on. Vanilla listens on `server-ip` (all interfaces when empty); Vanillite listens on the loopback interface unless this is changed. Empty = `server-ip` like Vanilla. Empty: the profile's value (paper profile: 127.0.0.1). vanillite.toml: admin.rcon-bind.",
       "env_variable": "VANILLITE_ADMIN__RCON_BIND",
       "default_value": "",
       "user_viewable": true,
@@ -1563,7 +1563,7 @@
     },
     {
       "name": "Admin: RCON Min Password Length",
-      "description": "Shortest `rcon.password` accepted; with a shorter one RCON stays off (Vanilla only refuses an empty password). Range: 1 to 1024. Empty: the profile's value (vanilla profile: 8). vanillite.toml: admin.rcon-min-password-length.",
+      "description": "Shortest `rcon.password` accepted; with a shorter one RCON stays off (Vanilla only refuses an empty password). Range: 1 to 1024. Empty: the profile's value (paper profile: 8). vanillite.toml: admin.rcon-min-password-length.",
       "env_variable": "VANILLITE_ADMIN__RCON_MIN_PASSWORD_LENGTH",
       "default_value": "",
       "user_viewable": true,
@@ -1573,7 +1573,7 @@
     },
     {
       "name": "Admin: RCON Max Failed Logins",
-      "description": "Failed RCON logins per IP address and minute; after that, connections of the address are closed at once until the minute is over (Vanilla: no limit). Range: 1 to 10000. Empty: the profile's value (vanilla profile: 5). vanillite.toml: admin.rcon-max-failed-logins.",
+      "description": "Failed RCON logins per IP address and minute; after that, connections of the address are closed at once until the minute is over (Vanilla: no limit). Range: 1 to 10000. Empty: the profile's value (paper profile: 5). vanillite.toml: admin.rcon-max-failed-logins.",
       "env_variable": "VANILLITE_ADMIN__RCON_MAX_FAILED_LOGINS",
       "default_value": "",
       "user_viewable": true,
@@ -1583,7 +1583,7 @@
     },
     {
       "name": "Admin: RCON Max Connections",
-      "description": "RCON connections open at the same time (Vanilla: no limit). Range: 1 to 1024. Empty: the profile's value (vanilla profile: 16). vanillite.toml: admin.rcon-max-connections.",
+      "description": "RCON connections open at the same time (Vanilla: no limit). Range: 1 to 1024. Empty: the profile's value (paper profile: 16). vanillite.toml: admin.rcon-max-connections.",
       "env_variable": "VANILLITE_ADMIN__RCON_MAX_CONNECTIONS",
       "default_value": "",
       "user_viewable": true,
@@ -1593,7 +1593,7 @@
     },
     {
       "name": "Admin: Query Bind",
-      "description": "Address Query listens on. Vanilla listens on `server-ip`; Vanillite listens on the loopback interface unless this is changed (set `0.0.0.0` for public server lists). Empty = `server-ip` like Vanilla. Empty: the profile's value (vanilla profile: 127.0.0.1). vanillite.toml: admin.query-bind.",
+      "description": "Address Query listens on. Vanilla listens on `server-ip`; Vanillite listens on the loopback interface unless this is changed (set `0.0.0.0` for public server lists). Empty = `server-ip` like Vanilla. Empty: the profile's value (paper profile: 127.0.0.1). vanillite.toml: admin.query-bind.",
       "env_variable": "VANILLITE_ADMIN__QUERY_BIND",
       "default_value": "",
       "user_viewable": true,
@@ -1603,7 +1603,7 @@
     },
     {
       "name": "Admin: Query Max Packets Per Second",
-      "description": "Query packets answered per IP address and second; more are dropped (Vanilla: no limit). Keeps the UDP listener from being used for reflection. Range: 1 to 10000. Empty: the profile's value (vanilla profile: 20). vanillite.toml: admin.query-max-packets-per-second.",
+      "description": "Query packets answered per IP address and second; more are dropped (Vanilla: no limit). Keeps the UDP listener from being used for reflection. Range: 1 to 10000. Empty: the profile's value (paper profile: 20). vanillite.toml: admin.query-max-packets-per-second.",
       "env_variable": "VANILLITE_ADMIN__QUERY_MAX_PACKETS_PER_SECOND",
       "default_value": "",
       "user_viewable": true,
@@ -1613,7 +1613,7 @@
     },
     {
       "name": "Commands: Max Command Length",
-      "description": "Longest command line that is parsed (Vanilla: the packet's 32767 characters). Range: 16 to 32767. Empty: the profile's value (vanilla profile: 32767). vanillite.toml: commands.max-command-length.",
+      "description": "Longest command line that is parsed (Vanilla: the packet's 32767 characters). Range: 16 to 32767. Empty: the profile's value (paper profile: 32767). vanillite.toml: commands.max-command-length.",
       "env_variable": "VANILLITE_COMMANDS__MAX_COMMAND_LENGTH",
       "default_value": "",
       "user_viewable": true,
@@ -1623,7 +1623,7 @@
     },
     {
       "name": "Commands: Max Suggestion Input",
-      "description": "Longest tab completion input; longer requests get no suggestions (Vanilla accepts 32500 characters). Range: 16 to 32500. Empty: the profile's value (vanilla profile: 2048). vanillite.toml: commands.max-suggestion-input.",
+      "description": "Longest tab completion input; longer requests get no suggestions (Vanilla accepts 32500 characters). Range: 16 to 32500. Empty: the profile's value (paper profile: 2048). vanillite.toml: commands.max-suggestion-input.",
       "env_variable": "VANILLITE_COMMANDS__MAX_SUGGESTION_INPUT",
       "default_value": "",
       "user_viewable": true,
@@ -1633,7 +1633,7 @@
     },
     {
       "name": "Commands: Max Suggestions",
-      "description": "Suggestions per answer. Range: 1 to 10000. Empty: the profile's value (vanilla profile: 1000). vanillite.toml: commands.max-suggestions.",
+      "description": "Suggestions per answer. Range: 1 to 10000. Empty: the profile's value (paper profile: 1000). vanillite.toml: commands.max-suggestions.",
       "env_variable": "VANILLITE_COMMANDS__MAX_SUGGESTIONS",
       "default_value": "",
       "user_viewable": true,
@@ -1643,7 +1643,7 @@
     },
     {
       "name": "Commands: Max Message Length",
-      "description": "Characters of a message argument (`say`, `msg`, `kick`). Range: 16 to 32767. Empty: the profile's value (vanilla profile: 256). vanillite.toml: commands.max-message-length.",
+      "description": "Characters of a message argument (`say`, `msg`, `kick`). Range: 16 to 32767. Empty: the profile's value (paper profile: 256). vanillite.toml: commands.max-message-length.",
       "env_variable": "VANILLITE_COMMANDS__MAX_MESSAGE_LENGTH",
       "default_value": "",
       "user_viewable": true,
@@ -1653,7 +1653,7 @@
     },
     {
       "name": "Commands: Max NBT Depth",
-      "description": "Nesting depth of SNBT in arguments. Range: 1 to 512. Empty: the profile's value (vanilla profile: 512). vanillite.toml: commands.max-nbt-depth.",
+      "description": "Nesting depth of SNBT in arguments. Range: 1 to 512. Empty: the profile's value (paper profile: 512). vanillite.toml: commands.max-nbt-depth.",
       "env_variable": "VANILLITE_COMMANDS__MAX_NBT_DEPTH",
       "default_value": "",
       "user_viewable": true,
@@ -1663,7 +1663,7 @@
     },
     {
       "name": "Commands: Max NBT Path Nodes",
-      "description": "Nodes of an NBT path. Range: 1 to 4096. Empty: the profile's value (vanilla profile: 256). vanillite.toml: commands.max-nbt-path-nodes.",
+      "description": "Nodes of an NBT path. Range: 1 to 4096. Empty: the profile's value (paper profile: 256). vanillite.toml: commands.max-nbt-path-nodes.",
       "env_variable": "VANILLITE_COMMANDS__MAX_NBT_PATH_NODES",
       "default_value": "",
       "user_viewable": true,
@@ -1673,7 +1673,7 @@
     },
     {
       "name": "Commands: Max Selector Options",
-      "description": "Options inside one entity selector `[...]`. Range: 1 to 1024. Empty: the profile's value (vanilla profile: 64). vanillite.toml: commands.max-selector-options.",
+      "description": "Options inside one entity selector `[...]`. Range: 1 to 1024. Empty: the profile's value (paper profile: 64). vanillite.toml: commands.max-selector-options.",
       "env_variable": "VANILLITE_COMMANDS__MAX_SELECTOR_OPTIONS",
       "default_value": "",
       "user_viewable": true,
@@ -1683,7 +1683,7 @@
     },
     {
       "name": "Commands: Max Message Selectors",
-      "description": "Entity selectors inside one message argument. Range: 0 to 256. Empty: the profile's value (vanilla profile: 16). vanillite.toml: commands.max-message-selectors.",
+      "description": "Entity selectors inside one message argument. Range: 0 to 256. Empty: the profile's value (paper profile: 16). vanillite.toml: commands.max-message-selectors.",
       "env_variable": "VANILLITE_COMMANDS__MAX_MESSAGE_SELECTORS",
       "default_value": "",
       "user_viewable": true,
@@ -1693,7 +1693,7 @@
     },
     {
       "name": "Commands: Max Redirect Depth",
-      "description": "Nested redirects followed while parsing one command. Range: 1 to 1024. Empty: the profile's value (vanilla profile: 64). vanillite.toml: commands.max-redirect-depth.",
+      "description": "Nested redirects followed while parsing one command. Range: 1 to 1024. Empty: the profile's value (paper profile: 64). vanillite.toml: commands.max-redirect-depth.",
       "env_variable": "VANILLITE_COMMANDS__MAX_REDIRECT_DEPTH",
       "default_value": "",
       "user_viewable": true,
@@ -1703,7 +1703,7 @@
     },
     {
       "name": "Commands: Bukkit Commands",
-      "description": "Paper's `/version` (also `/ver` and `/about`): the server's version or that of a plugin, for everyone with `bukkit.command.version` (all players by default); Vanilla's version dump moves to `/minecraft:version`. Off, `/version` is Vanilla's command for operators. `/plugins` is always there. default: the profile's value (vanilla profile: false). vanillite.toml: commands.bukkit-commands.",
+      "description": "Paper's `/version` (also `/ver` and `/about`): the server's version or that of a plugin, for everyone with `bukkit.command.version` (all players by default); Vanilla's version dump moves to `/minecraft:version`. Off, `/version` is Vanilla's command for operators. `/plugins` is always there. default: the profile's value (paper profile: true). vanillite.toml: commands.bukkit-commands.",
       "env_variable": "VANILLITE_COMMANDS__BUKKIT_COMMANDS",
       "default_value": "default",
       "user_viewable": true,
@@ -1713,7 +1713,7 @@
     },
     {
       "name": "Chat: Max Pending Messages",
-      "description": "Signed messages a player may have received without acknowledging them before it is kicked (`too_many_pending_chats`). Range: 64 to 65536. Empty: the profile's value (vanilla profile: 4096). vanillite.toml: chat.max-pending-messages.",
+      "description": "Signed messages a player may have received without acknowledging them before it is kicked (`too_many_pending_chats`). Range: 64 to 65536. Empty: the profile's value (paper profile: 4096). vanillite.toml: chat.max-pending-messages.",
       "env_variable": "VANILLITE_CHAT__MAX_PENDING_MESSAGES",
       "default_value": "",
       "user_viewable": true,
@@ -1723,7 +1723,7 @@
     },
     {
       "name": "Movement: Too Fast Check",
-      "description": "Players that move faster than Vanilla allows are teleported back (\"moved too quickly\"). Vanilla's `playerMovementCheck` game rule. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: movement.too-fast-check.",
+      "description": "Players that move faster than Vanilla allows are teleported back (\"moved too quickly\"). Vanilla's `playerMovementCheck` game rule. Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: movement.too-fast-check.",
       "env_variable": "VANILLITE_MOVEMENT__TOO_FAST_CHECK",
       "default_value": "default",
       "user_viewable": true,
@@ -1733,7 +1733,7 @@
     },
     {
       "name": "Movement: Elytra Too Fast Check",
-      "description": "The \"moved too quickly\" check also applies while gliding with an elytra. Vanilla's `elytraMovementCheck` game rule. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: movement.elytra-too-fast-check.",
+      "description": "The \"moved too quickly\" check also applies while gliding with an elytra. Vanilla's `elytraMovementCheck` game rule. Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: movement.elytra-too-fast-check.",
       "env_variable": "VANILLITE_MOVEMENT__ELYTRA_TOO_FAST_CHECK",
       "default_value": "default",
       "user_viewable": true,
@@ -1743,7 +1743,7 @@
     },
     {
       "name": "Movement: Wrong Movement Check",
-      "description": "Players whose movement does not match the server's collision result (\"moved wrongly\") or that move into a block are teleported back, like Vanilla's `handleMovePlayer`. Off accepts every move that passes the other checks. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: movement.wrong-movement-check.",
+      "description": "Players whose movement does not match the server's collision result (\"moved wrongly\") or that move into a block are teleported back, like Vanilla's `handleMovePlayer`. Off accepts every move that passes the other checks. Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: movement.wrong-movement-check.",
       "env_variable": "VANILLITE_MOVEMENT__WRONG_MOVEMENT_CHECK",
       "default_value": "default",
       "user_viewable": true,
@@ -1753,7 +1753,7 @@
     },
     {
       "name": "Movement: Flying Kick",
-      "description": "Players floating in the air longer than Vanilla allows are kicked unless `allow-flight` is on. Not enforced yet: it needs block collision (milestone 3). Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: movement.flying-kick.",
+      "description": "Players floating in the air longer than Vanilla allows are kicked unless `allow-flight` is on. Not enforced yet: it needs block collision (milestone 3). Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: movement.flying-kick.",
       "env_variable": "VANILLITE_MOVEMENT__FLYING_KICK",
       "default_value": "default",
       "user_viewable": true,
@@ -1763,7 +1763,7 @@
     },
     {
       "name": "Exploits: TNT Duplication",
-      "description": "TNT can be duplicated with pistons and slime or honey blocks. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.tnt-duplication.",
+      "description": "TNT can be duplicated with pistons and slime or honey blocks. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.tnt-duplication.",
       "env_variable": "VANILLITE_EXPLOITS__TNT_DUPLICATION",
       "default_value": "default",
       "user_viewable": true,
@@ -1773,7 +1773,7 @@
     },
     {
       "name": "Exploits: Carpet Duplication",
-      "description": "Carpets can be duplicated with pistons. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.carpet-duplication.",
+      "description": "Carpets can be duplicated with pistons. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.carpet-duplication.",
       "env_variable": "VANILLITE_EXPLOITS__CARPET_DUPLICATION",
       "default_value": "default",
       "user_viewable": true,
@@ -1783,7 +1783,7 @@
     },
     {
       "name": "Exploits: Rail Duplication",
-      "description": "Rails can be duplicated with pistons. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.rail-duplication.",
+      "description": "Rails can be duplicated with pistons. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.rail-duplication.",
       "env_variable": "VANILLITE_EXPLOITS__RAIL_DUPLICATION",
       "default_value": "default",
       "user_viewable": true,
@@ -1793,7 +1793,7 @@
     },
     {
       "name": "Exploits: Headless Pistons",
-      "description": "Pistons without a head can be created. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.headless-pistons.",
+      "description": "Pistons without a head can be created. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.headless-pistons.",
       "env_variable": "VANILLITE_EXPLOITS__HEADLESS_PISTONS",
       "default_value": "default",
       "user_viewable": true,
@@ -1803,7 +1803,7 @@
     },
     {
       "name": "Exploits: Break Unbreakable Blocks",
-      "description": "Bedrock and end portal frames can be broken with pistons and explosions. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.break-unbreakable-blocks.",
+      "description": "Bedrock and end portal frames can be broken with pistons and explosions. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.break-unbreakable-blocks.",
       "env_variable": "VANILLITE_EXPLOITS__BREAK_UNBREAKABLE_BLOCKS",
       "default_value": "default",
       "user_viewable": true,
@@ -1813,7 +1813,7 @@
     },
     {
       "name": "Exploits: Gravity Block Duplication",
-      "description": "Falling blocks can be duplicated through end portals. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.gravity-block-duplication.",
+      "description": "Falling blocks can be duplicated through end portals. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.gravity-block-duplication.",
       "env_variable": "VANILLITE_EXPLOITS__GRAVITY_BLOCK_DUPLICATION",
       "default_value": "default",
       "user_viewable": true,
@@ -1823,7 +1823,7 @@
     },
     {
       "name": "Exploits: String Duplication",
-      "description": "String can be duplicated with tripwire mechanics. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.string-duplication.",
+      "description": "String can be duplicated with tripwire mechanics. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.string-duplication.",
       "env_variable": "VANILLITE_EXPLOITS__STRING_DUPLICATION",
       "default_value": "default",
       "user_viewable": true,
@@ -1833,7 +1833,7 @@
     },
     {
       "name": "Exploits: Invulnerable End Crystals",
-      "description": "End crystals can be made invulnerable. Applies to every world. default: the profile's value (vanilla profile: true). vanillite.toml: exploits.invulnerable-end-crystals.",
+      "description": "End crystals can be made invulnerable. Applies to every world. default: the profile's value (paper profile: false). vanillite.toml: exploits.invulnerable-end-crystals.",
       "env_variable": "VANILLITE_EXPLOITS__INVULNERABLE_END_CRYSTALS",
       "default_value": "default",
       "user_viewable": true,
@@ -1843,7 +1843,7 @@
     },
     {
       "name": "Anticheat: Digging › Fast Break Check",
-      "description": "Validates \"stop digging\" against the server's own break progress: the time since the player started digging, the tool, Haste and Mining Fatigue, being in water and on the ground. Vanilla breaks a block whose progress falls short on the next tick once the player has been online for a while (it takes the start tick as the time spent), so a client that starts and at once stops digging breaks any block. On, a stop with too little progress waits for the progress to complete like a legit dig with latency and is rejected (the block is sent again, nothing drops) when it does not complete within the dig time seen so far plus one second. Instant mining, creative and normal digging with lag are not affected. Applies to every world. default: the profile's value (vanilla profile: false). vanillite.toml: anticheat.digging.fast-break-check.",
+      "description": "Validates \"stop digging\" against the server's own break progress: the time since the player started digging, the tool, Haste and Mining Fatigue, being in water and on the ground. Vanilla breaks a block whose progress falls short on the next tick once the player has been online for a while (it takes the start tick as the time spent), so a client that starts and at once stops digging breaks any block. On, a stop with too little progress waits for the progress to complete like a legit dig with latency and is rejected (the block is sent again, nothing drops) when it does not complete within the dig time seen so far plus one second. Instant mining, creative and normal digging with lag are not affected. Applies to every world. default: the profile's value (paper profile: true). vanillite.toml: anticheat.digging.fast-break-check.",
       "env_variable": "VANILLITE_ANTICHEAT__DIGGING__FAST_BREAK_CHECK",
       "default_value": "default",
       "user_viewable": true,
@@ -1853,7 +1853,7 @@
     },
     {
       "name": "Anticheat: Anti X-Ray › Engine Mode",
-      "description": "\"disabled\" sends the real blocks (Vanilla). \"hide\" sends hidden blocks as the dimension's base stone (deepslate below y 0, netherrack, end stone). \"obfuscate\" sends hidden and replacement blocks as random hidden blocks (bigger chunk packets). Applies to every world. default: the profile's value (vanilla profile: disabled). vanillite.toml: anticheat.anti-xray.engine-mode.",
+      "description": "\"disabled\" sends the real blocks (Vanilla). \"hide\" sends hidden blocks as the dimension's base stone (deepslate below y 0, netherrack, end stone). \"obfuscate\" sends hidden and replacement blocks as random hidden blocks (bigger chunk packets). Applies to every world. default: the profile's value (paper profile: hide). vanillite.toml: anticheat.anti-xray.engine-mode.",
       "env_variable": "VANILLITE_ANTICHEAT__ANTI_XRAY__ENGINE_MODE",
       "default_value": "default",
       "user_viewable": true,
@@ -1863,7 +1863,7 @@
     },
     {
       "name": "Anticheat: Anti X-Ray › Hidden Blocks",
-      "description": "Blocks that are hidden (block ids). Applies to every world. Empty: the profile's value (vanilla profile: [\"minecraft:coal_ore\", \"minecraft:deepslate_coal_ore\", \"minecraft:copper_ore\", \"minecraft:deepslate_copper_ore\", \"minecraft:raw_copper_block\", \"minecraft:iron_ore\", \"minecraft:deepslate_iron_ore\", \"minecraft:raw_iron_block\", \"minecraft:gold_ore\", \"minecraft:deepslate_gold_ore\", \"minecraft:redstone_ore\", \"minecraft:deepslate_redstone_ore\", \"minecraft:lapis_ore\", \"minecraft:deepslate_lapis_ore\", \"minecraft:diamond_ore\", \"minecraft:deepslate_diamond_ore\", \"minecraft:emerald_ore\", \"minecraft:deepslate_emerald_ore\", \"minecraft:nether_gold_ore\", \"minecraft:nether_quartz_ore\", \"minecraft:ancient_debris\", \"minecraft:mossy_cobblestone\", \"minecraft:obsidian\", \"minecraft:clay\", \"minecraft:chest\", \"minecraft:ender_chest\"]). vanillite.toml: anticheat.anti-xray.hidden-blocks.",
+      "description": "Blocks that are hidden (block ids). Applies to every world. Empty: the profile's value (paper profile: [\"minecraft:coal_ore\", \"minecraft:deepslate_coal_ore\", \"minecraft:copper_ore\", \"minecraft:deepslate_copper_ore\", \"minecraft:raw_copper_block\", \"minecraft:iron_ore\", \"minecraft:deepslate_iron_ore\", \"minecraft:raw_iron_block\", \"minecraft:gold_ore\", \"minecraft:deepslate_gold_ore\", \"minecraft:redstone_ore\", \"minecraft:deepslate_redstone_ore\", \"minecraft:lapis_ore\", \"minecraft:deepslate_lapis_ore\", \"minecraft:diamond_ore\", \"minecraft:deepslate_diamond_ore\", \"minecraft:emerald_ore\", \"minecraft:deepslate_emerald_ore\", \"minecraft:nether_gold_ore\", \"minecraft:nether_quartz_ore\", \"minecraft:ancient_debris\", \"minecraft:mossy_cobblestone\", \"minecraft:obsidian\", \"minecraft:clay\", \"minecraft:chest\", \"minecraft:ender_chest\"]). vanillite.toml: anticheat.anti-xray.hidden-blocks.",
       "env_variable": "VANILLITE_ANTICHEAT__ANTI_XRAY__HIDDEN_BLOCKS",
       "default_value": "",
       "user_viewable": true,
@@ -1873,7 +1873,7 @@
     },
     {
       "name": "Anticheat: Anti X-Ray › Replacement Blocks",
-      "description": "Blocks that \"obfuscate\" also replaces with random hidden blocks (block ids). Applies to every world. Empty: the profile's value (vanilla profile: [\"minecraft:stone\", \"minecraft:deepslate\", \"minecraft:oak_planks\", \"minecraft:netherrack\", \"minecraft:end_stone\"]). vanillite.toml: anticheat.anti-xray.replacement-blocks.",
+      "description": "Blocks that \"obfuscate\" also replaces with random hidden blocks (block ids). Applies to every world. Empty: the profile's value (paper profile: [\"minecraft:stone\", \"minecraft:deepslate\", \"minecraft:oak_planks\", \"minecraft:netherrack\", \"minecraft:end_stone\"]). vanillite.toml: anticheat.anti-xray.replacement-blocks.",
       "env_variable": "VANILLITE_ANTICHEAT__ANTI_XRAY__REPLACEMENT_BLOCKS",
       "default_value": "",
       "user_viewable": true,
@@ -1883,7 +1883,7 @@
     },
     {
       "name": "Anticheat: Anti X-Ray › Max Block Height",
-      "description": "Blocks at and above this height are always sent as they are. Applies to every world. Range: -2048 to 2048. Empty: the profile's value (vanilla profile: 64). vanillite.toml: anticheat.anti-xray.max-block-height.",
+      "description": "Blocks at and above this height are always sent as they are. Applies to every world. Range: -2048 to 2048. Empty: the profile's value (paper profile: 64). vanillite.toml: anticheat.anti-xray.max-block-height.",
       "env_variable": "VANILLITE_ANTICHEAT__ANTI_XRAY__MAX_BLOCK_HEIGHT",
       "default_value": "",
       "user_viewable": true,
@@ -1893,7 +1893,7 @@
     },
     {
       "name": "Anticheat: Anti X-Ray › Update Radius",
-      "description": "Distance in blocks around a changed block (mined, exploded, moved) within which hidden blocks are sent with their real state. Applies to every world. Range: 1 to 4. Empty: the profile's value (vanilla profile: 2). vanillite.toml: anticheat.anti-xray.update-radius.",
+      "description": "Distance in blocks around a changed block (mined, exploded, moved) within which hidden blocks are sent with their real state. Applies to every world. Range: 1 to 4. Empty: the profile's value (paper profile: 2). vanillite.toml: anticheat.anti-xray.update-radius.",
       "env_variable": "VANILLITE_ANTICHEAT__ANTI_XRAY__UPDATE_RADIUS",
       "default_value": "",
       "user_viewable": true,
@@ -1903,7 +1903,7 @@
     },
     {
       "name": "Proxy: Velocity Secret",
-      "description": "Shared secret of modern forwarding (the proxy's `forwarding.secret`). Empty turns forwarding off. With a secret, players' identities and addresses come from the proxy, signed with it; `online-mode` then only applies to direct connections. Empty: the profile's value (vanilla profile: ). vanillite.toml: proxy.velocity-secret.",
+      "description": "Shared secret of modern forwarding (the proxy's `forwarding.secret`). Empty turns forwarding off. With a secret, players' identities and addresses come from the proxy, signed with it; `online-mode` then only applies to direct connections. Empty: the profile's value (paper profile: ). vanillite.toml: proxy.velocity-secret.",
       "env_variable": "VANILLITE_PROXY__VELOCITY_SECRET",
       "default_value": "",
       "user_viewable": true,
@@ -1913,7 +1913,7 @@
     },
     {
       "name": "Proxy: Allow Direct Connections",
-      "description": "With forwarding on, also accept players who connect directly instead of through the proxy (authenticated as usual). Off: they are refused. default: the profile's value (vanilla profile: false). vanillite.toml: proxy.allow-direct-connections.",
+      "description": "With forwarding on, also accept players who connect directly instead of through the proxy (authenticated as usual). Off: they are refused. default: the profile's value (paper profile: false). vanillite.toml: proxy.allow-direct-connections.",
       "env_variable": "VANILLITE_PROXY__ALLOW_DIRECT_CONNECTIONS",
       "default_value": "default",
       "user_viewable": true,
@@ -1923,7 +1923,7 @@
     },
     {
       "name": "Multiversion: Versions",
-      "description": "Older versions whose clients may join: `\"all\"` (every version this build translates, currently 1.20.5 to 26.2), `\"none\"`, or a comma-separated list of releases such as `\"1.21.4, 26.2\"` (a release accepts every release of its protocol). Clients of the server's own version are not translated and pay nothing. Empty: the profile's value (vanilla profile: all). vanillite.toml: multiversion.versions.",
+      "description": "Older versions whose clients may join: `\"all\"` (every version this build translates, currently 1.20.5 to 26.2), `\"none\"`, or a comma-separated list of releases such as `\"1.21.4, 26.2\"` (a release accepts every release of its protocol). Clients of the server's own version are not translated and pay nothing. Empty: the profile's value (paper profile: all). vanillite.toml: multiversion.versions.",
       "env_variable": "VANILLITE_MULTIVERSION__VERSIONS",
       "default_value": "",
       "user_viewable": true,
@@ -1933,7 +1933,7 @@
     },
     {
       "name": "Bedrock: Port",
-      "description": "UDP and TCP port (Bedrock 1.26.60 and newer join over NetherNet, which needs both). Bedrock's default is 19132. Range: 1 to 65535. Empty: the profile's value (vanilla profile: 19132). vanillite.toml: bedrock.port.",
+      "description": "UDP and TCP port (Bedrock 1.26.60 and newer join over NetherNet, which needs both). Bedrock's default is 19132. Range: 1 to 65535. Empty: the profile's value (paper profile: 19132). vanillite.toml: bedrock.port.",
       "env_variable": "VANILLITE_BEDROCK__PORT",
       "default_value": "",
       "user_viewable": true,
@@ -1943,7 +1943,7 @@
     },
     {
       "name": "Bedrock: Online Mode",
-      "description": "Require an Xbox Live login. Off accepts any identity a client claims: only for tests on closed networks. default: the profile's value (vanilla profile: true). vanillite.toml: bedrock.online-mode.",
+      "description": "Require an Xbox Live login. Off accepts any identity a client claims: only for tests on closed networks. default: the profile's value (paper profile: true). vanillite.toml: bedrock.online-mode.",
       "env_variable": "VANILLITE_BEDROCK__ONLINE_MODE",
       "default_value": "default",
       "user_viewable": true,
@@ -1953,7 +1953,7 @@
     },
     {
       "name": "Bedrock: Min Protocol",
-      "description": "Oldest Bedrock network protocol that may join. 0 accepts every Bedrock version this build supports (listed at startup); e.g. 2225 admits only Bedrock 1.26.60 and newer. Range: 0 to 100000. Empty: the profile's value (vanilla profile: 0). vanillite.toml: bedrock.min-protocol.",
+      "description": "Oldest Bedrock network protocol that may join. 0 accepts every Bedrock version this build supports (listed at startup); e.g. 2225 admits only Bedrock 1.26.60 and newer. Range: 0 to 100000. Empty: the profile's value (paper profile: 0). vanillite.toml: bedrock.min-protocol.",
       "env_variable": "VANILLITE_BEDROCK__MIN_PROTOCOL",
       "default_value": "",
       "user_viewable": true,
@@ -1963,7 +1963,7 @@
     },
     {
       "name": "Bedrock: Name Prefix",
-      "description": "Prefix of Bedrock players' Java names, so they never collide with Java accounts. Bedrock players get the UUID `00000000-0000-0000-xxxx-xxxxxxxxxxxx` of their XUID (like Floodgate); whitelist and operators use that UUID. Empty: the profile's value (vanilla profile: .). vanillite.toml: bedrock.name-prefix.",
+      "description": "Prefix of Bedrock players' Java names, so they never collide with Java accounts. Bedrock players get the UUID `00000000-0000-0000-xxxx-xxxxxxxxxxxx` of their XUID (like Floodgate); whitelist and operators use that UUID. Empty: the profile's value (paper profile: .). vanillite.toml: bedrock.name-prefix.",
       "env_variable": "VANILLITE_BEDROCK__NAME_PREFIX",
       "default_value": "",
       "user_viewable": true,
@@ -1973,7 +1973,7 @@
     },
     {
       "name": "Bedrock: Max Connections Per IP",
-      "description": "Bedrock connections per IP address. Range: 1 to 1000. Empty: the profile's value (vanilla profile: 8). vanillite.toml: bedrock.max-connections-per-ip.",
+      "description": "Bedrock connections per IP address. Range: 1 to 1000. Empty: the profile's value (paper profile: 8). vanillite.toml: bedrock.max-connections-per-ip.",
       "env_variable": "VANILLITE_BEDROCK__MAX_CONNECTIONS_PER_IP",
       "default_value": "",
       "user_viewable": true,
@@ -1983,7 +1983,7 @@
     },
     {
       "name": "Bedrock: Max Packets Per Second",
-      "description": "Packets per second a Bedrock client may send before it is kicked. Range: 50 to 100000. Empty: the profile's value (vanilla profile: 1000). vanillite.toml: bedrock.max-packets-per-second.",
+      "description": "Packets per second a Bedrock client may send before it is kicked. Range: 50 to 100000. Empty: the profile's value (paper profile: 1000). vanillite.toml: bedrock.max-packets-per-second.",
       "env_variable": "VANILLITE_BEDROCK__MAX_PACKETS_PER_SECOND",
       "default_value": "",
       "user_viewable": true,
@@ -1993,7 +1993,7 @@
     },
     {
       "name": "Bedrock: Max View Distance",
-      "description": "Largest chunk radius granted to Bedrock clients. Range: 2 to 32. Empty: the profile's value (vanilla profile: 12). vanillite.toml: bedrock.max-view-distance.",
+      "description": "Largest chunk radius granted to Bedrock clients. Range: 2 to 32. Empty: the profile's value (paper profile: 12). vanillite.toml: bedrock.max-view-distance.",
       "env_variable": "VANILLITE_BEDROCK__MAX_VIEW_DISTANCE",
       "default_value": "",
       "user_viewable": true,
@@ -2003,7 +2003,7 @@
     },
     {
       "name": "Bedrock: Chunk Cache Sections",
-      "description": "Translated chunk sections kept for all Bedrock players (each section is translated once for every viewer). About 4 KiB each. Range: 0 to 1048576. Empty: the profile's value (vanilla profile: 16384). vanillite.toml: bedrock.chunk-cache-sections.",
+      "description": "Translated chunk sections kept for all Bedrock players (each section is translated once for every viewer). About 4 KiB each. Range: 0 to 1048576. Empty: the profile's value (paper profile: 16384). vanillite.toml: bedrock.chunk-cache-sections.",
       "env_variable": "VANILLITE_BEDROCK__CHUNK_CACHE_SECTIONS",
       "default_value": "",
       "user_viewable": true,
@@ -2013,7 +2013,7 @@
     },
     {
       "name": "Bedrock: Threads",
-      "description": "Threads of the Bedrock frontend. Range: 1 to 64. Empty: the profile's value (vanilla profile: 2). vanillite.toml: bedrock.threads.",
+      "description": "Threads of the Bedrock frontend. Range: 1 to 64. Empty: the profile's value (paper profile: 2). vanillite.toml: bedrock.threads.",
       "env_variable": "VANILLITE_BEDROCK__THREADS",
       "default_value": "",
       "user_viewable": true,
@@ -2023,7 +2023,7 @@
     },
     {
       "name": "Plugins: Enabled",
-      "description": "Load the plugins in `plugins/`. default: the profile's value (vanilla profile: true). vanillite.toml: plugins.enabled.",
+      "description": "Load the plugins in `plugins/`. default: the profile's value (paper profile: true). vanillite.toml: plugins.enabled.",
       "env_variable": "VANILLITE_PLUGINS__ENABLED",
       "default_value": "default",
       "user_viewable": true,
@@ -2033,7 +2033,7 @@
     },
     {
       "name": "Plugins: Safe Mode After Crash",
-      "description": "After a crash inside a plugin's code (a fatal signal or a watchdog kill), skip that plugin at the next starts until its library changes or `plugins/.crashed` is removed, so a supervisor (Docker, systemd) brings the server back. default: the profile's value (vanilla profile: true). vanillite.toml: plugins.safe-mode-after-crash.",
+      "description": "After a crash inside a plugin's code (a fatal signal or a watchdog kill), skip that plugin at the next starts until its library changes or `plugins/.crashed` is removed, so a supervisor (Docker, systemd) brings the server back. default: the profile's value (paper profile: true). vanillite.toml: plugins.safe-mode-after-crash.",
       "env_variable": "VANILLITE_PLUGINS__SAFE_MODE_AFTER_CRASH",
       "default_value": "default",
       "user_viewable": true,
@@ -2043,7 +2043,7 @@
     },
     {
       "name": "Plugins: Development",
-      "description": "Development: the console command `vanillite plugin reload <id>` loads a new build of a plugin at runtime and moves its state. Old builds stay in memory. Not for production servers. default: the profile's value (vanilla profile: false). vanillite.toml: plugins.development.",
+      "description": "Development: the console command `vanillite plugin reload <id>` loads a new build of a plugin at runtime and moves its state. Old builds stay in memory. Not for production servers. default: the profile's value (paper profile: false). vanillite.toml: plugins.development.",
       "env_variable": "VANILLITE_PLUGINS__DEVELOPMENT",
       "default_value": "default",
       "user_viewable": true,
@@ -2053,7 +2053,7 @@
     },
     {
       "name": "Plugins: Pins",
-      "description": "Pinned SHA-256 hashes of plugin libraries, `id=hex,id=hex`. A plugin whose library has another hash is refused. Empty: the profile's value (vanilla profile: ). vanillite.toml: plugins.pins.",
+      "description": "Pinned SHA-256 hashes of plugin libraries, `id=hex,id=hex`. A plugin whose library has another hash is refused. Empty: the profile's value (paper profile: ). vanillite.toml: plugins.pins.",
       "env_variable": "VANILLITE_PLUGINS__PINS",
       "default_value": "",
       "user_viewable": true,
@@ -2063,7 +2063,7 @@
     },
     {
       "name": "Plugins: Runtime",
-      "description": "Which build loads the plugins. The Linux release archives and the Docker image run a static build, which cannot load libraries, and ship `vanillite-gnu` (built from the same commit against glibc) next to it: `\"auto\"` starts `vanillite-gnu` in its place when `plugins/` holds plugins (packages or Paper/Spigot jars), `\"gnu\"` always, `\"static\"` never (plugins are then not loaded). Other builds load plugins themselves and ignore this. default: the profile's value (vanilla profile: auto). vanillite.toml: plugins.runtime.",
+      "description": "Which build loads the plugins. The Linux release archives and the Docker image run a static build, which cannot load libraries, and ship `vanillite-gnu` (built from the same commit against glibc) next to it: `\"auto\"` starts `vanillite-gnu` in its place when `plugins/` holds plugins (packages or Paper/Spigot jars), `\"gnu\"` always, `\"static\"` never (plugins are then not loaded). Other builds load plugins themselves and ignore this. default: the profile's value (paper profile: auto). vanillite.toml: plugins.runtime.",
       "env_variable": "VANILLITE_PLUGINS__RUNTIME",
       "default_value": "default",
       "user_viewable": true,
@@ -2073,7 +2073,7 @@
     },
     {
       "name": "Plugins: Bukkit › Auto Setup",
-      "description": "When `plugins/` holds Paper or Spigot plugins and the layer is not installed, download the layer release made for this Vanillite version into `plugins/bukkit/` and, without a Java 25 runtime, Eclipse Temurin into `plugins/bukkit/runtime/` (both checked by SHA-256). Off (offline servers): the log says what to download and where to put it. default: the profile's value (vanilla profile: true). vanillite.toml: plugins.bukkit.auto-setup.",
+      "description": "When `plugins/` holds Paper or Spigot plugins and the layer is not installed, download the layer release made for this Vanillite version into `plugins/bukkit/` and, without a Java 25 runtime, Eclipse Temurin into `plugins/bukkit/runtime/` (both checked by SHA-256). Off (offline servers): the log says what to download and where to put it. default: the profile's value (paper profile: true). vanillite.toml: plugins.bukkit.auto-setup.",
       "env_variable": "VANILLITE_PLUGINS__BUKKIT__AUTO_SETUP",
       "default_value": "default",
       "user_viewable": true,

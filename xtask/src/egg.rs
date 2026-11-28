@@ -87,9 +87,11 @@ const ESSENTIALS: &[Essential] = &[
     Essential {
         key: "profile",
         name: "Profile",
-        description: "Preset of all technical settings below: vanilla (exactly like Vanilla), \
-                      technical (Vanilla plus what technical players need), paper or spigot \
-                      (their defaults) or performance (faster, deviates a little from Vanilla).",
+        description: "Preset of all technical settings below: paper (the default: behaves \
+                      like a default Paper server), vanilla (reproduces Vanilla behaviour as \
+                      exactly as possible: choose it for exact Vanilla), technical (Vanilla plus \
+                      what technical players need), spigot (its defaults) or performance \
+                      (faster, deviates a little from Vanilla).",
     },
     Essential {
         key: "motd",
@@ -164,10 +166,11 @@ const SIMPLE: &[Essential] = &[
     Essential {
         key: "profile",
         name: "Server Type (Profile)",
-        description: "How the server plays. vanilla: exactly like the official Minecraft server \
-                      (recommended). performance: faster with many players, a few small \
-                      differences to Vanilla. paper or spigot: behaves like a Paper or Spigot \
-                      server. technical: like Vanilla, with extras for technical players.",
+        description: "How the server plays. paper (default): behaves like a default Paper \
+                      server. vanilla: as close to the official Minecraft server as possible; \
+                      choose it for exact Vanilla behaviour. performance: faster with many \
+                      players, a few small differences to Vanilla. spigot: behaves like a \
+                      Spigot server. technical: like Vanilla, with extras for technical players.",
     },
     Essential {
         key: "motd",
@@ -357,8 +360,8 @@ struct Entry {
     env: String,
     default: String,
     rules: String,
-    /// A rule's value in the vanilla profile (empty for other variables).
-    vanilla: String,
+    /// A rule's value in the default profile (empty for other variables).
+    preset: String,
 }
 
 /// The egg as pretty JSON with a trailing newline.
@@ -372,7 +375,7 @@ pub fn render(root: &Path, kind: Egg) -> Result<String> {
             env: "VANILLITE_EULA".to_owned(),
             default: "false".to_owned(),
             rules: "required|string|in:true,false".to_owned(),
-            vanilla: String::new(),
+            preset: String::new(),
         },
         Entry {
             key: "profile".to_owned(),
@@ -380,9 +383,9 @@ pub fn render(root: &Path, kind: Egg) -> Result<String> {
             name: "Profile".to_owned(),
             description: String::new(),
             env: "VANILLITE_PROFILE".to_owned(),
-            default: "vanilla".to_owned(),
+            default: vanillite_config::Profile::default().name().to_owned(),
             rules: "required|string|in:vanilla,technical,paper,spigot,performance".to_owned(),
-            vanilla: String::new(),
+            preset: String::new(),
         },
         Entry {
             key: "log".to_owned(),
@@ -393,7 +396,7 @@ pub fn render(root: &Path, kind: Egg) -> Result<String> {
             env: "VANILLITE_LOG".to_owned(),
             default: "info".to_owned(),
             rules: "required|string|in:error,warn,info,debug,trace".to_owned(),
-            vanilla: String::new(),
+            preset: String::new(),
         },
     ];
 
@@ -431,7 +434,7 @@ pub fn render(root: &Path, kind: Egg) -> Result<String> {
             env: env_name(info.key),
             default,
             rules,
-            vanilla: String::new(),
+            preset: String::new(),
         });
     }
 
@@ -450,8 +453,8 @@ pub fn render(root: &Path, kind: Egg) -> Result<String> {
             .ok_or_else(|| format!("egg: essential {:?} is not a setting", essential.key))?;
         let mut entry = entries.remove(i);
         if let Some(choices) = entry.rules.strip_prefix("nullable|string|in:default,") {
-            // A switch or dropdown of its own, starting at the vanilla profile's value.
-            entry.default = entry.vanilla.clone();
+            // A switch or dropdown of its own, starting at the default profile's value.
+            entry.default = entry.preset.clone();
             entry.rules = format!("required|string|in:{choices}");
         }
         variables.push(variable(
@@ -669,12 +672,13 @@ fn render_versions(root: &Path) -> Result<String> {
 }
 
 fn rule_entries<R: RuleSet>(entries: &mut Vec<Entry>, scope: &str) {
-    let vanilla = R::for_profile(vanillite_config::Profile::Vanilla);
+    let profile = vanillite_config::Profile::default();
+    let preset = R::for_profile(profile);
     for info in R::RULES {
         if HIDDEN_GROUPS.contains(&info.group) {
             continue;
         }
-        let shown = vanilla
+        let shown = preset
             .get(info.key)
             .map(|v| match v {
                 toml::Value::String(s) => s,
@@ -692,7 +696,7 @@ fn rule_entries<R: RuleSet>(entries: &mut Vec<Entry>, scope: &str) {
         }
         let keep = if fixed { KEEP } else { "Empty" };
         description.push_str(&format!(
-            " {keep}: the profile's value (vanilla profile: {shown}). vanillite.toml: {}.",
+            " {keep}: the profile's value ({profile} profile: {shown}). vanillite.toml: {}.",
             info.key
         ));
         let (area, sub) = info.group.split_once('.').unwrap_or((info.group, ""));
@@ -713,7 +717,7 @@ fn rule_entries<R: RuleSet>(entries: &mut Vec<Entry>, scope: &str) {
                 String::new()
             },
             rules: rule_rules(info),
-            vanilla: shown,
+            preset: shown,
         });
     }
 }

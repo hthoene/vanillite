@@ -49,7 +49,7 @@ pub fn dispatch(dir: &Path, version: &str) -> Outcome {
         ));
     }
     // An invalid configuration is reported by the server start.
-    let Ok(config) = vanillite_config::Config::load(dir) else {
+    let Ok(config) = vanillite_config::Config::peek(dir) else {
         return Outcome::None;
     };
     let rules = &config.server.plugins;

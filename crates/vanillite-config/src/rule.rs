@@ -26,12 +26,12 @@ pub enum Kind {
 /// A preset of rule values. The file selects one and overrides single keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Profile {
-    /// Vanilla behaviour (the default). Deviates only for security.
-    #[default]
+    /// Vanilla behaviour, as exact as possible. Deviates only for security.
     Vanilla,
     /// Vanilla plus what technical players need.
     Technical,
-    /// Paper's defaults.
+    /// Paper's defaults (the default, #319): behaves like a default Paper server.
+    #[default]
     Paper,
     /// Spigot's defaults.
     Spigot,
@@ -63,6 +63,19 @@ impl Profile {
             Profile::Spigot => "spigot",
             Profile::Performance => "performance",
             Profile::Crowd => "crowd",
+        }
+    }
+
+    /// One line on how the profile behaves, for the startup log.
+    pub fn summary(self) -> &'static str {
+        match self {
+            Profile::Vanilla => "reproduces Vanilla behaviour as exactly as possible",
+            Profile::Technical => "Vanilla plus what technical players need",
+            Profile::Paper => "behaves like a default Paper server",
+            Profile::Spigot => "behaves like a default Spigot server",
+            Profile::Performance => {
+                "Vanillite's strongest optimizations, deviates a little from Vanilla"
+            }
         }
     }
 

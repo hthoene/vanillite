@@ -112,7 +112,7 @@ fn through_the_proxy(data: &str, release: &str, protocol: i32) {
     .unwrap();
     std::fs::write(
         dir.join("vanillite.toml"),
-        format!("[proxy]\nvelocity-secret = \"{SECRET}\"\n[multiversion]\nversions = \"none\"\n"),
+        format!("profile = \"vanilla\"\n[proxy]\nvelocity-secret = \"{SECRET}\"\n[multiversion]\nversions = \"none\"\n"),
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();

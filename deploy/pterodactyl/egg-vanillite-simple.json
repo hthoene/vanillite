@@ -43,9 +43,9 @@
     },
     {
       "name": "Server Type (Profile)",
-      "description": "How the server plays. vanilla: exactly like the official Minecraft server (recommended). performance: faster with many players, a few small differences to Vanilla. paper or spigot: behaves like a Paper or Spigot server. technical: like Vanilla, with extras for technical players.",
+      "description": "How the server plays. paper (default): behaves like a default Paper server. vanilla: as close to the official Minecraft server as possible; choose it for exact Vanilla behaviour. performance: faster with many players, a few small differences to Vanilla. spigot: behaves like a Spigot server. technical: like Vanilla, with extras for technical players.",
       "env_variable": "VANILLITE_PROFILE",
-      "default_value": "vanilla",
+      "default_value": "paper",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:vanilla,technical,paper,spigot,performance",

@@ -64,16 +64,22 @@ pub fn render() -> String {
          in Pterodactyl's console, otherwise plain text; `VANILLITE_COLOR=always` or `never` \
          overrides that, and `NO_COLOR` turns colours off.\n\n\
          ## Profiles\n\n\
-         `profile` in `vanillite.toml` presets every rule; single keys override it.\n\n\
+         `profile` in `vanillite.toml` presets every rule; single keys override it. The \
+         default is `paper`; set `profile = \"vanilla\"` for the most exact Vanilla behaviour. \
+         A `vanillite.toml` without `profile` (written before `paper` became the default) gets \
+         `profile = \"vanilla\"` written into it once, so the server keeps its behaviour.\n\n\
          | Profile | What |\n|---|---|\n",
     );
     for profile in Profile::ALL {
         let what = match profile {
             Profile::Vanilla => {
-                "Vanilla behaviour, tick for tick (the default). Deviates only to close security holes."
+                "Vanilla behaviour, tick for tick: the most exact Vanilla behaviour. Deviates only \
+                 to close security holes."
             }
             Profile::Technical => "Vanilla plus what technical players need.",
-            Profile::Paper => "Paper's defaults.",
+            Profile::Paper => {
+                "Paper's defaults: behaves like a default Paper server (the default)."
+            }
             Profile::Spigot => "Spigot's defaults, including Spigot's world folder layout.",
             Profile::Performance => {
                 "Vanillite's strongest optimisations that change Vanilla behaviour only a little \

@@ -59,6 +59,7 @@ fn rcon_and_query_answer_like_vanilla() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");
@@ -148,6 +149,7 @@ fn configuration_sends_links_code_of_conduct_and_required_pack() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");
@@ -237,6 +239,7 @@ fn refusal_is_a_login_disconnect() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");

@@ -16,7 +16,7 @@ use std::{fmt, io};
 use vanillite_chunk::slots::{
     ChunkGeneratorProvider, ChunkStoreProvider, DimensionId, LightEngineProvider,
 };
-use vanillite_config::{Config, ConfigError, RuleSet, VANILLITE_FILE, VanillaOr};
+use vanillite_config::{Config, ConfigError, Profile, RuleSet, VANILLITE_FILE, VanillaOr};
 use vanillite_light::BfsLightEngineProvider;
 use vanillite_storage::backup::BackupSettings;
 use vanillite_storage::player_data::{JsonFile, PlayerDataStore};
@@ -330,6 +330,14 @@ impl ServerBuilder {
         log::info!("Loading properties");
         let config = Config::load(&dir)?;
         log::info!("Using profile {}", config.profile);
+        if config.profile != Profile::Vanilla {
+            log::info!(
+                "Profile \"{}\": {}. Set profile = \"vanilla\" for the most exact Vanilla \
+                 behaviour.",
+                config.profile,
+                config.profile.summary()
+            );
+        }
         if !crate::eula::check(&dir).map_err(|e| StartError::io(&dir, e))? {
             return Err(StartError::Eula(crate::eula::file(&dir)));
         }

@@ -75,7 +75,7 @@ fn joins_walks_and_meets_java_players(version: &'static Version) {
     .unwrap();
     std::fs::write(
         dir.join("vanillite.toml"),
-        "[bedrock]\nenabled = true\nonline-mode = false\n",
+        "profile = \"vanilla\"\n[bedrock]\nenabled = true\nonline-mode = false\n",
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();

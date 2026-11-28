@@ -11,13 +11,13 @@ Every key of both files can also be set with an environment variable for one run
 
 ## Profiles
 
-`profile` in `vanillite.toml` presets every rule; single keys override it.
+`profile` in `vanillite.toml` presets every rule; single keys override it. The default is `paper`; set `profile = "vanilla"` for the most exact Vanilla behaviour. A `vanillite.toml` without `profile` (written before `paper` became the default) gets `profile = "vanilla"` written into it once, so the server keeps its behaviour.
 
 | Profile | What |
 |---|---|
-| `vanilla` | Vanilla behaviour, tick for tick (the default). Deviates only to close security holes. |
+| `vanilla` | Vanilla behaviour, tick for tick: the most exact Vanilla behaviour. Deviates only to close security holes. |
 | `technical` | Vanilla plus what technical players need. |
-| `paper` | Paper's defaults. |
+| `paper` | Paper's defaults: behaves like a default Paper server (the default). |
 | `spigot` | Spigot's defaults, including Spigot's world folder layout. |
 | `performance` | Vanillite's strongest optimisations that change Vanilla behaviour only a little (activation range, merge radii, spawn and despawn tuning, overload protection). |
 | `crowd` | `performance` plus crowd mode (`performance.crowd`) for thousands of players in one place: far players move less smoothly, each player sees only the nearest players, the locator bar updates less often. |

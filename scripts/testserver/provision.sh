@@ -263,6 +263,9 @@ Group=vanillite
 WorkingDirectory=/opt/vanillite/%i
 ExecStartPre=-/usr/local/bin/testserver-creative vanillite /opt/vanillite/%i
 ExecStart=/opt/vanillite/%i/vanillite
+# The rule profile is explicit, not the binary's default (paper, #319); an instance's drop-in
+# overrides it (30040: paper; the bench start: its profile argument).
+Environment=VANILLITE_PROFILE=vanilla
 # Console commands: `vanillite-console <port> <command>` writes into this FIFO.
 Sockets=vanillite-console@%i.socket
 StandardInput=socket
@@ -852,7 +855,8 @@ write_if_changed /usr/local/bin/vanillite-bench 755 <<'EOF'
 #   load                           prints the host load averages, this machine's CPU pressure
 #                                  counter (/proc/pressure/cpu) and the CPU time stolen by the
 #                                  hypervisor (/proc/stat) as JSON
-#   start <target> [<profile>]     start it (Vanillite: rule profile) and wait for a status ping;
+#   start <target> [<profile>]     start it (Vanillite: rule profile, default vanilla) and wait
+#                                  for a status ping;
 #                                  prints {"ready_s", "version", "protocol"}
 #   stop <target>                  clean stop (saves); prints {"stop_s"}
 #   cmds <target>                  console commands from stdin, one per line; prints

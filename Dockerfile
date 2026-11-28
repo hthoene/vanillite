@@ -104,6 +104,7 @@ EXPOSE 25565/tcp
 # Every key of vanillite.toml and server.properties can be set as VANILLITE_<KEY>, e.g.
 # VANILLITE_SERVER_PORT, VANILLITE_MOTD, VANILLITE_PERFORMANCE__TICK__PARALLEL_DIMENSIONS.
 # VANILLITE_EULA=true accepts the Minecraft EULA. An empty variable is ignored.
+# The default profile is paper; VANILLITE_PROFILE=vanilla gives the most exact Vanilla behaviour.
 # Pterodactyl: the egg deploy/pterodactyl/egg-vanillite.json (STARTUP, /home/container).
 ENV VANILLITE_LOG=info
 # mimalloc (the musl build's allocator): commit arena memory on use and return freed pages at
