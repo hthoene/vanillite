@@ -2385,17 +2385,17 @@ impl ScenarioWorld for GameWorld {
         Ok(())
     }
 
-    fn command(&mut self, line: &str) -> Result<(), String> {
+    fn command(&mut self, line: &str) -> Result<Vec<String>, String> {
         // Command blocks run on the same server's dispatcher.
         if self.level.command_runner().is_none() {
             vanillite_server::install_command_runner(command_server(), &mut self.level);
         }
-        self.with_board(|w| {
+        let feedback = self.with_board(|w| {
             vanillite_server::run_command_on_level(command_server(), &mut w.level, Vec3::ZERO, line)
         })?;
         self.finish_removals();
         self.spawn_drops();
-        Ok(())
+        Ok(feedback)
     }
 
     fn use_item(&mut self, op: &crate::scenario::UseItemOp) -> Result<(), String> {

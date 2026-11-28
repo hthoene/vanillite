@@ -1818,11 +1818,32 @@ impl Server {
         }
         let global = Arc::clone(&self.global);
         let line = line.to_owned();
+        self.run_on_overworld(move |w, others| {
+            crate::commands::run_console_command(w, others, &global, &line);
+        });
+    }
+
+    /// Runs `task` on the overworld now with the other worlds' levels at hand (sequential
+    /// mode), else as a task of the overworld's thread without them.
+    fn run_on_overworld(
+        &mut self,
+        task: impl FnOnce(&mut ServerWorld, crate::commands::OtherLevels<'_>) + Send + 'static,
+    ) {
+        if let Worlds::Sequential(worlds) = &mut self.worlds
+            && let Some((Some(overworld), rest)) = worlds.split_first_mut()
+        {
+            let others = std::iter::once(None)
+                .chain(
+                    rest.iter_mut()
+                        .map(|w| w.as_mut().map(ServerWorld::level_mut)),
+                )
+                .collect();
+            task(overworld, others);
+            return;
+        }
         self.run_in_world(
             WorldId(0),
-            Box::new(move |w: &mut ServerWorld| {
-                crate::commands::run_console_command(w, &global, &line);
-            }),
+            Box::new(move |w: &mut ServerWorld| task(w, Vec::new())),
         );
     }
 
@@ -2632,16 +2653,18 @@ impl Server {
         self.run_console_command(line);
     }
 
-    /// Runs a command as the console at `pos` of the overworld now (parity scenarios).
-    pub fn command_at(&mut self, line: &str, pos: vanillite_base::Vec3) {
+    /// Runs a command as the console at `pos` of the overworld now (parity scenarios) and
+    /// returns the plain text of the console's messages (sequential worlds only: a world
+    /// thread runs it later).
+    pub fn command_at(&mut self, line: &str, pos: vanillite_base::Vec3) -> Vec<String> {
         let global = Arc::clone(&self.global);
         let line = line.to_owned();
-        self.run_in_world(
-            WorldId(0),
-            Box::new(move |w: &mut ServerWorld| {
-                crate::commands::run_console_command_at(w, &global, &line, pos);
-            }),
-        );
+        let feedback = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&feedback);
+        self.run_on_overworld(move |w, others| {
+            crate::commands::run_console_command_at(w, others, &global, &line, pos, sink);
+        });
+        std::mem::take(&mut feedback.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// Sets the game time of the server and every world (`setGameTime` of the overworld's
