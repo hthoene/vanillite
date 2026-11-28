@@ -92,8 +92,9 @@ pub struct ServerWorld {
     /// Overload protection of the tracker.
     overload: Overload,
     viewers: Vec<Viewer>,
-    /// Chunks sent to players this tick, for the tracker.
-    chunks_sent: Vec<(EntityId, ChunkPos)>,
+    /// Players the server moved for their client this tick (`ChunkMap.move`), for the
+    /// tracker.
+    moved_viewers: Vec<EntityId>,
     pub(crate) players: WorldPlayers,
     packets: ChunkPackets,
     /// Sounds and crack progress of the player handlers.
@@ -249,7 +250,7 @@ impl ServerWorld {
             fan_out: FanOut::default(),
             overload: Overload::default(),
             viewers: Vec::new(),
-            chunks_sent: Vec::new(),
+            moved_viewers: Vec::new(),
             players,
             packets,
             updates: WorldUpdates::default(),
@@ -336,9 +337,11 @@ impl ServerWorld {
                 }
                 continue;
             }
+            // `ChunkMap.move`: the tickets stay where the player entered the world or the
+            // server took its last client move (`updatePlayerStatus`, `move`).
             let center = player.chunk_view.center;
             let old = self.player_tickets.get(&id).copied();
-            if old == Some(center) {
+            if old == Some(center) || old.is_some() && !player.connection.movement.chunk_move {
                 continue;
             }
             self.player_tickets.insert(id, center);
@@ -1164,8 +1167,7 @@ impl ServerWorld {
     fn track_entities(&mut self) {
         self.viewers.clear();
         self.entity_updates.clear();
-        self.chunks_sent.clear();
-        let mut sent = Vec::new();
+        self.moved_viewers.clear();
         for (entity, player) in self.level.entities.players.iter_mut() {
             let view_center = player.chunk_view.center;
             self.viewers.push(Viewer {
@@ -1174,16 +1176,16 @@ impl ServerWorld {
                 view_distance: player.chunk_view.view_distance,
                 sent_radius: player.connection.chunks.sent_radius(view_center),
             });
-            player.connection.chunks.take_sent(&mut sent);
-            self.chunks_sent
-                .extend(sent.drain(..).map(|pos| (entity, pos)));
+            if std::mem::take(&mut player.connection.movement.chunk_move) {
+                self.moved_viewers.push(entity);
+            }
         }
         let entities = &self.level.entities;
         let input = TrackerInput {
             entities: &entities.store,
             viewers: &self.viewers,
             chunk_pending: &|player, chunk| WorldPlayers::chunk_pending(entities, player, chunk),
-            chunks_sent: &self.chunks_sent,
+            moved_viewers: &self.moved_viewers,
             update_scale: self.overload.scale,
         };
         self.tracker.update(&input, &mut self.entity_updates);

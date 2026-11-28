@@ -1280,11 +1280,11 @@ fn fluid_corrected(state: BlockState) -> BlockState {
     }
 }
 
-/// `MapItem.update`: the carrier's surroundings are drawn, one column of 16 per tick. Unloaded
-/// chunks are skipped (Vanilla loads them).
+/// `MapItem.update`: the carrier's surroundings are drawn, one column of 16 per tick. A chunk
+/// that is not accessible is loaded or generated synchronously (`level.getChunk`).
 pub fn update(
     data: &mut MapData,
-    level: &Level,
+    level: &mut Level,
     dimension: &str,
     carrier: &Carrier,
     has_ceiling: bool,
@@ -1327,11 +1327,9 @@ pub fn update(
             let dither_black = dist > (radius - 2) * (radius - 2);
             let min_x = (center_x / scale + img_x - 64) * scale;
             let min_z = (center_z / scale + img_y - 64) * scale;
-            if level
-                .chunks
-                .chunk(vanillite_base::ChunkPos::new(min_x >> 4, min_z >> 4))
-                .is_none()
-            {
+            let chunk = vanillite_base::ChunkPos::new(min_x >> 4, min_z >> 4);
+            level.load_chunk(chunk);
+            if level.chunks.chunk(chunk).is_none() {
                 continue;
             }
             // `Multiset` in insertion order; the first with the highest count wins.

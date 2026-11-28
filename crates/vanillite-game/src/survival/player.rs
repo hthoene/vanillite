@@ -2346,6 +2346,10 @@ pub fn do_tick_ai(
     }
     let before_travel = entity.as_ref().aabb();
     player.survival.server_step = Vec3::ZERO;
+    // `Player.tick`: a passenger is never on the ground.
+    if entity.as_ref().flags().contains(EntityFlags::PASSENGER) {
+        entity.set_flags(EntityFlags::ON_GROUND, false);
+    }
     if result == TickResult::Alive {
         if player.survival.simulate_movement {
             if entity.as_ref().flags().contains(EntityFlags::PASSENGER) {

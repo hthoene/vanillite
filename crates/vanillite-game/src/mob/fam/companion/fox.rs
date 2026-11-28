@@ -89,7 +89,7 @@ pub fn flags(g: &Goal) -> u8 {
 }
 
 pub fn every_tick(g: &Goal) -> bool {
-    matches!(g, Goal::Float | Goal::Pounce | Goal::EatBerries { .. })
+    matches!(g, Goal::Float | Goal::EatBerries { .. })
 }
 
 fn flag_of(m: &MobData, f: u8) -> bool {
@@ -145,7 +145,8 @@ fn pounce_pitch(t: &mut Tick<'_, '_>) {
         } else {
             -1.0
         };
-        let r = sign * (horizontal / len).acos() * 180.0 / f64::from(std::f32::consts::PI);
+        // `Mth.RAD_TO_DEG`, a float constant.
+        let r = sign * (horizontal / len).acos() * f64::from(180.0_f32 / std::f32::consts::PI);
         #[allow(clippy::cast_possible_truncation)]
         {
             rot.x_rot = nav::clamp_x_rot(r as f32);
@@ -160,6 +161,11 @@ pub(crate) fn can_melee(m: &MobData) -> bool {
         && !flag_of(m, SLEEPING)
         && !flag_of(m, CROUCHING)
         && !flag_of(m, FACEPLANTED)
+}
+
+/// `FoxLookAtPlayerGoal`'s own condition: not faceplanted, not interested.
+pub(crate) fn can_look(m: &MobData) -> bool {
+    !flag_of(m, FACEPLANTED) && !flag_of(m, INTERESTED)
 }
 
 /// `FoxMeleeAttackGoal.start`: no longer interested.
@@ -400,13 +406,35 @@ pub fn finalize_spawn(m: &mut MobData, ctx: &mut SpawnContext<'_>) {
     }
 }
 
-/// `getAmbientSound` (the night screech is played in `ai_step`).
+/// `getAmbientSound` without the level (sleeping or the plain ambient sound).
 pub fn ambient_sound(m: &MobData) -> Option<&'static str> {
     Some(if flag_of(m, SLEEPING) {
         "minecraft:entity.fox.sleep"
     } else {
         "minecraft:entity.fox.ambient"
     })
+}
+
+/// `getAmbientSound`: at night, one time in ten, a screech when no player (not spectating) is
+/// within 16 blocks.
+pub fn ambient_sound_at(t: &mut Tick<'_, '_>) -> &'static str {
+    if flag_of(t.mob_ref(), SLEEPING) {
+        return "minecraft:entity.fox.sleep";
+    }
+    if !t.cx.env.is_bright_outside() && t.mob().random.next_float() < 0.1 {
+        let area = t.aabb().inflate(16.0, 16.0, 16.0);
+        let ents = &*t.ents;
+        let mut near = false;
+        ents.store.for_each_in(&area, true, |id| {
+            near |= ents
+                .player(id)
+                .is_some_and(|p| p.game_mode != vanillite_config::GameMode::Spectator);
+        });
+        if !near {
+            return "minecraft:entity.fox.screech";
+        }
+    }
+    "minecraft:entity.fox.ambient"
 }
 
 fn is_consumable_food(s: &ItemStack) -> bool {

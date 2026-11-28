@@ -51,6 +51,9 @@ pub struct State {
     /// `standAnim` and `standAnimO`: the rearing animation, which lifts and moves the rider.
     pub stand_anim: f32,
     pub stand_anim_o: f32,
+    /// `yHeadRotO` and `xRotO`: the head yaw and pitch at the start of the last tick
+    /// (`getViewYRot(0)`, `getViewXRot(0)`), which a new rider takes (`addPassenger`).
+    pub view_rot_o: [f32; 2],
     pub sprint_counter: i32,
     /// `AbstractHorse.gallopSoundCounter`.
     pub gallop_counter: i32,
