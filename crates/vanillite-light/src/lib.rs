@@ -31,6 +31,7 @@ mod update;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
+use vanillite_base::scratch::ScratchPool;
 use vanillite_base::{BlockPos, ChunkPos, Direction};
 use vanillite_chunk::light::{ChunkLight, LightNibbles, NIBBLE_BYTES};
 use vanillite_chunk::slots::{LightEngine, LightEngineProvider, Neighbours, WorldInfo};
@@ -46,6 +47,8 @@ pub struct BfsLightEngine {
     /// data for since it started (`SkyLightSectionStorage.currentLowestY`, per world): sky
     /// light fills empty sections only down to it.
     lowest_section: AtomicI32,
+    /// The light buffers of the jobs, reused from job to job.
+    buffers: ScratchPool<GridBuffers>,
 }
 
 impl BfsLightEngine {
@@ -54,6 +57,7 @@ impl BfsLightEngine {
         BfsLightEngine {
             has_sky: world.has_sky_light,
             lowest_section: AtomicI32::new(i32::MAX),
+            buffers: ScratchPool::default(),
         }
     }
 
@@ -128,12 +132,15 @@ impl LightEngine for BfsLightEngine {
                     };
                 }
                 self.note_lowest(chunks.iter().flatten().copied(), false);
-                let mut grid = Grid::new(origin, 3, &chunks);
+                let buffers = self.buffers.take_or(GridBuffers::default);
+                let mut grid = Grid::new(origin, 3, &chunks, buffers);
                 grid.fill_sky_sources(self.has_sky, |i| i == 4);
                 grid.seed_block_sources(|i| i == 4);
                 grid.run();
                 let store = grid.store[4];
-                (grid.into_light(), store)
+                let light = grid.light();
+                self.buffers.give(grid.buffers());
+                (light, store)
             };
             let (result, store) = result;
             for (i, light) in result.into_iter().enumerate() {
@@ -171,6 +178,10 @@ impl LightEngine for BfsLightEngine {
             || facts.shape_of(old) != facts.shape_of(new)
     }
 
+    fn release_memory(&self) {
+        self.buffers.release();
+    }
+
     fn relight(&self, changes: &[BlockPos], area: &Neighbours<'_>) -> Vec<(ChunkPos, ChunkLight)> {
         let lowest = if self.has_sky {
             let lit = area
@@ -195,12 +206,15 @@ impl BfsLightEngine {
             for (i, slot) in chunks.iter_mut().enumerate() {
                 *slot = area.get(grid_pos(origin, 5, i)).map(|c| &c.chunk);
             }
-            let mut grid = Grid::new(origin, 5, &chunks);
+            let buffers = self.buffers.take_or(GridBuffers::default);
+            let mut grid = Grid::new(origin, 5, &chunks, buffers);
             grid.fill_sky_sources(self.has_sky, |_| true);
             grid.seed_block_sources(|_| true);
             grid.run();
             let store = grid.store.clone();
-            (grid.into_light(), store)
+            let light = grid.light();
+            self.buffers.give(grid.buffers());
+            (light, store)
         };
         let (result, store) = result;
         for (i, light) in result.into_iter().enumerate() {
@@ -342,6 +356,15 @@ pub(crate) fn lowest_source(facts: &LightFacts, chunk: &Chunk, lx: u32, lz: u32)
     0
 }
 
+/// The allocations of a [`Grid`], reused between grids.
+#[derive(Debug, Default)]
+struct GridBuffers {
+    sky: Vec<u8>,
+    block: Vec<u8>,
+    sky_queue: [Vec<u32>; 16],
+    block_queue: [Vec<u32>; 16],
+}
+
 /// Light buffers of a square of chunk columns; one byte per cell.
 struct Grid<'a> {
     origin: ChunkPos,
@@ -364,10 +387,27 @@ struct Grid<'a> {
     block: Vec<u8>,
     sky_queue: [Vec<u32>; 16],
     block_queue: [Vec<u32>; 16],
+    /// The box the buffers came in, given back by [`Self::buffers`].
+    spare: Box<GridBuffers>,
 }
 
 impl<'a> Grid<'a> {
-    fn new(origin: ChunkPos, size: usize, chunks: &'a [Option<&'a Chunk>]) -> Self {
+    /// The grid's allocations, for the next grid.
+    fn buffers(self) -> Box<GridBuffers> {
+        let mut spare = self.spare;
+        spare.sky = self.sky;
+        spare.block = self.block;
+        spare.sky_queue = self.sky_queue;
+        spare.block_queue = self.block_queue;
+        spare
+    }
+
+    fn new(
+        origin: ChunkPos,
+        size: usize,
+        chunks: &'a [Option<&'a Chunk>],
+        mut buffers: Box<GridBuffers>,
+    ) -> Self {
         let any = chunks.iter().flatten().next();
         let (min_y, sections) = any.map_or((0, 0), |c| (c.min_y(), c.sections().len()));
         // Above the highest non-air section of the area every cell is a sky source and no block
@@ -390,6 +430,11 @@ impl<'a> Grid<'a> {
         let height = bottom + top.map_or(0, |t| (t + 2).min(sections + 1)) * 16;
         let width = size * 16;
         let cells = width * width * height;
+        // Every cell starts dark; the queues are empty after every run.
+        for light in [&mut buffers.sky, &mut buffers.block] {
+            light.clear();
+            light.resize(cells, 0);
+        }
         Grid {
             origin,
             size,
@@ -401,10 +446,11 @@ impl<'a> Grid<'a> {
             min_y,
             chunks,
             facts: LightFacts::get(),
-            sky: vec![0; cells],
-            block: vec![0; cells],
-            sky_queue: Default::default(),
-            block_queue: Default::default(),
+            sky: std::mem::take(&mut buffers.sky),
+            block: std::mem::take(&mut buffers.block),
+            sky_queue: std::mem::take(&mut buffers.sky_queue),
+            block_queue: std::mem::take(&mut buffers.block_queue),
+            spare: buffers,
         }
     }
 
@@ -708,7 +754,7 @@ impl<'a> Grid<'a> {
     /// `i`). Sections without light are `Uniform(0)`; above the grid sky light is absent (full)
     /// and block light 0. The border layers are absent unless the chunk keeps light there and
     /// the grid holds them; the sky layer above the world stays absent.
-    fn into_light(self) -> Vec<Option<ChunkLight>> {
+    fn light(&self) -> Vec<Option<ChunkLight>> {
         let top = self.bottom + self.sections * 16;
         (0..self.chunks.len())
             .map(|i| {
