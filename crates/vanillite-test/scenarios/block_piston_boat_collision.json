@@ -1,0 +1,14 @@
+{
+  "description": "A piston pushes an item into a boat (#289): moveEntityByPiston moves non-mob entities with their entity collisions (a boat canBeCollidedWith), so the pushed item stops at the boat instead of moving into it.",
+  "tier": "fast",
+  "region": [[0, -61, 0], [7, -57, 4]],
+  "ticks": 12,
+  "setup": [
+    {"op": "set", "pos": [1, -60, 2], "block": "minecraft:piston[extended=false,facing=east]"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:item 2.5 -60.0 2.5 {Item:{id:\"minecraft:stone\",count:1},PickupDelay:100}"},
+    {"tick": 1, "op": "command", "command": "summon minecraft:oak_boat 3.95 -60.0 2.5"},
+    {"tick": 3, "op": "place", "pos": [0, -60, 2], "block": "minecraft:redstone_block"}
+  ]
+}
