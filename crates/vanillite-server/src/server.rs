@@ -511,6 +511,8 @@ impl ServerBuilder {
                 level_dir.join("generated"),
             ),
         );
+        // Compact templates: 1/128 of a memory limit (8 MiB at 1 GiB), 4 to 16 MiB.
+        templates.set_cache_limit(budget.cache_bytes(1.0 / 128.0, 4 << 20, 16 << 20));
         let built_in_generators = {
             let packs = packs.clone();
             let world_gen = prepared.world_gen;
@@ -1286,8 +1288,11 @@ impl Server {
         self.budget.leave_tick(elapsed_nanos);
         if self.tick_count.is_multiple_of(MEMORY_RELEASE_TICKS) {
             let budget = Arc::clone(&self.budget);
-            self.compute
-                .spawn_background(u32::MAX, move || budget.release_memory());
+            let templates = Arc::clone(&self.global.templates);
+            self.compute.spawn_background(u32::MAX, move || {
+                templates.trim_unused();
+                budget.release_memory();
+            });
         }
         self.watch.progress.store(clock.now(), Ordering::Relaxed);
     }

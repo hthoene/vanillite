@@ -96,9 +96,9 @@ pub fn jigsaw_front(state: BlockState) -> Option<Direction> {
 
 impl JigsawBlockInfo {
     /// `JigsawBlockInfo.parse(info)`.
-    fn parse(info: &StructureBlockInfo) -> Self {
+    fn parse(info: BlockRef<'_>) -> Self {
         let empty = Compound::new();
-        let nbt = info.nbt.as_ref().unwrap_or(&empty);
+        let nbt = info.nbt.unwrap_or(&empty);
         let string = |name: &str, default: &str| match nbt.get(name) {
             Some(Tag::String(s)) => crate::blocks::qualify(s),
             _ => default.to_owned(),
@@ -128,23 +128,148 @@ impl JigsawBlockInfo {
     }
 }
 
+/// A block of a palette as [`Palette`] reads it.
+#[derive(Clone, Copy, Debug)]
+pub struct BlockRef<'a> {
+    pub pos: BlockPos,
+    pub state: BlockState,
+    /// Block entity data.
+    pub nbt: Option<&'a Compound>,
+}
+
+/// A palette block in 8 bytes: the position within the template, the state and the index of
+/// its block entity data plus one (0 = none).
+#[derive(Clone, Copy, Debug)]
+struct PackedBlock {
+    x: u8,
+    y: u8,
+    z: u8,
+    state: u16,
+    nbt: u16,
+}
+
+/// The blocks of a palette: packed, or as loaded for templates beyond what a
+/// [`PackedBlock`] holds (more than 255 blocks on an axis or 65535 block entities).
+#[derive(Clone, Debug)]
+enum Blocks {
+    Packed {
+        blocks: Vec<PackedBlock>,
+        nbts: Vec<Compound>,
+    },
+    Wide(Vec<StructureBlockInfo>),
+}
+
+impl Blocks {
+    fn new(infos: Vec<StructureBlockInfo>) -> Self {
+        let mut blocks = Vec::with_capacity(infos.len());
+        let mut nbts = Vec::new();
+        for info in &infos {
+            let (Ok(x), Ok(y), Ok(z)) = (
+                u8::try_from(info.pos.x),
+                u8::try_from(info.pos.y),
+                u8::try_from(info.pos.z),
+            ) else {
+                return Blocks::Wide(infos);
+            };
+            let nbt = match &info.nbt {
+                Some(nbt) => {
+                    nbts.push(nbt.clone());
+                    match u16::try_from(nbts.len()) {
+                        Ok(index) => index,
+                        Err(_) => return Blocks::Wide(infos),
+                    }
+                }
+                None => 0,
+            };
+            blocks.push(PackedBlock {
+                x,
+                y,
+                z,
+                state: info.state.0,
+                nbt,
+            });
+        }
+        nbts.shrink_to_fit();
+        Blocks::Packed { blocks, nbts }
+    }
+}
+
 /// `StructureTemplate.Palette`: the blocks of one palette, in Vanilla's order (full blocks,
 /// then other blocks, then block entities, each sorted by y, x, z).
 #[derive(Clone, Debug)]
 pub struct Palette {
-    blocks: Vec<StructureBlockInfo>,
+    blocks: Blocks,
     jigsaws: OnceLock<Vec<JigsawBlockInfo>>,
 }
 
 impl Palette {
+    fn new(infos: Vec<StructureBlockInfo>) -> Self {
+        Palette {
+            blocks: Blocks::new(infos),
+            jigsaws: OnceLock::new(),
+        }
+    }
+
     /// `blocks()`.
-    pub fn blocks(&self) -> &[StructureBlockInfo] {
-        &self.blocks
+    pub fn blocks(&self) -> impl ExactSizeIterator<Item = BlockRef<'_>> + Clone + '_ {
+        let (packed, nbts, wide): (&[PackedBlock], &[Compound], &[StructureBlockInfo]) =
+            match &self.blocks {
+                Blocks::Packed { blocks, nbts } => (blocks, nbts, &[]),
+                Blocks::Wide(infos) => (&[], &[], infos),
+            };
+        let packed = packed.iter().map(move |b| BlockRef {
+            pos: BlockPos::new(i32::from(b.x), i32::from(b.y), i32::from(b.z)),
+            state: BlockState(b.state),
+            nbt: usize::from(b.nbt)
+                .checked_sub(1)
+                .and_then(|index| nbts.get(index)),
+        });
+        let wide = wide.iter().map(|info| BlockRef {
+            pos: info.pos,
+            state: info.state,
+            nbt: info.nbt.as_ref(),
+        });
+        Chained { packed, wide }
+    }
+
+    /// Number of blocks.
+    pub fn len(&self) -> usize {
+        match &self.blocks {
+            Blocks::Packed { blocks, .. } => blocks.len(),
+            Blocks::Wide(infos) => infos.len(),
+        }
+    }
+
+    /// Whether the palette has no blocks.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The state of block `index`.
+    fn state_at(&self, index: usize) -> Option<BlockState> {
+        match &self.blocks {
+            Blocks::Packed { blocks, .. } => blocks.get(index).map(|b| BlockState(b.state)),
+            Blocks::Wide(infos) => infos.get(index).map(|b| b.state),
+        }
+    }
+
+    /// Estimated heap bytes.
+    fn heap_size(&self, nbt: usize) -> usize {
+        match &self.blocks {
+            Blocks::Packed { blocks, nbts } => {
+                blocks.len() * std::mem::size_of::<PackedBlock>()
+                    + nbts.len() * (std::mem::size_of::<Compound>() + nbt)
+            }
+            Blocks::Wide(infos) => {
+                infos.len() * std::mem::size_of::<StructureBlockInfo>()
+                    + infos.iter().filter(|b| b.nbt.is_some()).count() * nbt
+            }
+        }
     }
 
     /// `blocks(block)`: the blocks of one type.
-    pub fn blocks_of(&self, block: BlockId) -> impl Iterator<Item = &StructureBlockInfo> {
-        self.blocks.iter().filter(move |b| b.state.block() == block)
+    pub fn blocks_of(&self, block: BlockId) -> impl Iterator<Item = BlockRef<'_>> {
+        self.blocks().filter(move |b| b.state.block() == block)
     }
 
     /// `jigsaws()`.
@@ -155,6 +280,38 @@ impl Palette {
                 .collect()
         })
     }
+}
+
+/// [`Palette::blocks`] of either representation (one of the two is empty).
+#[derive(Clone)]
+struct Chained<P, W> {
+    packed: P,
+    wide: W,
+}
+
+impl<'a, P, W> Iterator for Chained<P, W>
+where
+    P: Iterator<Item = BlockRef<'a>>,
+    W: Iterator<Item = BlockRef<'a>>,
+{
+    type Item = BlockRef<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<BlockRef<'a>> {
+        self.packed.next().or_else(|| self.wide.next())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.packed.size_hint().0 + self.wide.size_hint().0;
+        (n, Some(n))
+    }
+}
+
+impl<'a, P, W> ExactSizeIterator for Chained<P, W>
+where
+    P: ExactSizeIterator<Item = BlockRef<'a>>,
+    W: ExactSizeIterator<Item = BlockRef<'a>>,
+{
 }
 
 /// `StructureTemplate`.
@@ -386,10 +543,7 @@ impl StructureTemplate {
         entities: Vec<StructureEntityInfo>,
     ) -> Self {
         Self {
-            palettes: vec![Palette {
-                blocks: build_info_list(blocks),
-                jigsaws: OnceLock::new(),
-            }],
+            palettes: vec![Palette::new(build_info_list(blocks))],
             entities,
             size,
             ..Self::default()
@@ -419,8 +573,8 @@ impl StructureTemplate {
             let mut main: Vec<BlockState> = Vec::new();
             let mut others: Vec<Vec<Option<BlockState>>> =
                 vec![Vec::new(); self.palettes.len() - 1];
-            let mut blocks = Vec::with_capacity(self.palettes[0].blocks.len());
-            for (i, info) in self.palettes[0].blocks.iter().enumerate() {
+            let mut blocks = Vec::with_capacity(self.palettes[0].len());
+            for (i, info) in self.palettes[0].blocks().enumerate() {
                 let id = match main.iter().position(|s| *s == info.state) {
                     Some(id) => id,
                     None => {
@@ -431,7 +585,7 @@ impl StructureTemplate {
                 let mut block = Compound::new();
                 block.insert("pos", ints([info.pos.x, info.pos.y, info.pos.z]));
                 block.insert("state", Tag::Int(i32::try_from(id).unwrap_or(i32::MAX)));
-                if let Some(nbt) = &info.nbt {
+                if let Some(nbt) = info.nbt {
                     block.insert("nbt", Tag::Compound(nbt.clone()));
                 }
                 blocks.push(Tag::Compound(block));
@@ -440,7 +594,7 @@ impl StructureTemplate {
                         other.resize(id + 1, None);
                     }
                     // `IdMapper.addMapping`: the last state mapped to an id wins.
-                    other[id] = palette.blocks.get(i).map(|b| b.state);
+                    other[id] = palette.state_at(i);
                 }
             }
             tag.insert("blocks", Tag::List(List(blocks)));
@@ -535,10 +689,7 @@ impl StructureTemplate {
                 })
             })
             .collect();
-        Palette {
-            blocks: build_info_list(infos),
-            jigsaws: OnceLock::new(),
-        }
+        Palette::new(build_info_list(infos))
     }
 
     /// Reads a gzip compressed template file (`NbtIo.readCompressed` + [`Self::load`]).
@@ -563,14 +714,7 @@ impl StructureTemplate {
     /// Estimated heap bytes of the template (for the template cache's limit).
     pub fn heap_size(&self) -> usize {
         const NBT: usize = 256;
-        let blocks: usize = self
-            .palettes
-            .iter()
-            .map(|p| {
-                p.blocks.len() * std::mem::size_of::<StructureBlockInfo>()
-                    + p.blocks.iter().filter(|b| b.nbt.is_some()).count() * NBT
-            })
-            .sum();
+        let blocks: usize = self.palettes.iter().map(|p| p.heap_size(NBT)).sum();
         blocks + self.entities.len() * (std::mem::size_of::<StructureEntityInfo>() + NBT)
     }
 
@@ -701,7 +845,7 @@ impl StructureTemplate {
                     .then(|| StructureBlockInfo {
                         pos,
                         state: rotate_state(info.state, settings.rotation),
-                        nbt: info.nbt.clone(),
+                        nbt: info.nbt.cloned(),
                     })
             })
             .collect()
@@ -745,8 +889,7 @@ impl StructureTemplate {
         let Some(palette) = settings.random_palette(&self.palettes, position, random) else {
             return false;
         };
-        let blocks = palette.blocks();
-        if (blocks.is_empty() && (settings.ignore_entities || self.entities.is_empty()))
+        if (palette.is_empty() && (settings.ignore_entities || self.entities.is_empty()))
             || self.size.x < 1
             || self.size.y < 1
             || self.size.z < 1
@@ -757,11 +900,11 @@ impl StructureTemplate {
         let waterlogging = settings.should_apply_waterlogging();
         let mut to_fill: Vec<BlockPos> = Vec::new();
         let mut locked_fluids: FxHashSet<BlockPos> = FxHashSet::default();
-        let mut placed: Vec<(BlockPos, bool)> = Vec::with_capacity(blocks.len());
+        let mut placed: Vec<(BlockPos, bool)> = Vec::with_capacity(palette.len());
         let (mut min_x, mut min_y, mut min_z) = (i32::MAX, i32::MAX, i32::MAX);
         let (mut max_x, mut max_y, mut max_z) = (i32::MIN, i32::MIN, i32::MIN);
         let processed =
-            process_block_infos(level, position, reference, settings, blocks, &mut *random);
+            process_block_infos(level, position, reference, settings, palette, &mut *random);
 
         for info in processed {
             let pos = info.pos;
@@ -1047,7 +1190,7 @@ pub fn process_block_infos(
     position: BlockPos,
     reference: BlockPos,
     settings: &StructurePlaceSettings<'_>,
-    blocks: &[StructureBlockInfo],
+    palette: &Palette,
     random: &mut dyn TemplateRandom,
 ) -> Vec<StructureBlockInfo> {
     let only_in_chunk = !settings
@@ -1056,8 +1199,8 @@ pub fn process_block_infos(
         .any(|p| p.evaluates_entire_piece_state());
     let chunk_bb = settings.bounding_box;
     let mut originals: Vec<BlockPos> = Vec::new();
-    let mut processed: Vec<StructureBlockInfo> = Vec::with_capacity(blocks.len());
-    for info in blocks {
+    let mut processed: Vec<StructureBlockInfo> = Vec::with_capacity(palette.len());
+    for info in palette.blocks() {
         let pos = StructureTemplate::calculate_relative_position(settings, info.pos)
             .offset(position.x, position.y, position.z);
         if only_in_chunk && chunk_bb.is_some_and(|bb| !bb.is_inside(pos)) {
@@ -1066,7 +1209,7 @@ pub fn process_block_infos(
         let mut current = Some(StructureBlockInfo {
             pos,
             state: info.state,
-            nbt: info.nbt.clone(),
+            nbt: info.nbt.cloned(),
         });
         for processor in &settings.processors {
             let Some(block) = current else { break };

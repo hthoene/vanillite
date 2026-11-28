@@ -153,7 +153,7 @@ mod tests {
             assert!(!template.palettes().is_empty(), "{id}");
         }
         let fossil = loader.template("minecraft:fossil/spine_1").get();
-        assert!(!fossil.palettes()[0].blocks().is_empty());
+        assert!(!fossil.palettes()[0].is_empty());
 
         let registry = packs
             .registry("minecraft:worldgen/processor_list")

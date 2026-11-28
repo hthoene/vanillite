@@ -32,6 +32,8 @@ pub struct StructureTemplateManager {
     cache_limit: AtomicUsize,
     /// Use counter for the least recently used order.
     clock: AtomicU64,
+    /// `clock` at the last [`Self::trim_unused`].
+    clock_at_trim: AtomicU64,
 }
 
 /// Default of [`StructureTemplateManager::set_cache_limit`].
@@ -97,6 +99,7 @@ impl StructureTemplateManager {
             outlines: RwLock::new(FxHashMap::default()),
             cache_limit: AtomicUsize::new(DEFAULT_CACHE_LIMIT),
             clock: AtomicU64::new(0),
+            clock_at_trim: AtomicU64::new(0),
         }
     }
 
@@ -113,6 +116,15 @@ impl StructureTemplateManager {
         let mut cache = self.cache.write().unwrap_or_else(PoisonError::into_inner);
         cache.retain(|_, e| !e.reloadable);
         cache.shrink_to_fit();
+    }
+
+    /// [`Self::trim`] if no template was asked for since the last call (called every 30 s:
+    /// world generation placed no structure meanwhile).
+    pub fn trim_unused(&self) {
+        let now = self.clock.load(Ordering::Relaxed);
+        if self.clock_at_trim.swap(now, Ordering::Relaxed) == now {
+            self.trim();
+        }
     }
 
     /// Drops least recently used file-loaded templates until they take at most `limit` bytes.
