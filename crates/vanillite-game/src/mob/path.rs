@@ -374,12 +374,50 @@ fn check_neighbour_blocks(
 /// `WalkNodeEvaluator.getFloorLevel(level, pos)`.
 pub fn floor_level(blocks: &dyn Blocks, pos: BlockPos) -> f64 {
     let below = BlockPos::new(pos.x, pos.y - 1, pos.z);
-    let shape = blocks.state(below).collision_shape();
-    let top = shape
+    f64::from(below.y) + shape_top(blocks.state(below))
+}
+
+/// The top of the collision shape of `state` (0 without one).
+fn compute_shape_top(state: BlockState) -> f64 {
+    state
+        .collision_shape()
         .iter()
         .map(|b| b[4])
-        .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
-    f64::from(below.y) + top.unwrap_or(0.0)
+        .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))))
+        .unwrap_or(0.0)
+}
+
+/// [`compute_shape_top`] of every block state, computed once: an index per state into the
+/// distinct tops (`u8::MAX` = computed each time, if there were ever that many).
+fn shape_tops() -> &'static (Vec<u8>, Vec<f64>) {
+    static TABLE: OnceLock<(Vec<u8>, Vec<f64>)> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut tops: Vec<f64> = Vec::new();
+        let index = (0..STATE_COUNT)
+            .map(|s| {
+                let top = compute_shape_top(BlockState(u16::try_from(s).unwrap_or(0)));
+                match tops.iter().position(|&t| t.to_bits() == top.to_bits()) {
+                    Some(i) => u8::try_from(i).unwrap_or(u8::MAX),
+                    None if tops.len() < usize::from(u8::MAX) => {
+                        tops.push(top);
+                        u8::try_from(tops.len() - 1).unwrap_or(u8::MAX)
+                    }
+                    None => u8::MAX,
+                }
+            })
+            .collect();
+        (index, tops)
+    })
+}
+
+/// [`compute_shape_top`] from the table.
+#[inline]
+fn shape_top(state: BlockState) -> f64 {
+    let (index, tops) = shape_tops();
+    match index.get(usize::from(state.0)) {
+        Some(&i) if i != u8::MAX => tops[usize::from(i)],
+        _ => compute_shape_top(state),
+    }
 }
 
 /// The node evaluator of a search (`NodeEvaluator` subclasses).

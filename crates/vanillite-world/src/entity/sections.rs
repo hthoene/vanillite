@@ -40,6 +40,8 @@ struct Section {
     /// The types of `all`, in the same order: typed queries skip the others without looking
     /// up the entities (Vanilla's `ClassInstanceMultiMap.find`).
     kinds: Vec<EntityTypeId>,
+    /// The types in `kinds`: typed queries skip sections without any of theirs.
+    present: KindSet,
     players: Vec<EntityId>,
     others: Vec<EntityId>,
 }
@@ -84,20 +86,23 @@ impl Boxes {
         self.max_z[index] = b.max_z;
     }
 
+    /// Whether box `i` intersects `q` ([`Aabb::intersects`]).
+    #[inline]
+    fn intersects(&self, i: usize, q: &Aabb) -> bool {
+        (self.min_x[i] < q.max_x)
+            & (self.max_x[i] > q.min_x)
+            & (self.min_y[i] < q.max_y)
+            & (self.max_y[i] > q.min_y)
+            & (self.min_z[i] < q.max_z)
+            & (self.max_z[i] > q.min_z)
+    }
+
     /// Calls `f` with the index of every box that intersects `q` ([`Aabb::intersects`]), in
     /// ascending order.
     #[inline]
     fn for_each_intersecting(&self, q: &Aabb, mut f: impl FnMut(usize)) {
         const LANES: usize = 8;
         let n = self.min_x.len();
-        let hit = |i: usize| {
-            (self.min_x[i] < q.max_x)
-                & (self.max_x[i] > q.min_x)
-                & (self.min_y[i] < q.max_y)
-                & (self.max_y[i] > q.min_y)
-                & (self.min_z[i] < q.max_z)
-                & (self.max_z[i] > q.min_z)
-        };
         let lanes = |v: &[f64], i: usize| -> [f64; LANES] {
             v[i..i + LANES].try_into().unwrap_or([f64::NAN; LANES])
         };
@@ -130,7 +135,7 @@ impl Boxes {
             i += LANES;
         }
         for i in i..n {
-            if hit(i) {
+            if self.intersects(i, q) {
                 f(i);
             }
         }
@@ -148,9 +153,11 @@ impl Section {
 }
 
 /// A set of entity types: the classes a typed query (`getEntitiesOfClass`) looks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KindSet {
     bits: [u64; 4],
+    /// A type past the bits is in the set (only for the types of a section).
+    high: bool,
 }
 
 impl KindSet {
@@ -165,7 +172,27 @@ impl KindSet {
             }
             i += 1;
         }
-        KindSet { bits }
+        KindSet { bits, high: false }
+    }
+
+    fn insert(&mut self, kind: EntityTypeId) {
+        let k = kind.0 as usize;
+        if k < 256 {
+            self.bits[k >> 6] |= 1 << (k & 63);
+        } else {
+            self.high = true;
+        }
+    }
+
+    /// Whether a section with the types `present` may hold an entity of this set.
+    #[inline]
+    fn meets(&self, present: &KindSet) -> bool {
+        present.high
+            || (self.bits[0] & present.bits[0])
+                | (self.bits[1] & present.bits[1])
+                | (self.bits[2] & present.bits[2])
+                | (self.bits[3] & present.bits[3])
+                != 0
     }
 
     /// Whether `kind` is in the set (always for a type past the bits).
@@ -216,6 +243,7 @@ impl SectionIndex {
         entry.all.push(id);
         entry.boxes.push(aabb);
         entry.kinds.push(kind);
+        entry.present.insert(kind);
         match class {
             EntityClass::Player => {
                 entry.players.push(id);
@@ -237,6 +265,10 @@ impl SectionIndex {
             entry.all.remove(index);
             entry.boxes.remove(index);
             entry.kinds.remove(index);
+            entry.present = KindSet::default();
+            for &kind in &entry.kinds {
+                entry.present.insert(kind);
+            }
         }
         match class {
             EntityClass::Player => {
@@ -341,11 +373,16 @@ impl SectionIndex {
         mut f: impl FnMut(EntityId),
     ) {
         self.for_each_section_near(aabb, |section| {
-            section.boxes.for_each_intersecting(aabb, |i| {
-                if kinds.contains(section.kinds[i]) {
+            if !kinds.meets(&section.present) {
+                return;
+            }
+            // The types first: they are one small column, and most entities of a crowded
+            // section are of other types.
+            for (i, &kind) in section.kinds.iter().enumerate() {
+                if kinds.contains(kind) && section.boxes.intersects(i, aabb) {
                     f(section.all[i]);
                 }
-            });
+            }
         });
     }
 
