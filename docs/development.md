@@ -371,10 +371,13 @@ written by hand. `vanillite --version` and the first log line show both and the 
 | Release archive | `vanillite-<version>-mc<minecraft>-<os>-<arch>.<tar.gz\|zip>` | `vanillite-0.1.0-beta.1-mc26.3-windows-x86_64.zip` |
 | Docker tag, immutable | `<version>-mc<minecraft>` | `0.1.0-beta.1-mc26.3` |
 | Docker tag, newest of a channel for a Minecraft version | `mc<minecraft>-<channel>`, stable: `mc<minecraft>` | `mc26.3-beta`, `mc26.3` |
-| Docker tag, newest of a channel | `<channel>`, stable: `latest` | `beta`, `latest` |
+| Docker tag, newest of a channel | `<channel>` | `beta` |
+| Docker tag, newest release | `latest` | `latest` |
 
 The channel is the first part of the pre-release (`beta` of `0.1.0-beta.1`, `rc` of
-`0.2.0-rc.1`). Pre-releases are GitHub pre-releases and never move `latest` or `mc<minecraft>`.
+`0.2.0-rc.1`). Pre-releases are GitHub pre-releases and never move `mc<minecraft>`; they move `latest`
+only while no stable release exists (no tag `v<x.y.z>+mc<minecraft>`), a stable release always
+moves it, so a later pre-release never takes `latest` back from a stable.
 `scripts/release/meta.sh [<tag>]` derives all names from the sources and fails for a tag that
 does not match them.
 
@@ -392,7 +395,10 @@ To release: set the workspace version (and the `version` of every internal crate
   the tags above. The channel tags `beta` and `latest` move only for the newest Minecraft version of
   `deploy/minecraft-versions.txt`, so an update for an older version does not take them back; a
   stable release also moves `mc<minecraft>-beta` and `beta`. The Pterodactyl eggs offer every
-  version of that file (see "Pterodactyl eggs").
+  version of that file (see "Pterodactyl eggs"). A manual run with `release_tag` and `retag`
+  builds nothing and only points the moving tags, as the branch's `meta.sh` computes them, at the
+  published image of that release (`gh workflow run docker.yml --ref dev -f
+  release_tag=v0.1.0-beta.3+mc26.3 -f retag=true`).
 
 The binaries hold everything but Mojang's data: the first start downloads the pinned server jar
 into `cache/` (internet access needed once, no Java).
