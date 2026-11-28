@@ -65,6 +65,7 @@ func newSession(conn *minecraft.Conn, p *problems, name string, in <-chan packet
 // observe keeps the session state up to date with one packet from the server.
 func (s *session) observe(pk packet.Packet) {
 	check(s.p, pk)
+	s.checkRaw(pk)
 	s.counts[fmt.Sprintf("%T", pk)]++
 	if *verbose {
 		switch pk := pk.(type) {
