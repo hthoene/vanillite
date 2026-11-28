@@ -166,7 +166,8 @@ impl FanOut {
                 };
                 if receivers
                     && mark != BatchMark::UNKNOWN
-                    && packet_id(packet.body())
+                    && packet
+                        .id()
                         .is_none_or(|id| tap.wants_at(Stage::Receiver, State::Play, id))
                 {
                     mark = BatchMark::UNKNOWN;
