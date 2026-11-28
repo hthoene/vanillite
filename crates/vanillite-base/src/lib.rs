@@ -14,6 +14,7 @@ mod mth_tables;
 pub mod pos;
 pub mod prefetch;
 pub mod random;
+pub mod scratch;
 pub mod slot_map;
 pub mod vec3;
 

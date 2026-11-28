@@ -100,6 +100,14 @@ impl ChunkGenerator for TimedGenerator {
         self.0.prepare();
     }
 
+    fn release_memory(&self) {
+        self.0.release_memory();
+    }
+
+    fn trim_idle(&self) {
+        self.0.trim_idle();
+    }
+
     fn generate(
         &self,
         status: ChunkStatus,
@@ -129,6 +137,14 @@ impl LightEngine for TimedLight {
 
     fn relight(&self, changes: &[BlockPos], area: &Neighbours<'_>) -> Vec<(ChunkPos, ChunkLight)> {
         self.0.relight(changes, area)
+    }
+
+    fn changes_light(&self, old: u16, new: u16) -> bool {
+        self.0.changes_light(old, new)
+    }
+
+    fn release_memory(&self) {
+        self.0.release_memory();
     }
 }
 
