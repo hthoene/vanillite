@@ -957,7 +957,9 @@ impl WorldAction {
             WorldAction::PiglinAnger(player) => {
                 level.output().piglin_anger.push((player, true));
             }
-            WorldAction::Enchant(ref a) => crate::enchant::world::apply(level, a),
+            WorldAction::Enchant(ref a) => {
+                crate::enchant::world::apply(level, a);
+            }
             WorldAction::ProjectileHitBlock(pos, at, id, speed) => {
                 crate::block::projectile_hit::projectile_hit_block(level, pos, at, id, speed);
             }

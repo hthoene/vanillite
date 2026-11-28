@@ -1,0 +1,25 @@
+{
+  "description": "A data pack enchantment summons a mob (#315): a player hits a zombie of team red with a Herd sword; summon_entity makes a cow like EntityType.spawn (at the block centre, its yaw from the level random, finalizeSpawn with TRIGGERED, its ambient sound from its own random), moves it to the exact position and, with join_team, adds it to the zombie's team. The cow then lives on with its goals.",
+  "tier": "fast",
+  "dimensions": true,
+  "datapack": "enchant_effects_315",
+  "level_rng": true,
+  "player_state": true,
+  "feedback": true,
+  "rules": {"spawn_monsters": "false"},
+  "region": [[0, -62, 0], [23, -56, 15]],
+  "ticks": 70,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [8.5, -60.0, 3.5], "rot": [-90, 0]},
+    {"name": "zombie", "type": "minecraft:zombie", "pos": [10.3, -60.0, 3.7], "rot": [90, 0], "seed": 3}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "data merge entity @e[type=minecraft:zombie,limit=1] {NoAI:1b,PersistenceRequired:1b}"},
+    {"tick": 1, "op": "command", "command": "team add red"},
+    {"tick": 1, "op": "command", "command": "team join red @e[type=minecraft:zombie,limit=1]"},
+    {"tick": 2, "op": "command", "command": "item replace entity steve weapon.mainhand with minecraft:iron_sword[minecraft:enchantments={\"vanillite_test:herd\":1}]"},
+    {"tick": 3, "op": "attack_entity", "entity": "steve", "target": "zombie"},
+    {"tick": 5, "op": "command", "command": "execute if entity @e[type=minecraft:cow,team=red]"},
+    {"tick": 5, "op": "command", "command": "execute if entity @e[type=minecraft:cow,team=!red]"}
+  ]
+}

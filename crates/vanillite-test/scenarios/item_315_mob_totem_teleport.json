@@ -1,0 +1,55 @@
+{
+  "description": "A mob's own death protection with teleport_randomly (#315, I5-14): a zombie holding a totem whose death_effects are teleport_randomly and play_sound takes deadly damage; DeathProtection.applyEffects runs the effects in order on the zombie, the teleport with up to 16 tries from the zombie's random (avoiding #consumable_does_not_teleport_to), its particles, sound and game event.",
+  "tier": "fast",
+  "dimensions": true,
+  "level_rng": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -62,
+      0
+    ],
+    [
+      23,
+      -54,
+      23
+    ]
+  ],
+  "ticks": 30,
+  "entities": [
+    {
+      "name": "zombie",
+      "type": "minecraft:zombie",
+      "pos": [
+        11.5,
+        -60.0,
+        11.5
+      ],
+      "rot": [
+        0,
+        0
+      ],
+      "seed": 5
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "data merge entity @e[type=minecraft:zombie,limit=1] {PersistenceRequired:1b}"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "item replace entity @e[type=minecraft:zombie,limit=1] weapon.mainhand with minecraft:totem_of_undying[minecraft:death_protection={death_effects:[{type:\"minecraft:teleport_randomly\",diameter:10.0},{type:\"minecraft:play_sound\",sound:\"minecraft:entity.experience_orb.pickup\"}]}]"
+    },
+    {
+      "tick": 4,
+      "op": "command",
+      "command": "damage @e[type=minecraft:zombie,limit=1] 50 minecraft:generic"
+    }
+  ]
+}

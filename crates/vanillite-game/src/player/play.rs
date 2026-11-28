@@ -496,6 +496,9 @@ pub struct Digging {
     /// `FenceBlock.useWithoutItem` of the last `use_item_on`: the fence the player's leashed
     /// mobs get tied to (the world runs it next).
     pub bind_fence: Option<BlockPos>,
+    /// The block a survival player started to break with its state then: the world runs the
+    /// `hit_block` enchantment effects of the main hand next (`EnchantmentHelper.onHitBlock`).
+    pub hit_block: Option<(BlockPos, BlockState)>,
     /// `BlockItem.useOn` fell back to `Item.use` of a consumable block item (carrots, berries)
     /// that could not be placed: the world starts using it with this hand next.
     pub start_using: Option<Hand>,
@@ -745,6 +748,7 @@ impl Digging {
                 let state = ctx.level.block(pos);
                 let mut progress = 1.0;
                 if !state.is_air() {
+                    self.hit_block = Some((pos, state));
                     if let Some(player) = ctx.actor.entity
                         && let Some(level) = ctx.level.level_mut()
                     {

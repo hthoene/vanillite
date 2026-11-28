@@ -1203,7 +1203,9 @@ impl WorldMobs {
                 }
                 // An enchantment's world effect; an `explode` hurts at once.
                 WorldAction::Enchant(a) => {
-                    vanillite_game::enchant::world::apply(level, &a);
+                    if let Some(summoned) = vanillite_game::enchant::world::apply(level, &a) {
+                        join_team_of(level, global, a.entity, summoned);
+                    }
                     self.apply_explosion_hurts(level, survival, global, dimension);
                 }
                 WorldAction::Particles(p) => level.send_particles_packet(*p),
@@ -1778,11 +1780,48 @@ fn player_entity_event(
     ev.cancelled
 }
 
+/// `summon_entity` with `join_team`: the summoned entity joins the team of the entity the
+/// effect ran on, if it has one (`addPlayerToTeam(spawned.getScoreboardName(), team)`).
+fn join_team_of(level: &Level, global: &Global, entity: EntityId, summoned: EntityId) {
+    let ents = &level.entities;
+    let holder = |id: EntityId| match ents.player(id) {
+        Some(p) => Some(p.profile.name.clone()),
+        None => ents
+            .store
+            .get(id)
+            .map(|e| vanillite_protocol::types::Uuid(e.uuid()).to_string()),
+    };
+    let (Some(of), Some(new)) = (holder(entity), holder(summoned)) else {
+        return;
+    };
+    let Some(team) = crate::scoreboard::entity_team(global, &of).map(|t| t.name) else {
+        return;
+    };
+    if global.systems.scoreboard().join_team(&new, &team) {
+        crate::scoreboard::flush(global);
+    }
+}
+
 /// One attack, interaction, entity item use, spectate or pick of a player
 /// (`handleAttack`, `handleInteract`, `handleUseItem`, ...), as [`WorldMobs::player_actions`]
-/// runs it. The scenario harness drives its packet-level players through it too.
+/// runs it. The scenario harness drives its packet-level players through it too. The
+/// `projectile_spawned` effects of the arrows it shot follow.
 #[allow(clippy::too_many_arguments)]
 pub fn player_entity_action(
+    level: &Level,
+    ents: &mut Entities,
+    env: &mut vanillite_game::survival::player::Env<'_>,
+    cx: &mut MobContext,
+    network_ids: &Arc<vanillite_world::entity::NetworkIds>,
+    player: EntityId,
+    action: EntityAction,
+) {
+    entity_action(level, ents, env, cx, network_ids, player, action);
+    vanillite_game::mob::projectile::run_projectile_spawned(level, ents, env, cx);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn entity_action(
     level: &Level,
     ents: &mut Entities,
     env: &mut vanillite_game::survival::player::Env<'_>,
@@ -1878,6 +1917,36 @@ pub fn player_entity_action(
                 // `swingAndResetAttackStrength`.
                 p.survival.attack_ticker = 0;
             }
+        }
+        EntityAction::HitBlock(pos, state) => {
+            if !usable {
+                return;
+            }
+            // `EnchantmentHelper.onHitBlock(level, mainHand, player, player, MAINHAND,
+            // atCenterOf(pos), state)`.
+            let Some(weapon) = ents
+                .player(player)
+                .map(|p| p.inventory.selected_item().clone())
+            else {
+                return;
+            };
+            vanillite_game::mob::attack::hit_block_effects(
+                level,
+                ents,
+                env,
+                cx,
+                &weapon,
+                player,
+                Some(player),
+                Some(vanillite_game::item::EquipmentSlot::MainHand),
+                pos,
+                state,
+                Vec3::new(
+                    f64::from(pos.x) + 0.5,
+                    f64::from(pos.y) + 0.5,
+                    f64::from(pos.z) + 0.5,
+                ),
+            );
         }
         EntityAction::Punch => {
             // `handlePunch`: `resetAttackStrengthTicker` (also for spectators).

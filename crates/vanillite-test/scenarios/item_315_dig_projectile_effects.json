@@ -1,0 +1,137 @@
+{
+  "description": "Data pack enchantments on digging and shooting (#315): a player starts to break stone with a Prospect pickaxe, so its hit_block effects run (ServerPlayerGameMode.handleBlockBreakAction): a match_block requirement, the rotated, randomized_int, noise_threshold, noise, dual_noise and copy_properties block state providers and the height_range, matching_biomes and any_of block predicates of replace_block. Then the player shoots a Spark bow, whose projectile_spawned effects with requirements (an entity type tag, another entity type, the weather) run on the arrow. Last the player loads and shoots a crossbow with Herd: its ammo_use effects with table_bonus and match_tool requirements in the item context of the arrow keep the arrows.",
+  "tier": "fast",
+  "dimensions": true,
+  "datapack": "enchant_effects_315",
+  "level_rng": true,
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -62,
+      0
+    ],
+    [
+      23,
+      -54,
+      15
+    ]
+  ],
+  "ticks": 90,
+  "setup": [
+    {
+      "op": "set",
+      "pos": [
+        10,
+        -61,
+        3
+      ],
+      "block": "minecraft:stone"
+    },
+    {
+      "op": "set",
+      "pos": [
+        9,
+        -60,
+        2
+      ],
+      "block": "minecraft:furnace[facing=east,lit=false]"
+    }
+  ],
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        8.5,
+        -60.0,
+        4.5
+      ],
+      "rot": [
+        -90,
+        30
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "item replace entity steve weapon.mainhand with minecraft:iron_pickaxe[minecraft:enchantments={\"vanillite_test:prospect\":1}]"
+    },
+    {
+      "tick": 3,
+      "op": "attack",
+      "entity": "steve",
+      "pos": [
+        10,
+        -61,
+        3
+      ],
+      "face": "up"
+    },
+    {
+      "tick": 10,
+      "op": "command",
+      "command": "tp steve 4.5 -60 10.5 -90 0"
+    },
+    {
+      "tick": 11,
+      "op": "command",
+      "command": "item replace entity steve weapon.mainhand with minecraft:bow[minecraft:enchantments={\"vanillite_test:spark\":1}]"
+    },
+    {
+      "tick": 12,
+      "op": "use_item",
+      "entity": "steve",
+      "inventory": [
+        {
+          "slot": 5,
+          "item": "minecraft:arrow",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "tick": 37,
+      "op": "release_item",
+      "entity": "steve"
+    },
+    {
+      "tick": 40,
+      "op": "command",
+      "command": "tp steve 4.5 -60 12.5 -90 0"
+    },
+    {
+      "tick": 41,
+      "op": "command",
+      "command": "item replace entity steve weapon.mainhand with minecraft:crossbow[minecraft:enchantments={\"vanillite_test:herd\":1}]"
+    },
+    {
+      "tick": 42,
+      "op": "use_item",
+      "entity": "steve",
+      "inventory": [
+        {
+          "slot": 6,
+          "item": "minecraft:arrow",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "tick": 70,
+      "op": "release_item",
+      "entity": "steve"
+    },
+    {
+      "tick": 72,
+      "op": "use_item",
+      "entity": "steve"
+    }
+  ],
+  "feedback": true
+}

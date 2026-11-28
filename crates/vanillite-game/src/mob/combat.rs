@@ -562,18 +562,20 @@ fn hurt_mob_inner(
             knock_mob(ents, env, target, f64::from(0.4_f32), xd, zd, by);
         }
     }
-    let dead = ents
+    // A death protection that saves the mob plays neither the death nor the hurt sound.
+    let dying = ents
         .mob(target)
-        .is_some_and(super::MobData::is_dead_or_dying)
-        && !mob_totem(level, ents, env, cx, target, source.kind);
-    if dead {
-        if took_full {
-            let sound = ents.mob(target).map(kinds::death_sound);
-            if let Some(sound) = sound {
-                mob_sound(ents, env, target, sound);
+        .is_some_and(super::MobData::is_dead_or_dying);
+    if dying {
+        if !mob_totem(level, ents, env, cx, target, source.kind) {
+            if took_full {
+                let sound = ents.mob(target).map(kinds::death_sound);
+                if let Some(sound) = sound {
+                    mob_sound(ents, env, target, sound);
+                }
             }
+            die(level, ents, env, cx, target, source);
         }
-        die(level, ents, env, cx, target, source);
     } else if took_full {
         let sound = ents.mob_mut(target).map(|m| {
             m.ambient_sound_time = -m.kind.ambient_sound_interval();
@@ -1006,41 +1008,47 @@ fn mob_totem(
     {
         return false;
     }
-    let mut rolls = Vec::new();
     if let Some(m) = ents.mob_mut(target) {
         let mut stack = m.equipment.get(slot).clone();
         stack.shrink(1);
         m.equipment.set(slot, stack);
         m.health = 1.0;
-        // `ApplyStatusEffectsConsumeEffect`: one roll of the mob's random per entry.
-        for e in &effects {
-            if matches!(e, crate::effect::consume::ConsumeEffect::Apply(..)) {
-                rolls.push(m.random.next_float());
-            }
-        }
     }
-    let mob_kind = ents
-        .mob(target)
-        .map(|m| (m.kind.type_id(), m.sound_source()));
-    if let Some((mob_kind, source)) = mob_kind {
-        let mut sounds = Vec::new();
-        crate::effect::living::with_host(level, ents, env, cx, target, |host| {
-            let mut rolls = rolls.into_iter();
-            let mut roll = || rolls.next().unwrap_or(0.0);
-            // `teleport_randomly` of a mob's death protection is not applied (no mob random
-            // teleport of `TeleportRandomlyConsumeEffect` yet).
-            crate::totem::apply_effects(
-                &effects,
-                mob_kind,
-                host,
-                &mut roll,
-                &mut |s| sounds.push(s.to_owned()),
-                &mut |_, _| {},
-            );
-        });
-        if let Some(at) = ents.store.get(target).map(|e| e.pos()) {
-            for s in sounds {
-                crate::totem::play_consume_sound(env.out, at, &s, source);
+    // `DeathProtection.applyEffects`: every effect in order, drawing from the mob's random.
+    for effect in &effects {
+        use crate::effect::consume::ConsumeEffect;
+        match effect {
+            &ConsumeEffect::Teleport(diameter, particles) => {
+                crate::mob::teleport::consume_teleport(
+                    level,
+                    ents,
+                    env,
+                    cx,
+                    target,
+                    f64::from(diameter),
+                    particles,
+                );
+            }
+            ConsumeEffect::PlaySound(s) => {
+                let source = ents.mob(target).map(|m| m.sound_source());
+                if let (Some(at), Some(source)) = (ents.store.get(target).map(|e| e.pos()), source)
+                {
+                    crate::totem::play_consume_sound(env.out, at, s, source);
+                }
+            }
+            _ => {
+                let Some(m) = ents.mob_mut(target) else {
+                    break;
+                };
+                let kind = m.kind.type_id();
+                // `ApplyStatusEffectsConsumeEffect`: one roll of the mob's random.
+                let roll =
+                    matches!(effect, ConsumeEffect::Apply(..)).then(|| m.random.next_float());
+                crate::effect::living::with_host(level, ents, env, cx, target, |host| {
+                    crate::effect::consume::apply_status(effect, kind, host, &mut || {
+                        roll.unwrap_or(0.0)
+                    });
+                });
             }
         }
     }

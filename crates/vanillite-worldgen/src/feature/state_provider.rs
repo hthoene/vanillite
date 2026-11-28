@@ -125,7 +125,8 @@ impl BlockStateProvider {
             },
             _ => return Ok(Self::Simple(parse_block_state(json)?)),
         };
-        let provider = match kind.strip_prefix("minecraft:").unwrap_or(kind) {
+        let kind = kind.strip_prefix("minecraft:").unwrap_or(kind);
+        let provider = match kind {
             "simple" => Self::Simple(parse_block_state(field(json, "state")?)?),
             "weighted" => Self::Weighted(Arc::new(WeightedList::from_json(
                 field(json, "entries")?,
@@ -143,6 +144,45 @@ impl BlockStateProvider {
                 state: parser.state_provider(field(json, "state")?)?,
                 direction: json.get("direction").map(parse_direction).transpose()?,
             })),
+            "noise" | "dual_noise" | "noise_threshold" => Self::parse_noise_kind(kind, json)?,
+            "rule_based" => {
+                let fallback = json
+                    .get("fallback")
+                    .map(|f| parser.state_provider(f))
+                    .transpose()?;
+                let rules = field(json, "rules")?
+                    .as_array()
+                    .ok_or_else(|| Error::new("rule_based: rules is not a list"))?
+                    .iter()
+                    .map(|rule| {
+                        Ok((
+                            parser.block_predicate(field(rule, "if_true")?)?,
+                            parser.state_provider(field(rule, "then")?)?,
+                        ))
+                    })
+                    .collect::<Result<_, Error>>()?;
+                Self::RuleBased(Arc::new(RuleBasedProvider { fallback, rules }))
+            }
+            "copy_properties" => {
+                Self::CopyProperties(Arc::new(parser.state_provider(field(json, "source")?)?))
+            }
+            "random_block" => {
+                Self::RandomBlock(ordered_blocks(field(json, "blocks")?, parser)?.into())
+            }
+            other => {
+                return Err(Error::new(format!(
+                    "unknown block state provider type {other}"
+                )));
+            }
+        };
+        Ok(provider)
+    }
+
+    /// Parses a noise based provider (`noise`, `dual_noise`, `noise_threshold`; `kind` without
+    /// namespace). They refer to no other provider, so no feature parser is needed: other
+    /// systems (enchantment effects) use them too.
+    pub fn parse_noise_kind(kind: &str, json: &Value) -> Result<Self, Error> {
+        Ok(match kind {
             "noise" => Self::Noise(Arc::new(NoiseProvider::parse(json)?)),
             "dual_noise" => {
                 let (variety_min, variety_max) = parse_int_range(field(json, "variety")?)?;
@@ -177,37 +217,27 @@ impl BlockStateProvider {
                     high_states: state_list(json, "high_states")?,
                 }))
             }
-            "rule_based" => {
-                let fallback = json
-                    .get("fallback")
-                    .map(|f| parser.state_provider(f))
-                    .transpose()?;
-                let rules = field(json, "rules")?
-                    .as_array()
-                    .ok_or_else(|| Error::new("rule_based: rules is not a list"))?
-                    .iter()
-                    .map(|rule| {
-                        Ok((
-                            parser.block_predicate(field(rule, "if_true")?)?,
-                            parser.state_provider(field(rule, "then")?)?,
-                        ))
-                    })
-                    .collect::<Result<_, Error>>()?;
-                Self::RuleBased(Arc::new(RuleBasedProvider { fallback, rules }))
-            }
-            "copy_properties" => {
-                Self::CopyProperties(Arc::new(parser.state_provider(field(json, "source")?)?))
-            }
-            "random_block" => {
-                Self::RandomBlock(ordered_blocks(field(json, "blocks")?, parser)?.into())
-            }
             other => {
                 return Err(Error::new(format!(
-                    "unknown block state provider type {other}"
+                    "{other} is not a noise based block state provider"
                 )));
             }
-        };
-        Ok(provider)
+        })
+    }
+
+    /// `getState` of a noise based provider, which reads no blocks; `None` for the other
+    /// types.
+    pub fn noise_state<R: RandomSource>(
+        &self,
+        random: &mut R,
+        pos: BlockPos,
+    ) -> Option<BlockState> {
+        match self {
+            Self::Noise(provider) => Some(provider.random_state_at(&provider.states, pos)),
+            Self::DualNoise(provider) => Some(provider.get_state(pos)),
+            Self::NoiseThreshold(provider) => Some(provider.get_state(random, pos)),
+            _ => None,
+        }
     }
 
     /// `getState(level, random, pos)`.
@@ -299,15 +329,25 @@ impl RotatedProvider {
             // `Direction.getRandom(random)`.
             None => Direction::ALL[random.next_int_bounded(6) as usize],
         };
-        let state = self.state.get_state(level, random, pos);
-        let state = try_set_value(state, &AXIS, axis_name(direction));
-        let state = try_set_value(state, &FACING, direction_name(direction));
-        if matches!(direction, Direction::Up | Direction::Down) {
-            state
-        } else {
-            try_set_value(state, &HORIZONTAL_FACING, direction_name(direction))
-        }
+        rotate(self.state.get_state(level, random, pos), direction)
     }
+}
+
+/// The state part of `RotatedBlockProvider.getState`: the axis, facing and horizontal
+/// facing set towards `direction` where the block has those properties.
+pub fn rotate(state: BlockState, direction: Direction) -> BlockState {
+    let state = try_set_value(state, &AXIS, axis_name(direction));
+    let state = try_set_value(state, &FACING, direction_name(direction));
+    if matches!(direction, Direction::Up | Direction::Down) {
+        state
+    } else {
+        try_set_value(state, &HORIZONTAL_FACING, direction_name(direction))
+    }
+}
+
+/// The integer property `name` of the state (`RandomizedIntStateProvider`), if it has one.
+pub fn integer_property(state: BlockState, name: &str) -> Option<&'static PropertyInfo> {
+    block_properties(state).find(|p| p.name == name && is_integer_property(p))
 }
 
 impl NoiseProvider {
@@ -479,7 +519,7 @@ fn try_set_value(state: BlockState, property: &Property, value: &str) -> BlockSt
 
 /// `state.withPropertiesOf(source)`: every property of `source`'s block that `state` has too
 /// is copied.
-fn with_properties_of(state: BlockState, source: BlockState) -> BlockState {
+pub fn with_properties_of(state: BlockState, source: BlockState) -> BlockState {
     let mut result = state;
     for property in block_properties(source) {
         if block_properties(result).any(|p| same_property(p, property.name, property.values))

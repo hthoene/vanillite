@@ -94,6 +94,9 @@ pub enum EntityAction {
     Stab,
     /// `player_command` `START_FALL_FLYING`.
     StartFallFlying,
+    /// `player_action` `START_DESTROY_BLOCK` of a survival player: the `hit_block` effects
+    /// of its main hand on the block and the state it hit.
+    HitBlock(vanillite_base::BlockPos, vanillite_data::block::BlockState),
     /// `punch`: the swing resets the attack strength (`resetAttackStrengthTicker`).
     Punch,
     /// `stopUsingItem` (a new hotbar slot while the main hand is in use: `main_hand_only`; a
@@ -1186,6 +1189,11 @@ impl Connection {
                     p.sequence,
                     self.sink.as_ref(),
                 );
+                if let Some((at, state)) = self.play.hit_block.take()
+                    && self.entity_actions.len() < 16
+                {
+                    self.entity_actions.push(EntityAction::HitBlock(at, state));
+                }
             }
         }
     }

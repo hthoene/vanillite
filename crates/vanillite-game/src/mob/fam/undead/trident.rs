@@ -443,7 +443,17 @@ fn hit_entity(
 fn hit_block_effects(t: &mut MissileTick<'_, '_>, d: &MissileData, block: BlockPos, at: Vec3) {
     let owner = d.owner;
     crate::mob::attack::hit_block_effects(
-        t.level, t.ents, t.env, t.cx, &d.item, t.id, owner, block, at,
+        t.level,
+        t.ents,
+        t.env,
+        t.cx,
+        &d.item,
+        t.id,
+        owner,
+        None,
+        block,
+        t.level.block(block),
+        at,
     );
 }
 

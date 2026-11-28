@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "Vanillite parity test: enchantments with summon_entity of a mob joining a team, conditional projectile_spawned effects, hit_block of a digging player and the noise, randomized, rotated and copying block state providers with height_range, matching_biomes and table_bonus",
+    "min_format": 121,
+    "max_format": 121
+  }
+}

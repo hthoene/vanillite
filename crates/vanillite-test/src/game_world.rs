@@ -440,6 +440,7 @@ impl GameWorld {
         let mut players = std::mem::take(&mut self.level.entities.players);
         let mut bind_fence = None;
         let mut start_using = None;
+        let mut hit_block = None;
         let result = (|| {
             let player = players.get_mut(row).ok_or("no player data")?;
             if let Some(food) = click.food {
@@ -589,6 +590,7 @@ impl GameWorld {
                 bind_fence = player.connection.play.bind_fence.take();
                 start_using = player.connection.play.start_using.take();
             }
+            hit_block = player.connection.play.hit_block.take();
             Ok::<bool, String>(false)
         })();
         self.level.entities.players = players;
@@ -603,6 +605,32 @@ impl GameWorld {
             let network_ids = Arc::clone(&self.network_ids);
             self.with_env(|_, ents, env, _| {
                 vanillite_game::player::using::start(ents, env, &network_ids, id, hand);
+            });
+        }
+        // `EntityAction::HitBlock`: the `hit_block` effects of the main hand.
+        if let Some((pos, state)) = hit_block {
+            self.with_env(|level, ents, env, cx| {
+                let Some(weapon) = ents.player(id).map(|p| p.inventory.selected_item().clone())
+                else {
+                    return;
+                };
+                vanillite_game::mob::attack::hit_block_effects(
+                    level,
+                    ents,
+                    env,
+                    cx,
+                    &weapon,
+                    id,
+                    Some(id),
+                    Some(vanillite_game::item::EquipmentSlot::MainHand),
+                    pos,
+                    state,
+                    vanillite_base::Vec3::new(
+                        f64::from(pos.x) + 0.5,
+                        f64::from(pos.y) + 0.5,
+                        f64::from(pos.z) + 0.5,
+                    ),
+                );
             });
         }
         // `EntityAction::BindToFence`: the fence ties the player's leashed mobs.

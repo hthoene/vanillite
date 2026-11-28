@@ -1234,9 +1234,11 @@ pub fn post_attack_effects(
 
 /// `EnchantmentHelper.onHitBlock` of a projectile (`hitBlockEnchantmentEffects`): the
 /// `hit_block` effects of `weapon` whose requirements hold for the projectile, the hit
-/// position clamped into the block and the hit block (Channeling on lightning rods).
+/// position clamped into the block and the hit block (Channeling on lightning rods). A player
+/// that starts to break a block (`ServerPlayerGameMode.handleBlockBreakAction`) is both the
+/// entity and the owner, with its main hand as the slot and the state it hit.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn hit_block_effects(
+pub fn hit_block_effects(
     level: &Level,
     ents: &mut Entities,
     env: &mut Env<'_>,
@@ -1244,7 +1246,9 @@ pub(crate) fn hit_block_effects(
     weapon: &crate::item::ItemStack,
     projectile: EntityId,
     owner: Option<EntityId>,
+    slot: Option<EquipmentSlot>,
     block: vanillite_base::BlockPos,
+    state: vanillite_data::block::BlockState,
     at: Vec3,
 ) {
     if weapon.is_empty() {
@@ -1258,7 +1262,6 @@ pub(crate) fn hit_block_effects(
     {
         return;
     }
-    let state = level.block(block);
     let sees_sky = super::can_see_sky(level, block);
     // `blockHitContext`: the projectile, the hit position and the hit block.
     let effects = {
@@ -1288,7 +1291,7 @@ pub(crate) fn hit_block_effects(
     let owner = owner.filter(|&o| ents.mob(o).is_some() || ents.player(o).is_some());
     for (effect, ench_level) in effects {
         run_entity_effect_at(
-            level, ents, env, cx, &effect, ench_level, projectile, pos, owner, None,
+            level, ents, env, cx, &effect, ench_level, projectile, pos, owner, slot,
         );
     }
 }
