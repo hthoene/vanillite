@@ -822,25 +822,20 @@ fn run_server_command_at(
             run_line(&mut env, line, source);
         }
         Err(e) => {
-            let context = e.context().map(|context| {
-                format!(
+            if matches!(source.kind, SourceKind::Console | SourceKind::Rcon(_)) {
+                // `Commands.performCommand`: both lines as failures of the source (the console
+                // logs them translated, like `MinecraftServer.sendSystemMessage`).
+                send_error(&source, global, &e, command);
+                return;
+            }
+            log::warn!("{}", global.console_text(&error_message(&e)));
+            if let Some(context) = e.context() {
+                log::warn!(
                     "{}{}{}<--[HERE]",
                     if context.ellipsis { "..." } else { "" },
                     context.before,
                     context.after
-                )
-            });
-            if matches!(source.kind, SourceKind::Rcon(_)) {
-                // `Commands.performCommand`: both lines as failures of the source.
-                source.send_failure(global, error_message(&e));
-                if let Some(context) = context {
-                    source.send_failure(global, vanillite_protocol::text::Component::text(context));
-                }
-                return;
-            }
-            log::warn!("{}", error_message(&e).plain());
-            if let Some(context) = context {
-                log::warn!("{context}");
+                );
             }
         }
     }
