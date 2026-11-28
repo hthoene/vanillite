@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 vanillite-protocol.workspace = true
+vanillite-data.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 

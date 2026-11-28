@@ -1090,12 +1090,12 @@ fn aggregate(
     })
 }
 
-fn mean(v: &[f64]) -> Option<f64> {
+pub(crate) fn mean(v: &[f64]) -> Option<f64> {
     (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
 }
 
 /// Nearest-rank percentile of sorted values.
-fn pct(sorted: &[f64], p: f64) -> Option<f64> {
+pub(crate) fn pct(sorted: &[f64], p: f64) -> Option<f64> {
     let rank = ((p / 100.0) * sorted.len() as f64).ceil() as usize;
     sorted.get(rank.clamp(1, sorted.len().max(1)) - 1).copied()
 }

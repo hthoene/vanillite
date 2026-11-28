@@ -29,6 +29,7 @@
 //! cargo xtask egg [--check] | egg smoke [--image <ref>]
 //! cargo xtask config-docs [--check]
 //! cargo xtask loadtest [--server vanillite|paper|both] [--steps <n,...>] [--hold <s>] ...
+//! cargo xtask loadtest weak [--minutes <n>] [--binary <file>] [--rule <key>=<value>]...
 //! cargo xtask bench all|<scenario>... [--servers <a,b>] [--publish] [--no-deploy]
 //! cargo xtask bench list | report | publish <time|latest|results.json> | nightly [--no-push]
 //! cargo xtask bench commands <scenario>
@@ -48,6 +49,7 @@ mod merge;
 mod parity;
 mod parity_worlds;
 mod version;
+mod weak;
 mod worldgen;
 
 use std::path::{Path, PathBuf};
@@ -260,6 +262,23 @@ pub const USAGE: &str = "usage:
       an earlier run (e.g. a bench spread scenario) left them.
   cargo xtask loadtest report <run.json>...
       Writes report.md and chart.svg for earlier runs next to the first file.
+  cargo xtask loadtest weak [--minutes <n>] [--binary <file>] [--release] [--cpu <n>]
+                            [--memory-mib <n>] [--port <n>] [--rule <key>=<value>]...
+                            [--prebuilt <dir>]
+      Weak hardware under a realistic mixed load, on this machine (#270): the server from
+      this checkout (or --binary) with a fresh world on one CPU (--cpu, default the first one
+      allowed) and 1 GiB (systemd-run scope as root or via the vanillite-limited helper of
+      vanillite-test2; else only pinned), offline mode on --port (default 30950), difficulty
+      normal. tools/loadbot on the other CPUs: 3 explorers fly at sprint speed through new
+      terrain (view distance 10), 3 survival players walk, build, break and fight mobs near
+      the spawn (view distance 8), one player each stands at an animal farm (500 cows) and a
+      redstone contraption (93 observer clocks). Measures --minutes (default 20): MSPT
+      p50/p95/p99/max, TPS, RSS (per minute too), CPU, chunks/s and chunk wait of the bots.
+      Writes target/loadtest-weak/<time>/result.json and server.log (with the phase profile
+      of two minutes in the middle under server/profiles/). --prebuilt <dir> builds nothing:
+      it runs <dir>/vanillite (or --binary) and <dir>/loadbot, results under
+      <dir>/loadtest-weak/ (a machine without the checkout). On vanillite-test2:
+      cargo xtask testserver run --fetch target/loadtest-weak -- loadtest weak
   cargo xtask bench all|<scenario>... [--servers <server,...>] [--publish] [--no-deploy]
                                      [--limits 4c8g|1c1g]
       Benchmark suite (`bench list` shows the scenarios): every scenario against Vanillite
@@ -329,6 +348,7 @@ fn main() -> ExitCode {
         ["docker", rest @ ..] => docker::run_docker(&repo_root(), rest),
         ["egg", rest @ ..] => egg::run(&repo_root(), rest),
         ["config-docs", rest @ ..] => configdoc::run(&repo_root(), rest),
+        ["loadtest", "weak", rest @ ..] => weak::run(&repo_root(), rest),
         ["loadtest", rest @ ..] => loadtest::run(&repo_root(), rest),
         ["bench", rest @ ..] => bench::run(&repo_root(), rest),
         ["setup", rest @ ..] => merge::setup(rest),

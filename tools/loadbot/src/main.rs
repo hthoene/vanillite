@@ -12,7 +12,11 @@
 //! preset: `walk`, `sprint`, `elytra`, `boat`), turning to a new random direction every
 //! `<turn s>` seconds if given; `spread:<radius>` flies at boat speed to a random point within
 //! the radius around the point where the mode started and hovers there; `still` stands where
-//! the server put the bot (e.g. after a `/tp`). Flight cruises at y = 300, above all overworld
+//! the server put the bot (e.g. after a `/tp`); `survival` plays like a survival player near
+//! the point where the mode started: it walks on the ground within the radius, every few
+//! seconds places the block in its first hotbar slot next to it and breaks it again (give it
+//! blocks, e.g. `/give @a dirt 64`), chases and attacks mobs near it and respawns after
+//! death. Flight cruises at y = 300, above all overworld
 //! terrain, with `on_ground` false: the server needs `allow-flight=true`. `--check` only
 //! validates the arguments.
 //!
@@ -70,6 +74,8 @@ pub enum Movement {
     Spread { radius: f64 },
     /// No movement at all.
     Still,
+    /// Walking on the ground within the radius, building, breaking and fighting mobs.
+    Survival,
 }
 
 impl Movement {
@@ -85,11 +91,11 @@ impl Movement {
     /// quickly" limit of 10 blocks per movement packet.
     const MAX_SPEED: f64 = 150.0;
 
-    /// `random`, `still`, `spread:<radius>` or `straight:<speed or preset>[:<turn s>]`.
+    /// `random`, `still`, `survival`, `spread:<radius>` or `straight:<speed or preset>[:<turn s>]`.
     pub fn parse(spec: &str) -> Result<Self, String> {
         let bad = || {
             format!(
-                "movement {spec:?}: expected random, still, spread:<radius> or \
+                "movement {spec:?}: expected random, still, survival, spread:<radius> or \
                  straight:<blocks per s|walk|sprint|elytra|boat>[:<turn s>] with a speed up to {}",
                 Self::MAX_SPEED
             )
@@ -98,6 +104,7 @@ impl Movement {
         match parts.as_slice() {
             ["random"] => Ok(Self::Random),
             ["still"] => Ok(Self::Still),
+            ["survival"] => Ok(Self::Survival),
             ["spread", radius] => radius
                 .parse()
                 .ok()
@@ -135,6 +142,11 @@ pub struct Metrics {
     pub chunks_forgotten: AtomicU64,
     /// Server teleports after the join (rubber-banding of rejected moves).
     pub teleports: AtomicU64,
+    /// Survival bots: attacks on mobs, blocks placed and broken, deaths.
+    pub attacks: AtomicU64,
+    pub placed: AtomicU64,
+    pub broken: AtomicU64,
+    pub deaths: AtomicU64,
     /// Chunks around the bots checked every probe interval, and how many of them were
     /// missing (holes near the players).
     pub near_checked: AtomicU64,
@@ -192,6 +204,10 @@ impl Metrics {
             "chunks": load(&self.chunks),
             "chunks_forgotten": load(&self.chunks_forgotten),
             "teleports": load(&self.teleports),
+            "attacks": load(&self.attacks),
+            "placed": load(&self.placed),
+            "broken": load(&self.broken),
+            "deaths": load(&self.deaths),
             "near_checked": load(&self.near_checked),
             "near_missing": load(&self.near_missing),
             "bytes_in": load(&self.bytes_in),

@@ -85,6 +85,12 @@ step parity-coverage 50 cargo xtask parity coverage --jobs 2 --heap 2g --history
 [ -f target/parity-coverage/summary.md ] && cp target/parity-coverage/summary.md "$out/parity-coverage.md"
 [ -f "$history" ] && cargo xtask parity coverage --trend "$history" > "$(dirname "$out")/coverage-trend.md" 2>/dev/null
 
+# Weak hardware (#270): 20 minutes of a mixed survival load (explorers, builders, mob and
+# redstone farms) on one core with 1 GiB; MSPT, TPS, RSS and chunk delivery in result.json.
+step weak-hardware 35 cargo xtask loadtest weak --minutes 20
+weak=$(ls -d target/loadtest-weak/2* 2> /dev/null | tail -n 1)
+[ -n "$weak" ] && cp "$weak/result.json" "$out/weak-hardware.json"
+
 # Soak parity runs (#166): game days against Vanilla, per-tick checksums; Vanilla's run is
 # recorded once per golden key, so only a new jar, harness or scenario costs its recording.
 soak=$(($(minutes_left) / 2))

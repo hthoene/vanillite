@@ -994,6 +994,7 @@ version = "0.1.0-beta.3"
 dependencies = [
  "serde_json",
  "tokio",
+ "vanillite-data",
  "vanillite-protocol",
 ]
 

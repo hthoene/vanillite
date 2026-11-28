@@ -1,5 +1,5 @@
-//! One bot: login, configuration and the play loop (random walk, straight flight, spread or
-//! standing still, chat, latency probes).
+//! One bot: login, configuration and the play loop (random walk, straight flight, spread,
+//! standing still or survival play, chat, latency probes).
 //!
 //! Incoming packets are framed and counted; only the few a client must answer are decoded.
 
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, watch};
+use vanillite_data::entity::ENTITY_TYPES;
 use vanillite_protocol::codec::{Encode, Reader, write_str, write_varint};
 use vanillite_protocol::frame::{FrameDecoder, FrameEncoder};
 use vanillite_protocol::ids;
@@ -20,13 +21,17 @@ use vanillite_protocol::packets::handshake::{Intent, Intention};
 use vanillite_protocol::packets::login::{
     CookieResponse, CustomQueryAnswer, Hello, LoginAcknowledged,
 };
-use vanillite_protocol::packets::play::clientbound::PlayerPosition;
+use vanillite_protocol::packets::play::clientbound::{
+    AddEntity, EntityPositionSync, MoveEntityPos, MoveEntityPosRot, PlayerPosition, PositionPath,
+    RemoveEntities, TeleportEntity, VecDelta,
+};
 use vanillite_protocol::packets::play::serverbound::{
-    AcceptTeleportation, ChunkBatchReceived, ClientTickEnd, MoveFlags, MovePlayerPosRot,
-    PlayerLoaded,
+    AcceptTeleportation, Attack, ChunkBatchReceived, ClientCommand, ClientCommandAction,
+    ClientTickEnd, DigAction, Hand, MoveFlags, MovePlayerPosRot, PlayerActionPacket, PlayerLoaded,
+    UseItemOn,
 };
 use vanillite_protocol::sets::{ClientboundConfiguration, ClientboundLogin};
-use vanillite_protocol::types::Uuid;
+use vanillite_protocol::types::{BlockPos, Uuid};
 use vanillite_protocol::{Decode, Packet, State};
 
 use crate::{Config, Metrics, Movement};
@@ -53,6 +58,20 @@ const MOTION_BLOCKING: i32 = 4;
 const MIN_Y: f64 = -64.0;
 /// Half the width of a player's bounding box.
 const HALF_WIDTH: f64 = 0.3;
+/// Survival: ticks between two building rounds (place a block, break it again).
+const BUILD_EVERY: u64 = 200;
+/// Survival: ticks a bot digs before it finishes breaking (dirt by hand takes 15).
+const DIG_TICKS: u64 = 24;
+/// Survival: mobs within this many blocks are chased, within `ATTACK_RANGE` hit.
+const CHASE_RANGE: f64 = 16.0;
+const ATTACK_RANGE: f64 = 2.5;
+/// Survival: ticks between two hits (a sword's attack cooldown is 12.5).
+const ATTACK_EVERY: u64 = 13;
+/// Survival: higher ground than this is a wall, a drop deeper than `MAX_DROP` a cliff; steps
+/// up are climbed by `CLIMB_STEP` per tick.
+const MAX_CLIMB: f64 = 1.25;
+const MAX_DROP: f64 = 3.0;
+const CLIMB_STEP: f64 = 0.42;
 
 /// The ground of one chunk: the `MOTION_BLOCKING` heights by `x + 16 * z`, as block y above
 /// [`MIN_Y`].
@@ -120,6 +139,28 @@ enum Action {
     Pong(i64),
     Disconnect(String),
     StartConfiguration,
+    /// An entity appeared (id, position, whether it is a mob).
+    Entity(i32, [f64; 3], bool),
+    EntityMoved(i32, [f64; 3]),
+    EntityAt(i32, [f64; 3]),
+    EntitiesRemoved(Vec<i32>),
+    Health(f32),
+    Respawned,
+}
+
+/// A survival bot's building round: place a block next to it, then dig it away.
+#[derive(Debug, Clone, Copy)]
+struct Build {
+    /// The block the bot placed and digs (its column's ground rose by one).
+    pos: BlockPos,
+    /// Tick of the placement; digging starts 2 ticks later and ends `DIG_TICKS` after that.
+    at: u64,
+}
+
+/// An entity a survival bot sees.
+struct Seen {
+    pos: [f64; 3],
+    mob: bool,
 }
 
 impl Bot {
@@ -163,6 +204,8 @@ impl Bot {
         // Play: answer what must be answered, walk once the first chunk is there.
         let mut pos: Option<(f64, f64, f64)> = None;
         let mut home = (0.0, 0.0);
+        // The next server teleport sets home (after a respawn).
+        let mut home_reset = false;
         let mut yaw: f64 = self.rng.next_f64() * 360.0;
         let mut movement = *self.movement.borrow_and_update();
         let mut next_turn = turn_deadline(movement);
@@ -190,12 +233,20 @@ impl Bot {
         let mut next_chat = tokio::time::Instant::now()
             + chat_every.map_or(Duration::ZERO, |d| d.mul_f64(self.rng.next_f64()));
         let mut actions = Vec::new();
+        // Survival: entities in view, the running building round, tick counters.
+        let mut seen: HashMap<i32, Seen> = HashMap::new();
+        let mut build: Option<Build> = None;
+        let mut ticks: u64 = 0;
+        let mut next_build: u64 = BUILD_EVERY / 2 + self.rng.next_u64() % BUILD_EVERY;
+        let mut next_attack: u64 = 0;
+        let mut sequence: i32 = 0;
+        let mut dead = false;
         loop {
             tokio::select! {
                 ready = conn.stream.readable() => {
                     ready.map_err(|e| format!("read: {e}"))?;
                     conn.fill()?;
-                    conn.drain_play(&mut actions)?;
+                    conn.drain_play(&mut actions, movement == Movement::Survival)?;
                     for action in actions.drain(..) {
                         match action {
                             Action::KeepAlive(id) => {
@@ -218,8 +269,9 @@ impl Bot {
                                     y_rot: t.change.y_rot,
                                     x_rot: t.change.x_rot,
                                 })?;
-                                if pos.is_none() {
+                                if pos.is_none() || home_reset {
                                     home = (p.x, p.z);
+                                    home_reset = false;
                                 } else if *joined {
                                     self.metrics.teleports.fetch_add(1, Ordering::Relaxed);
                                 }
@@ -266,6 +318,41 @@ impl Bot {
                             Action::StartConfiguration => {
                                 return Err("server restarted configuration".into());
                             }
+                            Action::Entity(id, pos, mob) => {
+                                seen.insert(id, Seen { pos, mob });
+                            }
+                            Action::EntityMoved(id, d) => {
+                                if let Some(e) = seen.get_mut(&id) {
+                                    (0..3).for_each(|i| e.pos[i] += d[i]);
+                                }
+                            }
+                            Action::EntityAt(id, pos) => {
+                                if let Some(e) = seen.get_mut(&id) {
+                                    e.pos = pos;
+                                }
+                            }
+                            Action::EntitiesRemoved(ids) => {
+                                for id in ids {
+                                    seen.remove(&id);
+                                }
+                            }
+                            Action::Health(health) => {
+                                if health <= 0.0 && !dead {
+                                    dead = true;
+                                    build = None;
+                                    self.metrics.deaths.fetch_add(1, Ordering::Relaxed);
+                                    conn.queue(&ClientCommand {
+                                        action: ClientCommandAction::PerformRespawn,
+                                    })?;
+                                } else if health > 0.0 {
+                                    dead = false;
+                                }
+                            }
+                            Action::Respawned => {
+                                seen.clear();
+                                // The walk continues around the respawn point.
+                                home_reset = true;
+                            }
                         }
                     }
                     // In the world once the position and a first chunk are there, in either
@@ -299,6 +386,7 @@ impl Bot {
                     conn.flush().await?;
                 }
                 _ = tick.tick(), if *joined => {
+                    ticks += 1;
                     let Some((x, y, z)) = pos.as_mut() else { continue };
                     let center = ((*x / 16.0).floor() as i32, (*z / 16.0).floor() as i32);
                     if full_view && wanted_center != Some(center) {
@@ -349,6 +437,84 @@ impl Bot {
                             yaw = (-dx).atan2(dz).to_degrees();
                             climb(y, (SPREAD_SPEED / 20.0).min(left))
                         }
+                        Movement::Survival => {
+                            // Dead bots wait for the respawn; building and fighting bots
+                            // stand.
+                            let mut speed = WALK_SPEED;
+                            if dead {
+                                speed = 0.0;
+                            } else if let Some(b) = build {
+                                speed = 0.0;
+                                let dig = BlockPos { x: b.pos.x, y: b.pos.y, z: b.pos.z };
+                                if ticks == b.at + 2 {
+                                    conn.queue(&PlayerActionPacket {
+                                        action: DigAction::StartDestroyBlock,
+                                        pos: dig,
+                                        direction: 1,
+                                        sequence: next(&mut sequence),
+                                    })?;
+                                } else if ticks >= b.at + 2 + DIG_TICKS {
+                                    conn.queue(&PlayerActionPacket {
+                                        action: DigAction::StopDestroyBlock,
+                                        pos: dig,
+                                        direction: 1,
+                                        sequence: next(&mut sequence),
+                                    })?;
+                                    lower(&mut ground, b.pos);
+                                    self.metrics.broken.fetch_add(1, Ordering::Relaxed);
+                                    build = None;
+                                }
+                            } else if let Some((id, d, ex, ez)) = nearest_mob(&seen, (*x, *y, *z))
+                                && d < CHASE_RANGE
+                                && (ex - home.0).hypot(ez - home.1) < self.config.radius + CHASE_RANGE
+                            {
+                                yaw = (-(ex - *x)).atan2(ez - *z).to_degrees();
+                                if d < ATTACK_RANGE {
+                                    speed = 0.0;
+                                    if ticks >= next_attack {
+                                        next_attack = ticks + ATTACK_EVERY;
+                                        conn.queue(&Attack { entity_id: id })?;
+                                        self.metrics.attacks.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                            } else if ticks >= next_build {
+                                next_build = ticks + BUILD_EVERY;
+                                // The column two blocks ahead: out of the bot's box, in reach.
+                                let rad = yaw.to_radians();
+                                let bx = (*x - rad.sin() * 2.0).floor() as i32;
+                                let bz = (*z + rad.cos() * 2.0).floor() as i32;
+                                if let Some(top) = raise(&mut ground, bx, bz) {
+                                    speed = 0.0;
+                                    conn.queue(&UseItemOn {
+                                        hand: Hand::MainHand,
+                                        pos: BlockPos { x: bx, y: top - 1, z: bz },
+                                        face: 1,
+                                        cursor_x: 0.5,
+                                        cursor_y: 1.0,
+                                        cursor_z: 0.5,
+                                        inside: false,
+                                        world_border_hit: false,
+                                        sequence: next(&mut sequence),
+                                    })?;
+                                    self.metrics.placed.fetch_add(1, Ordering::Relaxed);
+                                    build = Some(Build {
+                                        pos: BlockPos { x: bx, y: top, z: bz },
+                                        at: ticks,
+                                    });
+                                }
+                            } else {
+                                // Drift the heading, turn back home outside the radius.
+                                let (dx, dz) = (*x - home.0, *z - home.1);
+                                if dx * dx + dz * dz > self.config.radius * self.config.radius {
+                                    yaw = (-dx).atan2(dz).to_degrees()
+                                        + 180.0
+                                        + self.rng.range(-30.0, 30.0);
+                                } else {
+                                    yaw += self.rng.range(-15.0, 15.0);
+                                }
+                            }
+                            speed
+                        }
                         Movement::Random => {
                             // Drift the heading, turn back home outside the radius.
                             let (dx, dz) = (*x - home.0, *z - home.1);
@@ -391,7 +557,20 @@ impl Bot {
                     let (old_x, old_z) = (*x, *z);
                     *x -= rad.sin() * speed;
                     *z += rad.cos() * speed;
-                    if movement == Movement::Random
+                    if movement == Movement::Survival
+                        && let Some(new) = ground_at(&ground, *x, *z)
+                        && (new > *y + MAX_CLIMB || new < *y - MAX_DROP || new > *y + 1e-6)
+                    {
+                        // Walls and cliffs turn the bot around; a step up is climbed first,
+                        // straight up, then walked onto.
+                        *x = old_x;
+                        *z = old_z;
+                        if new > *y + MAX_CLIMB || new < *y - MAX_DROP {
+                            yaw += 180.0 + self.rng.range(-45.0, 45.0);
+                        } else {
+                            *y = new.min(*y + CLIMB_STEP);
+                        }
+                    } else if matches!(movement, Movement::Random | Movement::Survival)
                         && let Some(new) = ground_at(&ground, *x, *z)
                     {
                         // Up at once; down only once the box left the higher ground, as
@@ -408,7 +587,7 @@ impl Bot {
                         y_rot: (yaw.rem_euclid(360.0)) as f32,
                         x_rot: 0.0,
                         flags: MoveFlags {
-                            on_ground: movement == Movement::Random,
+                            on_ground: matches!(movement, Movement::Random | Movement::Survival),
                             horizontal_collision: false,
                         },
                     })?;
@@ -445,6 +624,65 @@ impl Bot {
             }
         }
     }
+}
+
+/// The next block action sequence number.
+fn next(sequence: &mut i32) -> i32 {
+    *sequence = sequence.wrapping_add(1);
+    *sequence
+}
+
+/// The nearest mob: id, distance and horizontal position.
+fn nearest_mob(
+    seen: &HashMap<i32, Seen>,
+    (x, y, z): (f64, f64, f64),
+) -> Option<(i32, f64, f64, f64)> {
+    seen.iter()
+        .filter(|(_, e)| e.mob)
+        .map(|(&id, e)| {
+            let d =
+                ((e.pos[0] - x).powi(2) + (e.pos[1] - y).powi(2) + (e.pos[2] - z).powi(2)).sqrt();
+            (id, d, e.pos[0], e.pos[2])
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+}
+
+/// Raises the known ground of block column `x`, `z` by one (a block placed on top); returns
+/// the y of the new block, `None` if the chunk is not known.
+fn raise(ground: &mut HashMap<(i32, i32), Ground>, x: i32, z: i32) -> Option<i32> {
+    let heights = ground.get_mut(&(x >> 4, z >> 4))?;
+    let h = &mut heights[((x & 15) + 16 * (z & 15)) as usize];
+    let top = MIN_Y as i32 + i32::from(*h);
+    *h += 1;
+    Some(top)
+}
+
+/// Lowers the known ground of the column of `pos` back to below `pos` (the block was broken).
+fn lower(ground: &mut HashMap<(i32, i32), Ground>, pos: BlockPos) {
+    if let Some(heights) = ground.get_mut(&(pos.x >> 4, pos.z >> 4)) {
+        let h = u16::try_from(pos.y - MIN_Y as i32).unwrap_or(0);
+        let cell = &mut heights[((pos.x & 15) + 16 * (pos.z & 15)) as usize];
+        *cell = (*cell).min(h);
+    }
+}
+
+/// Sum of the steps of a `move_entity_pos(_rot)` delta in blocks.
+fn delta_blocks(delta: &VecDelta) -> [f64; 3] {
+    let steps: &[[i16; 3]] = match delta {
+        VecDelta::Linear(d) => std::slice::from_ref(d),
+        VecDelta::Stepped(s) => {
+            return s.iter().fold([0.0; 3], |mut a, (_, d)| {
+                (0..3).for_each(|i| a[i] += f64::from(d[i]) / 4096.0);
+                a
+            });
+        }
+    };
+    let d = steps[0];
+    [
+        f64::from(d[0]) / 4096.0,
+        f64::from(d[1]) / 4096.0,
+        f64::from(d[2]) / 4096.0,
+    ]
 }
 
 /// The highest ground under a player's box at `x`, `z` (`None`: a chunk is not known).
@@ -733,11 +971,12 @@ impl Conn {
         }
     }
 
-    /// Decodes the buffered play packets into actions; the rest is only counted.
-    fn drain_play(&mut self, actions: &mut Vec<Action>) -> BotResult<()> {
+    /// Decodes the buffered play packets into actions; the rest is only counted. Entity
+    /// packets only with `entities` (survival bots).
+    fn drain_play(&mut self, actions: &mut Vec<Action>, entities: bool) -> BotResult<()> {
         // Counted once per call: the shared counter costs more than decoding at these rates.
         let mut packets = 0u64;
-        let drained = self.drain_frames(actions, &mut packets);
+        let drained = self.drain_frames(actions, entities, &mut packets);
         self.metrics
             .packets_in
             .fetch_add(packets, Ordering::Relaxed);
@@ -747,6 +986,7 @@ impl Conn {
     fn drain_frames(
         &mut self,
         actions: &mut Vec<Action>,
+        entities: bool,
         packets: &mut u64,
     ) -> Result<(), vanillite_protocol::Error> {
         use ids::play::clientbound as id;
@@ -769,6 +1009,49 @@ impl Conn {
                     Action::Forget(packed as i32, (packed >> 32) as i32)
                 }
                 id::START_CONFIGURATION => Action::StartConfiguration,
+                id::SET_HEALTH => Action::Health(r.f32()?),
+                id::RESPAWN => Action::Respawned,
+                id::ADD_ENTITY if entities => {
+                    let e = AddEntity::decode(&mut r)?;
+                    // Mobs: types with attributes (living), except players.
+                    let mob = usize::try_from(e.entity_type)
+                        .ok()
+                        .and_then(|t| ENTITY_TYPES.get(t))
+                        .is_some_and(|t| !t.attributes.is_empty() && t.name != "minecraft:player");
+                    let p = e.position;
+                    Action::Entity(e.entity_id, [p.x, p.y, p.z], mob)
+                }
+                id::MOVE_ENTITY_POS if entities => {
+                    let m = MoveEntityPos::decode(&mut r)?;
+                    Action::EntityMoved(m.entity_id, delta_blocks(&m.delta))
+                }
+                id::MOVE_ENTITY_POS_ROT if entities => {
+                    let m = MoveEntityPosRot::decode(&mut r)?;
+                    Action::EntityMoved(m.entity_id, delta_blocks(&m.delta))
+                }
+                id::ENTITY_POSITION_SYNC if entities => {
+                    let s = EntityPositionSync::decode(&mut r)?;
+                    let p = match s.path {
+                        PositionPath::Linear(p) => p,
+                        PositionPath::Stepped(steps) => match steps.last() {
+                            Some((p, _)) => *p,
+                            None => continue,
+                        },
+                    };
+                    Action::EntityAt(s.entity_id, [p.x, p.y, p.z])
+                }
+                id::TELEPORT_ENTITY if entities => {
+                    let t = TeleportEntity::decode(&mut r)?;
+                    // Relative teleports are rare; the next sync corrects them.
+                    if t.relatives & 0b111 != 0 {
+                        continue;
+                    }
+                    let p = t.change.position;
+                    Action::EntityAt(t.entity_id, [p.x, p.y, p.z])
+                }
+                id::REMOVE_ENTITIES if entities => {
+                    Action::EntitiesRemoved(RemoveEntities::decode(&mut r)?.ids.0)
+                }
                 id::DISCONNECT => Action::Disconnect(
                     vanillite_protocol::packets::play::clientbound::Disconnect::decode(&mut r)
                         .map_or_else(|_| "?".to_owned(), |d| d.reason.plain()),
