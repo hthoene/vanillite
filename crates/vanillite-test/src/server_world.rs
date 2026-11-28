@@ -274,6 +274,7 @@ fn world_id(server: &Server, dimension: &str) -> Result<WorldId, String> {
 impl ServerWorld {
     /// The server of `spec`, with the chunks of the region and the views ticking.
     pub fn new(spec: &WorldSpec) -> Result<Self, String> {
+        crate::assert_vanilla_environment();
         install();
         vanillite_game::mob::set_parity_shuffle_seed(Some(PARITY_SHUFFLE_SEED));
         if spec.observe_light {

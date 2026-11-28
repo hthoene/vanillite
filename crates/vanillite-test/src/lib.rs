@@ -32,13 +32,56 @@ pub mod soak;
 pub mod trace;
 pub mod world;
 
-/// The guard of every server the harness starts: parity runs on the `vanilla` profile only
-/// (#319; the default is `paper`). Panics on any other profile, from the test directory's
-/// `vanillite.toml` or a `VANILLITE_PROFILE` in the environment.
+/// Why `profile` cannot run parity, if it cannot: parity runs on the `vanilla` profile only
+/// (#319; the default is `paper`).
+pub fn check_vanilla_profile(profile: vanillite_config::Profile) -> Result<(), String> {
+    if profile == vanillite_config::Profile::Vanilla {
+        return Ok(());
+    }
+    Err(format!(
+        "the parity harness runs profile \"{profile}\", but parity needs \"vanilla\": write \
+         profile = \"vanilla\" into the server's vanillite.toml and unset VANILLITE_PROFILE"
+    ))
+}
+
+/// The guard of every server the harness starts: panics unless its configuration runs the
+/// `vanilla` profile ([`check_vanilla_profile`]).
 pub fn assert_vanilla_profile(profile: vanillite_config::Profile) {
-    assert!(
-        profile == vanillite_config::Profile::Vanilla,
-        "the parity harness runs profile \"{profile}\", but parity needs \"vanilla\": \
-         write profile = \"vanilla\" into the server's vanillite.toml and unset VANILLITE_PROFILE"
-    );
+    if let Err(e) = check_vanilla_profile(profile) {
+        panic!("{e}");
+    }
+}
+
+/// The guard of every scenario world: panics when `VANILLITE_PROFILE` selects another profile
+/// than `vanilla` (an empty variable is ignored, like the server does).
+pub fn assert_vanilla_environment() {
+    let Ok(name) = std::env::var("VANILLITE_PROFILE") else {
+        return;
+    };
+    if name.is_empty() {
+        return;
+    }
+    match vanillite_config::Profile::parse(&name) {
+        Some(profile) => assert_vanilla_profile(profile),
+        None => panic!("VANILLITE_PROFILE={name:?} is no profile; parity needs \"vanilla\""),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vanillite_config::Profile;
+
+    #[test]
+    fn only_vanilla_runs_parity() {
+        assert!(super::check_vanilla_profile(Profile::Vanilla).is_ok());
+        for profile in Profile::ALL.into_iter().filter(|p| *p != Profile::Vanilla) {
+            assert!(super::check_vanilla_profile(profile).is_err(), "{profile}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "parity needs \"vanilla\"")]
+    fn paper_fails_loudly() {
+        super::assert_vanilla_profile(Profile::Paper);
+    }
 }

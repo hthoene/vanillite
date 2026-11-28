@@ -671,6 +671,7 @@ impl GameWorld {
     /// The world of `spec`. The simulation runs on the world's thread only, so serial and
     /// parallel execution are the same.
     pub fn new(spec: &WorldSpec) -> Result<Self, String> {
+        crate::assert_vanilla_environment();
         install();
         // The recorder seeds every shuffled behaviour list's random alike
         // (`ParityHooks.shuffleRandom`).

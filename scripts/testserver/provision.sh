@@ -1065,12 +1065,9 @@ case $cmd in
         unit=$(unit_of "$target")
         dropin=/run/systemd/system/vanillite@30901.service.d/bench-profile.conf
         if [ "$target" = vanillite ]; then
-            if [ -n "${2:-}" ]; then
-                install -d "$(dirname "$dropin")"
-                printf '[Service]\nEnvironment=VANILLITE_PROFILE=%s\n' "$2" > "$dropin"
-            else
-                rm -f "$dropin"
-            fi
+            # Always explicit (#319): without a profile argument the run uses vanilla.
+            install -d "$(dirname "$dropin")"
+            printf '[Service]\nEnvironment=VANILLITE_PROFILE=%s\n' "${2:-vanilla}" > "$dropin"
             systemctl daemon-reload
             rm -f /opt/vanillite/30901/tick.log
         fi

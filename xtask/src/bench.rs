@@ -391,7 +391,8 @@ fn display(server: &str) -> &str {
 /// The test server target and the Vanillite rule profile of a server id.
 fn target_of(server: &str) -> Result<(Target, Option<&'static str>)> {
     Ok(match server {
-        "vanillite" => (Target::Vanillite, None),
+        // Explicit (#319): the binary's default profile is paper.
+        "vanillite" => (Target::Vanillite, Some("vanilla")),
         "vanillite-paper" => (Target::Vanillite, Some("paper")),
         "paper" => (Target::Paper, None),
         "vanilla" => (Target::Vanilla, None),
@@ -703,8 +704,11 @@ fn weak(
     hold: u64,
 ) -> Result<Value> {
     reset(ctx, target.name(), limits)?;
+    let (_, profile) = target_of(server)?;
     let result = (|| {
-        let started = bench_json(&ctx.host, &["start", target.name()])?;
+        let mut args = vec!["start", target.name()];
+        args.extend(profile);
+        let started = bench_json(&ctx.host, &args)?;
         if let Some(v) = started["version"].as_str() {
             ctx.versions.insert(server.to_owned(), v.to_owned());
         }
@@ -764,7 +768,7 @@ fn fresh_start(
     if proxy {
         let limits = ctx.profile.clone();
         reset(ctx, "vanillite", &limits)?;
-        bench_json(&ctx.host, &["start", "vanillite"])?;
+        bench_json(&ctx.host, &["start", "vanillite", "vanilla"])?;
     }
     let limits = ctx.profile.clone();
     reset(ctx, target.name(), &limits)?;
