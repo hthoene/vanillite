@@ -1317,7 +1317,8 @@ impl Chunks {
                 break true;
             }
             progress |= self.dispatch();
-            if progress {
+            // A blocked check may add a generation ticket: its level changes come first.
+            if progress || !self.level_changes.is_empty() {
                 continue;
             }
             if self.in_flight == 0 && self.check.is_empty() {
