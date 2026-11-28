@@ -832,6 +832,16 @@
       "field_type": "text"
     },
     {
+      "name": "Performance: Chunks › Fast View Fill",
+      "description": "Fills a joining player's view faster, at the pace its client asks for: the first batch goes out the moment the player is placed (Vanilla waits for the next tick), carries all ready chunks around the spawn (as Vanilla sends to an in-process client), and while no batch is unacknowledged a tick's chunks go out as several small batches, so the client's chunks-per-tick estimate settles sooner. The chunks per tick stay within the client's request. Deviation: the client gets chunks earlier than from Vanilla, so a block changed meanwhile arrives as a block update instead of inside the chunk (same world). `false` (the `vanilla` and `technical` profiles) sends Vanilla's one batch per tick, 9 chunks first, from the tick after the join. Applies to every world. default: the profile's value (vanilla profile: false). vanillite.toml: performance.chunks.fast-view-fill.",
+      "env_variable": "VANILLITE_PERFORMANCE__CHUNKS__FAST_VIEW_FILL",
+      "default_value": "default",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|in:default,true,false",
+      "field_type": "text"
+    },
+    {
       "name": "Performance: Region Threading › Enabled",
       "description": "Turns the tile region mode on: natural mob spawning and random ticks of a world are worked out per tile (a fixed square of chunks) on several cores. Faster when players are spread out; no gain for a crowd in one place. Deviation: these phases draw their random numbers per tile, so a seeded world differs from Vanilla (same rates), and a player's mob cap can be exceeded by one tick's spawns at a tile border. On in the performance profile; `false` keeps Vanilla's exact serial order at no cost. Applies to every world. default: the profile's value (vanilla profile: false). vanillite.toml: performance.region-threading.enabled.",
       "env_variable": "VANILLITE_PERFORMANCE__REGION_THREADING__ENABLED",
