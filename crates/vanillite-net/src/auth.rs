@@ -100,13 +100,26 @@ pub trait Authenticator: Send + Sync + 'static {
         server_hash: &str,
         ip: Option<std::net::IpAddr>,
     ) -> AuthResult;
+
+    /// A login is about to be authenticated (the client got the encryption request and asks
+    /// the session server itself now): a chance to open the connection to the session server
+    /// in the meantime. Called on a blocking thread; must not affect the result of
+    /// [`Authenticator::authenticate`].
+    fn prepare(&self) {}
 }
+
+/// How long an opened session server connection counts as warm: within this time after the
+/// last request [`SessionServer::prepare`] sends nothing (the pooled connection is still
+/// open, `ureq`'s idle limit is 15 s).
+const WARM_FOR: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Mojang's session server.
 #[derive(Debug)]
 pub struct SessionServer {
     base: String,
     agent: ureq::Agent,
+    /// When the last request to the session server ended.
+    last_used: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl SessionServer {
@@ -120,7 +133,20 @@ impl SessionServer {
         Self {
             base: "https://sessionserver.mojang.com/session/minecraft/hasJoined".into(),
             agent,
+            last_used: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Notes a finished request; returns whether the connection was warm before.
+    fn touch(&self) -> bool {
+        let mut last = self
+            .last_used
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let now = std::time::Instant::now();
+        let warm = last.is_some_and(|t| now.duration_since(t) < WARM_FOR);
+        *last = Some(now);
+        warm
     }
 }
 
@@ -139,7 +165,9 @@ impl Authenticator for SessionServer {
         if let Some(ip) = ip {
             req = req.query("ip", ip.to_string());
         }
-        let mut resp = match req.call() {
+        let result = req.call();
+        self.touch();
+        let mut resp = match result {
             Ok(r) => r,
             Err(_) => return AuthResult::Unavailable,
         };
@@ -157,6 +185,17 @@ impl Authenticator for SessionServer {
             return AuthResult::Unavailable;
         };
         parse_profile(&body).map_or(AuthResult::Unavailable, AuthResult::Verified)
+    }
+
+    /// Opens (and pools) the TLS connection while the client talks to Mojang, so
+    /// `hasJoined` does not pay for the handshake: a `HEAD` without parameters, at most once
+    /// per [`WARM_FOR`]. Its answer is ignored.
+    fn prepare(&self) {
+        if self.touch() {
+            return;
+        }
+        let _ = self.agent.head(&self.base).call();
+        self.touch();
     }
 }
 

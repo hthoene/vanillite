@@ -1125,6 +1125,27 @@ impl WorldPlayers {
         }
     }
 
+    /// Writes what was queued for a player just placed (it may be placed between ticks). With
+    /// `fast_fill` (`performance.chunks.fast-view-fill`) its first chunk batch goes out with
+    /// it instead of with the world's next tick (the spawn chunks are full).
+    pub(crate) fn send_first_chunks(
+        entities: &mut Entities,
+        player: EntityId,
+        source: &dyn ChunkSource,
+        fast_fill: bool,
+    ) {
+        if let Some(player) = entities.player_mut(player) {
+            let connection = &mut player.connection;
+            connection.chunks.set_fast_fill(fast_fill);
+            if fast_fill {
+                connection
+                    .chunks
+                    .send_next_chunks(source, connection.sink.as_ref());
+            }
+            connection.sink.flush();
+        }
+    }
+
     /// Whether `chunk` is in view of `player` but not sent yet.
     pub(crate) fn chunk_pending(entities: &Entities, player: EntityId, chunk: ChunkPos) -> bool {
         entities

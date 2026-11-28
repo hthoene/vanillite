@@ -49,10 +49,19 @@ pub(crate) struct Shared {
     pub(crate) auth_permits: Semaphore,
     pub(crate) logins: std::sync::mpsc::SyncSender<LoginCheck>,
     pub(crate) joins: std::sync::mpsc::SyncSender<Joined>,
+    /// Wakes the server thread after a login or join arrived ([`Network::set_arrival_waker`]).
+    arrival_waker: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
     pub(crate) session_id: Uuid,
 }
 
 impl Shared {
+    /// Tells the server thread that [`Arrivals`] has something new.
+    pub(crate) fn wake_server(&self) {
+        if let Some(wake) = self.arrival_waker.get() {
+            wake();
+        }
+    }
+
     /// The current configuration data.
     pub(crate) fn configuration(&self) -> Arc<ConfigurationData> {
         Arc::clone(
@@ -134,7 +143,8 @@ impl VirtualOpener {
 }
 
 /// What connections hand to the server: logins waiting for its decision, then joined players.
-/// Both are drained on the server thread every tick.
+/// Both are drained on the server thread every tick, and between ticks when the
+/// [`Network::set_arrival_waker`] wakes it.
 #[derive(Debug)]
 pub struct Arrivals {
     /// Logins to admit or refuse before `LoginFinished`.
@@ -198,6 +208,7 @@ impl Network {
             auth_permits: Semaphore::new(config.max_concurrent_auth.max(1)),
             logins,
             joins,
+            arrival_waker: std::sync::OnceLock::new(),
             session_id: Uuid(u128::from_be_bytes(conn::rand_bytes())),
             config,
         });
@@ -226,6 +237,14 @@ impl Network {
     /// The status cache, for the server to update player counts and the description.
     pub fn status(&self) -> &StatusCache {
         &self.shared.status
+    }
+
+    /// Sets what wakes the server thread after a login or join was handed to [`Arrivals`],
+    /// so it decides and places them between ticks instead of at the next tick (Vanilla runs
+    /// `handleConfigurationFinished` through `server.execute`). Set once; later calls are
+    /// ignored.
+    pub fn set_arrival_waker(&self, wake: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.shared.arrival_waker.set(wake);
     }
 
     /// Replaces the tags joining clients get (after `/reload`).

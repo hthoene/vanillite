@@ -695,6 +695,9 @@ impl Conn {
                 challenge: RawBytes(challenge.to_vec()),
                 should_authenticate: true,
             });
+            // The client asks the session server now; open our connection to it meanwhile.
+            let auth = Arc::clone(&self.shared.authenticator);
+            drop(tokio::task::spawn_blocking(move || auth.prepare()));
             let key = match self.recv(ServerboundLogin::decode).await? {
                 ServerboundLogin::Key(key) => key,
                 other => return Err(unexpected_login(&other, "expected key")),
@@ -764,6 +767,7 @@ impl Conn {
             address: self.addr,
             is_virtual: self.vouched.is_some(),
             memory: self.memory,
+            connection: Arc::downgrade(&self.details),
             answer,
         };
         if self.shared.logins.try_send(check).is_err() {
@@ -772,6 +776,7 @@ impl Conn {
                 vec![],
             )));
         }
+        self.shared.wake_server();
         let verdict = match self.deadline {
             Some(deadline) => tokio::time::timeout_at(deadline, verdict)
                 .await
@@ -1039,6 +1044,7 @@ impl Conn {
                 vec![],
             )));
         }
+        self.shared.wake_server();
         if let Some(g) = self.guard.as_mut() {
             g.joined();
         }

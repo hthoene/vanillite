@@ -489,6 +489,18 @@ rules! {
             /// Background chunk jobs (loads, generation steps, light) in flight per world. Higher
             /// values load faster with many players at the cost of memory for queued work.
             max_jobs: u16 = "max-jobs", Performance, range = [1, 4096], vanilla = 64;
+            /// Fills a joining player's view faster, at the pace its client asks for: the first
+            /// batch goes out the moment the player is placed (Vanilla waits for the next
+            /// tick), carries all ready chunks around the spawn (as Vanilla sends to an
+            /// in-process client), and while no batch is unacknowledged a tick's chunks go out
+            /// as several small batches, so the client's chunks-per-tick estimate settles
+            /// sooner. The chunks per tick stay within the client's request. Deviation: the
+            /// client gets chunks earlier than from Vanilla, so a block changed meanwhile
+            /// arrives as a block update instead of inside the chunk (same world). `false`
+            /// (the `vanilla` and `technical` profiles) sends Vanilla's one batch per tick, 9
+            /// chunks first, from the tick after the join.
+            fast_view_fill: bool = "fast-view-fill", Performance, vanilla = false,
+                paper = true, spigot = true, performance = true;
         }
         /// Tile region mode: one world on several cores. The world is cut into fixed square
         /// tiles; the tiles' natural mob spawning and random ticks are worked out in parallel

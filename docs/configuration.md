@@ -325,6 +325,7 @@ view-distance = 8
 |---|---|---|---|---|---|---|---|---|
 | `unload-delay` | performance |  | `100` | `100` | `100` | `100` | `100` | Ticks a chunk stays loaded after no player or ticket needs it, so walking back does not load it again. Integer from 0 to 6000. Environment: `VANILLITE_PERFORMANCE__CHUNKS__UNLOAD_DELAY`. |
 | `max-jobs` | performance |  | `64` | `64` | `64` | `64` | `64` | Background chunk jobs (loads, generation steps, light) in flight per world. Higher values load faster with many players at the cost of memory for queued work. Integer from 1 to 4096. Environment: `VANILLITE_PERFORMANCE__CHUNKS__MAX_JOBS`. |
+| `fast-view-fill` | performance |  | `false` | `false` | `true` | `true` | `true` | Fills a joining player's view faster, at the pace its client asks for: the first batch goes out the moment the player is placed (Vanilla waits for the next tick), carries all ready chunks around the spawn (as Vanilla sends to an in-process client), and while no batch is unacknowledged a tick's chunks go out as several small batches, so the client's chunks-per-tick estimate settles sooner. The chunks per tick stay within the client's request. Deviation: the client gets chunks earlier than from Vanilla, so a block changed meanwhile arrives as a block update instead of inside the chunk (same world). `false` (the `vanilla` and `technical` profiles) sends Vanilla's one batch per tick, 9 chunks first, from the tick after the join. Environment: `VANILLITE_PERFORMANCE__CHUNKS__FAST_VIEW_FILL`. |
 
 #### `[performance.region-threading]`
 

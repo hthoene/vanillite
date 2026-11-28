@@ -28,6 +28,9 @@ pub struct LoginCheck {
     pub is_virtual: bool,
     /// An in-process client (Vanilla's `memoryConnection`).
     pub memory: bool,
+    /// Alive as long as the connection is: what the server prepares for the login (the spawn
+    /// chunks) can end with it.
+    pub connection: std::sync::Weak<ClientDetails>,
     pub(crate) answer: oneshot::Sender<LoginAnswer>,
 }
 

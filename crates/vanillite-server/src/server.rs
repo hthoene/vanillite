@@ -101,6 +101,9 @@ enum ServerMsg {
     WorldTicked(WorldId, Vec<(WorldId, WorldTask)>),
     /// A world thread panicked.
     WorldCrashed(WorldId),
+    /// A login or a finished configuration waits in the network's arrivals: decided and
+    /// placed between ticks, like Vanilla's `server.execute`.
+    Arrivals,
 }
 
 enum WorldMsg {
@@ -762,6 +765,10 @@ impl ServerBuilder {
         if !config.properties.online_mode {
             log::warn!("**** SERVER IS RUNNING IN OFFLINE/INSECURE MODE!");
         }
+        let wake = sender.clone();
+        net.network.set_arrival_waker(Box::new(move || {
+            let _ = wake.send(ServerMsg::Arrivals);
+        }));
 
         let watchdog = Watchdog::start(Arc::clone(&watch), clock, config.properties.max_tick_time)
             .map_err(|e| StartError::io(&dir, e))?;
@@ -792,6 +799,7 @@ impl ServerBuilder {
             net: Some(net),
             test_bots: Vec::new(),
             dupe_waiting: Vec::new(),
+            joins_this_tick: 0,
             layout,
             player_store,
             factory,
@@ -1093,6 +1101,9 @@ pub struct Server {
     /// Joins whose UUID was still online, with the tick they arrived in: they wait until the
     /// kicked older session has left (Vanilla's `WAITING_FOR_DUPE_DISCONNECT`).
     dupe_waiting: Vec<(vanillite_net::Joined, u64)>,
+    /// Joins taken into the game since the tick started (`security.max-joins-per-tick`
+    /// counts the tick and the time after it).
+    joins_this_tick: u32,
     layout: WorldLayout,
     /// Player data files, written in the background.
     player_store: PlayerDataStore,
@@ -1274,6 +1285,7 @@ impl Server {
                 }
                 // The console stays responsive while paused, like Vanilla.
                 self.global_pre_phase();
+                self.joins_this_tick = 0;
                 self.accept_joins();
                 if self.global.diagnostics.profiler.is_active() {
                     // A profile ends while paused too; the paused ticks run no world.
@@ -1298,8 +1310,10 @@ impl Server {
         let profiling = self.global.diagnostics.profiler.is_active();
         self.global_pre_phase();
         self.tick_clocks();
-        // After the clocks: a join sends its login on the player's world, so no broadcast of
-        // this thread (the time sync) may run between the player list entry and that.
+        // Joins left over from the last tick's limit (others are taken between ticks, see
+        // `ServerMsg::Arrivals`). Until its login a player gets no broadcast (`NetSink`'s
+        // gate); the login carries the time.
+        self.joins_this_tick = 0;
         self.accept_joins();
         let before_worlds = profiling.then(|| clock.now());
         self.tick_worlds();
@@ -1442,10 +1456,11 @@ impl Server {
             self.accept_waiting(joined, since);
         }
         let max = self.config.server.security.max_joins_per_tick;
-        for _ in 0..max {
+        while self.joins_this_tick < max {
             let Some(joined) = self.net.as_ref().and_then(NetState::next_join) else {
                 break;
             };
+            self.joins_this_tick += 1;
             if self.global.players.contains(Uuid(joined.profile.id.0)) {
                 // `disconnectAllPlayersWithProfile`: the older session goes, the new one waits.
                 if let Some((sink, _)) = self.global.players.connection(Uuid(joined.profile.id.0)) {
@@ -1523,9 +1538,10 @@ impl Server {
 
     /// `ServerLoginPacketListenerImpl.verifyLoginAndFinishConnectionSetup`: refuses the login
     /// (a login disconnect) or lets it finish; `PLAYER_LOGIN` plugins may change the result.
-    fn verify_login(&self, check: vanillite_net::LoginCheck) {
+    fn verify_login(&mut self, check: vanillite_net::LoginCheck) {
         crate::systems::GameSystems::prefetch_advancements(&self.global, &self.compute);
         let uuid = check.profile.id.0;
+        let connection = check.connection.clone();
         let ip = check.address.ip().to_string();
         let (reason, refusal) = self.can_player_login(uuid, &ip, check.memory);
         let decided = if self
@@ -1540,8 +1556,35 @@ impl Server {
         };
         match decided {
             Some(reason) => check.refuse(reason),
-            None => check.admit(refusal.is_some()),
+            None => {
+                check.admit(refusal.is_some());
+                self.prepare_spawn(uuid, connection);
+            }
         }
+    }
+
+    /// `PrepareSpawnTask.start`: the chunks around where an admitted player will appear start
+    /// loading while the client configures, not only once it joins. A player still online
+    /// (a duplicate login) is skipped: its data is saved when the old session leaves.
+    fn prepare_spawn(
+        &mut self,
+        uuid: u128,
+        connection: std::sync::Weak<vanillite_net::ClientDetails>,
+    ) {
+        if self.global.players.contains(Uuid(uuid)) {
+            return;
+        }
+        let saved = self.player_store.load(uuid).ok().flatten();
+        // The same world and position as `place_new_player` and `ServerWorld::join_player`.
+        let world = saved
+            .as_ref()
+            .and_then(|s| self.global.dimensions.world(&s.dimension))
+            .unwrap_or(WorldId(0));
+        let pos = saved.map(|s| s.pos);
+        self.run_in_world(
+            world,
+            Box::new(move |w: &mut ServerWorld| w.prepare_spawn(uuid, pos, connection)),
+        );
     }
 
     /// `PlayerList.canPlayerLogin`: why the player may not log in (a [`login_reason`] and the
@@ -1829,6 +1872,7 @@ impl Server {
             ServerMsg::WorldTicked(id, _) => {
                 log::warn!("Unexpected tick completion of world {}", id.0);
             }
+            ServerMsg::Arrivals => self.accept_joins(),
         }
     }
 

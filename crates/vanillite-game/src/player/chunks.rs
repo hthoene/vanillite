@@ -30,6 +30,14 @@ const MAX_UNACKNOWLEDGED_BATCHES: i32 = 10;
 const MOVING_TICKS: u32 = 40;
 /// How far ahead of a moving view's centre its chunks are ordered from, in chunks.
 const MAX_LEAD: i32 = 4;
+/// Fast view fill: the first batch takes every ready chunk within this Chebyshev distance
+/// (`PrepareSpawnTask.PREPARE_CHUNK_RADIUS`: they are full when the player is placed).
+const FIRST_BATCH_RADIUS: u32 = 3;
+/// Fast view fill: a tick's chunks go out in at most this many batches (half of
+/// [`MAX_UNACKNOWLEDGED_BATCHES`], so a client with a long round trip keeps room).
+const MAX_SPLIT_BATCHES: usize = 5;
+/// Fast view fill: the smallest split batch.
+const MIN_SPLIT_BATCH: usize = 2;
 
 /// Where chunk packets come from: the world runtime, or a placeholder generator until it
 /// exists. Packets are encoded once per chunk and shared by all players that receive it.
@@ -139,6 +147,8 @@ pub struct PlayerChunks {
     motion: (i32, i32),
     /// Ticks since the view centre last moved.
     still_ticks: u32,
+    /// `performance.chunks.fast-view-fill`.
+    fast_fill: bool,
 }
 
 impl PlayerChunks {
@@ -157,7 +167,16 @@ impl PlayerChunks {
             sent_radius: None,
             motion: (0, 0),
             still_ticks: 0,
+            fast_fill: false,
         }
+    }
+
+    /// Turns the fast view fill on or off (`performance.chunks.fast-view-fill`): a first
+    /// batch with the ready chunks around the centre, then a tick's chunks in several small
+    /// batches while none is unacknowledged. The chunks per tick stay within the client's
+    /// request; only the framing changes, so its batch-size estimate settles sooner.
+    pub fn set_fast_fill(&mut self, on: bool) {
+        self.fast_fill = on;
     }
 
     /// Whether the player is an in-process client (test bots).
@@ -293,7 +312,8 @@ impl PlayerChunks {
     /// `sendNextChunks`: one batch per tick, sized by the client's feedback. The batch takes
     /// the pending chunks that are ready, nearest to the [`focus`](Self::focus) (the centre
     /// while standing) first; Vanilla takes the nearest pending ones and sends those that are
-    /// ready, so a batch stays small while the nearest still generate.
+    /// ready, so a batch stays small while the nearest still generate. With
+    /// [`set_fast_fill`](Self::set_fast_fill) the first batch and the framing differ.
     pub fn send_next_chunks(&mut self, source: &dyn ChunkSource, sink: &dyn PacketSink) {
         self.still_ticks = self.still_ticks.saturating_add(1);
         if self.unacknowledged_batches >= self.max_unacknowledged_batches {
@@ -309,7 +329,7 @@ impl PlayerChunks {
         };
         let center = self.focus().unwrap_or(view.center);
         // The quota is at most 64 here.
-        let max = usize::try_from(vanillite_base::math::floor_f(self.batch_quota)).unwrap_or(0);
+        let mut max = usize::try_from(vanillite_base::math::floor_f(self.batch_quota)).unwrap_or(0);
         let mut chosen = std::mem::take(&mut self.scratch);
         chosen.clear();
         chosen.extend(
@@ -318,6 +338,17 @@ impl PlayerChunks {
                 .copied()
                 .filter(|&pos| source.is_ready(pos)),
         );
+        // Before the client's first answer: everything ready around the spawn at once.
+        let first = self.max_unacknowledged_batches == 1;
+        if self.fast_fill && first {
+            let near = chosen
+                .iter()
+                .filter(|p| {
+                    p.x.abs_diff(center.x).max(p.z.abs_diff(center.z)) <= FIRST_BATCH_RADIUS
+                })
+                .count();
+            max = max.max(near);
+        }
         let key = |pos: &ChunkPos| distance_squared(center, *pos);
         if !self.memory_connection && chosen.len() > max {
             // The `max` nearest in linear time, then only those sorted.
@@ -337,14 +368,24 @@ impl PlayerChunks {
         if packets.is_empty() {
             return;
         }
-        self.unacknowledged_batches = self.unacknowledged_batches.saturating_add(1);
-        sink.send(&ChunkBatchStart);
-        for packet in &packets {
-            sink.send_shared(packet);
+        // Small batches only while the client has answered every earlier one.
+        let batches = if self.fast_fill && !first && self.unacknowledged_batches == 0 {
+            (packets.len() / MIN_SPLIT_BATCH).clamp(1, MAX_SPLIT_BATCHES)
+        } else {
+            1
+        };
+        let size = packets.len().div_ceil(batches);
+        for batch in packets.chunks(size) {
+            self.unacknowledged_batches = self.unacknowledged_batches.saturating_add(1);
+            sink.send(&ChunkBatchStart);
+            for packet in batch {
+                sink.send_shared(packet);
+            }
+            let count = i32::try_from(batch.len()).unwrap_or(i32::MAX);
+            sink.send(&ChunkBatchFinished { batch_size: count });
         }
-        let count = i32::try_from(packets.len()).unwrap_or(i32::MAX);
-        sink.send(&ChunkBatchFinished { batch_size: count });
-        self.batch_quota -= f32::from(u16::try_from(count).unwrap_or(u16::MAX));
+        let count = u16::try_from(packets.len()).unwrap_or(u16::MAX);
+        self.batch_quota -= f32::from(count);
     }
 
     /// `onChunkBatchReceivedByClient`.

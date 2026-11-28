@@ -25,6 +25,22 @@ use crate::world_updates::WorldUpdates;
 /// joining player is placed.
 const PREPARE_CHUNK_RADIUS: u8 = 3;
 
+/// `TicketType.PLAYER_SPAWN`'s timeout: a prepared spawn ticket goes this many ticks after
+/// its connection ended.
+const PREPARED_SPAWN_TIMEOUT: u64 = 20;
+
+/// The spawn chunks of an admitted login, loading while the client configures
+/// (`PrepareSpawnTask`): taken over by [`ServerWorld::join_player`].
+struct PreparedSpawn {
+    uuid: u128,
+    ticket: TicketId,
+    chunk: ChunkPos,
+    /// Alive while the connection is.
+    connection: std::sync::Weak<vanillite_net::ClientDetails>,
+    /// The tick the connection was first seen closed.
+    closed_at: Option<u64>,
+}
+
 mod travel;
 
 /// A world (dimension) of this server: its index in Vanilla's tick order (overworld, nether,
@@ -107,6 +123,8 @@ pub struct ServerWorld {
     /// Joins waiting for the chunks around their spawn (`PrepareSpawnTask`), with the ticket
     /// that loads them.
     spawn_waiting: Vec<(TicketId, ChunkPos, crate::players::Arrival)>,
+    /// Spawn tickets of logins still configuring.
+    spawn_prepared: Vec<PreparedSpawn>,
     /// The players' chunk ticket and simulation ticket at each centre chunk with the number
     /// of players there: equal tickets at one chunk give the same levels as one, so dense
     /// players crossing chunks do not recompute the levels of their whole view.
@@ -258,6 +276,7 @@ impl ServerWorld {
             updates: WorldUpdates::default(),
             player_tickets: FxHashMap::default(),
             spawn_waiting: Vec::new(),
+            spawn_prepared: Vec::new(),
             focus: Vec::new(),
             center_tickets: FxHashMap::default(),
             effects: LevelEffects::default(),
@@ -418,22 +437,82 @@ impl ServerWorld {
     /// `player_spawn` ticket loads them and the player is placed when they are ready, so it
     /// never stands above chunks that are not there).
     pub(crate) fn join_player(&mut self, global: &Global, arrival: crate::players::Arrival) {
-        let pos = arrival
-            .saved
-            .as_ref()
-            .map_or(self.players.level.spawn.0, |saved| {
-                vanillite_base::Vec3::new(saved.pos[0], saved.pos[1], saved.pos[2])
-            });
-        let chunk = ChunkPos::new(
+        let chunk = self.spawn_chunk(arrival.saved.as_ref().map(|saved| saved.pos));
+        let prepared = self
+            .spawn_prepared
+            .iter()
+            .position(|p| p.uuid == arrival.uuid)
+            .map(|i| self.spawn_prepared.swap_remove(i));
+        let ticket = match prepared {
+            Some(p) if p.chunk == chunk => p.ticket,
+            other => {
+                let ticket = self
+                    .level
+                    .chunks
+                    .add_ticket(chunk, FULL_LEVEL - PREPARE_CHUNK_RADIUS);
+                if let Some(p) = other {
+                    self.level.chunks.remove_ticket(p.ticket);
+                }
+                ticket
+            }
+        };
+        self.spawn_waiting.push((ticket, chunk, arrival));
+        self.place_ready_spawns(global);
+    }
+
+    /// The chunk a joining player appears in: its saved position, else the world spawn.
+    fn spawn_chunk(&self, saved: Option<[f64; 3]>) -> ChunkPos {
+        let pos = saved.map_or(self.players.level.spawn.0, |p| {
+            vanillite_base::Vec3::new(p[0], p[1], p[2])
+        });
+        ChunkPos::new(
             vanillite_base::math::floor(pos.x) >> 4,
             vanillite_base::math::floor(pos.z) >> 4,
-        );
+        )
+    }
+
+    /// `PrepareSpawnTask`: an admitted login's spawn chunks (around `saved`, else the world
+    /// spawn) start loading while the client configures; [`ServerWorld::join_player`] takes
+    /// the ticket over. It goes [`PREPARED_SPAWN_TIMEOUT`] ticks after the connection ended.
+    pub(crate) fn prepare_spawn(
+        &mut self,
+        uuid: u128,
+        saved: Option<[f64; 3]>,
+        connection: std::sync::Weak<vanillite_net::ClientDetails>,
+    ) {
+        let chunk = self.spawn_chunk(saved);
         let ticket = self
             .level
             .chunks
             .add_ticket(chunk, FULL_LEVEL - PREPARE_CHUNK_RADIUS);
-        self.spawn_waiting.push((ticket, chunk, arrival));
-        self.place_ready_spawns(global);
+        if let Some(old) = self.spawn_prepared.iter().position(|p| p.uuid == uuid) {
+            let old = self.spawn_prepared.swap_remove(old);
+            self.level.chunks.remove_ticket(old.ticket);
+        }
+        self.spawn_prepared.push(PreparedSpawn {
+            uuid,
+            ticket,
+            chunk,
+            connection,
+            closed_at: None,
+        });
+    }
+
+    /// Drops the prepared spawn tickets whose connection ended [`PREPARED_SPAWN_TIMEOUT`]
+    /// ticks ago.
+    fn expire_prepared_spawns(&mut self, now: u64) {
+        let chunks = &mut self.level.chunks;
+        self.spawn_prepared.retain_mut(|p| {
+            if p.connection.strong_count() > 0 {
+                return true;
+            }
+            let closed = *p.closed_at.get_or_insert(now);
+            if now.saturating_sub(closed) < PREPARED_SPAWN_TIMEOUT {
+                return true;
+            }
+            chunks.remove_ticket(p.ticket);
+            false
+        });
     }
 
     /// Places the waiting joins whose spawn chunks are full.
@@ -524,6 +603,17 @@ impl ServerWorld {
             if let Some(message) = message {
                 global.players.broadcast_system(message, false, None);
             }
+        }
+        // After the join listeners (they may move the player).
+        if let Some(id) = self.level.entities.player_by_uuid(uuid) {
+            WorldPlayers::send_first_chunks(
+                &mut self.level.entities,
+                id,
+                &self
+                    .packets
+                    .source(&self.level.chunks, &self.level.block_entities),
+                self.rules.chunks.fast_view_fill,
+            );
         }
     }
 
@@ -938,6 +1028,10 @@ impl ServerWorld {
         );
         self.effects.flush(&self.level.entities);
         crate::scoreboard::flush(ctx.global);
+        // Joins whose spawn chunks became full in this tick are placed now, not at the start of
+        // the next one (Vanilla places them between ticks).
+        self.expire_prepared_spawns(ctx.tick);
+        self.place_ready_spawns(ctx.global);
         // One write per connection and tick.
         for (_, player) in self.level.entities.players.iter() {
             player.connection.sink.flush();
