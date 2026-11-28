@@ -664,6 +664,8 @@ impl WorldSurvival {
                         player::do_tick_end(&mut entity, data, &mut env, result)
                     }
                 };
+                // A death protection used in the tick teleports (`teleport_randomly`).
+                vanillite_game::player::chorus::apply_pending_teleports(entities, &mut env, id);
                 match result {
                     TickResult::Remove | TickResult::Credits => removed.push(id),
                     TickResult::Portal(kind, entry) => portals.travels.push((id, kind, entry)),

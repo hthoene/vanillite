@@ -81,6 +81,12 @@ pub trait World {
     fn looking_at(&self) -> Option<&EntityView<'static>> {
         None
     }
+    /// `LootItemCondition.test` of a condition type the predicates here do not evaluate
+    /// themselves (`random_chance`, `weather_check`, `time_check`, `value_check`,
+    /// `reference`, …) in a loot context at `origin`; false where the world cannot tell.
+    fn loot_condition(&self, _condition: &Value, _origin: Option<Vec3>) -> bool {
+        false
+    }
 }
 
 /// An active effect as `MobEffectsPredicate` sees it.
@@ -2343,15 +2349,20 @@ pub enum Condition {
     AllOf(Vec<Condition>),
     AnyOf(Vec<Condition>),
     Inverted(Box<Condition>),
-    /// Named predicates, other entity targets and other condition types: never true.
+    /// A named predicate (`data/<ns>/predicate/<id>`), resolved when tested.
+    Named(String),
+    /// Another condition type, tested by the world in a loot context
+    /// ([`World::loot_condition`]).
+    Loot(Value),
+    /// Other entity targets: never true.
     Unsupported,
 }
 
 impl Condition {
-    /// Parses a condition holder: an inline condition (named predicates are unsupported).
+    /// Parses a condition holder: a named predicate or an inline condition.
     pub fn parse(v: &Value) -> Res<Condition> {
-        if v.is_string() {
-            return Ok(Condition::Unsupported);
+        if let Some(id) = v.as_str() {
+            return Ok(Condition::Named(qualify(id)));
         }
         let o = object(v)?;
         let kind = qualify(string(o.get("type").ok_or("condition without type")?)?);
@@ -2398,8 +2409,41 @@ impl Condition {
                     Condition::Unsupported
                 }
             }
-            _ => Condition::Unsupported,
+            _ => Condition::Loot(v.clone()),
         })
+    }
+
+    /// A named predicate: its JSON parsed as a condition (a list is `all_of`) and tested; false
+    /// for an unknown one or a cycle.
+    fn test_named(id: &str, ctx: &Context<'_>) -> bool {
+        thread_local! {
+            static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        }
+        let Some(data) = crate::player::play::game_data() else {
+            return false;
+        };
+        let Some(json) = data.loot.predicate_json(id) else {
+            return false;
+        };
+        let condition = match json {
+            Value::Array(list) => list
+                .iter()
+                .map(Condition::parse)
+                .collect::<Res<Vec<_>>>()
+                .map(Condition::AllOf),
+            v => Condition::parse(v),
+        };
+        let Ok(condition) = condition else {
+            return false;
+        };
+        let depth = DEPTH.get();
+        if depth >= 64 {
+            return false;
+        }
+        DEPTH.set(depth.saturating_add(1));
+        let r = condition.test(ctx);
+        DEPTH.set(depth);
+        r
     }
 
     /// Whether every part is evaluated (no [`Condition::Unsupported`] or unsupported
@@ -2416,6 +2460,7 @@ impl Condition {
                 terms.iter().all(Condition::is_supported)
             }
             Condition::Inverted(term) => term.is_supported(),
+            Condition::Named(_) | Condition::Loot(_) => true,
             Condition::Unsupported => false,
         }
     }
@@ -2446,6 +2491,8 @@ impl Condition {
             Condition::AllOf(terms) => terms.iter().all(|t| t.test(ctx)),
             Condition::AnyOf(terms) => terms.iter().any(|t| t.test(ctx)),
             Condition::Inverted(term) => !term.test(ctx),
+            Condition::Named(id) => Self::test_named(id, ctx),
+            Condition::Loot(v) => ctx.world.loot_condition(v, ctx.origin),
             Condition::Unsupported => false,
         }
     }
@@ -2483,6 +2530,11 @@ mod tests {
         }
         fn in_tag(&self, _registry: &str, tag: &str, id: &str) -> bool {
             tag == "minecraft:base_stone_overworld" && id == "minecraft:stone"
+        }
+        /// A `random_chance` with a constant chance draws 0.5.
+        fn loot_condition(&self, condition: &Value, _origin: Option<Vec3>) -> bool {
+            condition["type"] == "minecraft:random_chance"
+                && condition["chance"].as_f64().is_some_and(|c| 0.5 < c)
         }
     }
 
@@ -2538,9 +2590,18 @@ mod tests {
         }))
         .unwrap();
         assert!(!structures.test(&ctx(-3.0)));
-        // The inversion of a condition that is not evaluated never passes either.
+        // Other condition types are the world's loot conditions (#286, A-13): an inverted
+        // certain chance never passes, an inverted impossible one always does.
         let inverted = Condition::parse(&json!({"type": "minecraft:inverted", "term": {"type": "minecraft:random_chance", "chance": 1.0}})).unwrap();
         assert!(!inverted.test(&ctx(0.0)));
+        let inverted = Condition::parse(&json!({"type": "minecraft:inverted", "term": {"type": "minecraft:random_chance", "chance": 0.0}})).unwrap();
+        assert!(inverted.test(&ctx(0.0)));
+        // A named predicate that is not loaded never passes.
+        assert!(
+            !Condition::parse(&json!("test:unknown"))
+                .unwrap()
+                .test(&ctx(0.0))
+        );
         let inverted = Condition::parse(&json!({"type": "minecraft:inverted", "term": {"type": "minecraft:location_check", "predicate": {"block": {"blocks": "minecraft:dirt"}}}})).unwrap();
         assert!(inverted.test(&ctx(0.5)));
     }

@@ -1667,7 +1667,7 @@ fn swap_with_equipment_slot(ctx: &mut PlayContext<'_>, hand: Hand) -> Used {
     };
     let worn = ctx.inventory.get(index).clone();
     let creative = ctx.actor.creative();
-    let bound = ctx.data.enchantment_level(&worn, "minecraft:binding_curse") > 0;
+    let bound = ctx.data.prevents_armor_change(&worn);
     if (bound && !creative) || in_hand.same_item_same_components(&worn) {
         return Used::Fail;
     }

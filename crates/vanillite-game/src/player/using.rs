@@ -189,31 +189,55 @@ pub fn start(
         }
     }
     let kinetic = crate::spear::kinetic_weapon(&stack);
-    // `startUsingItem` does nothing while an item is in use.
-    let using = ents
-        .player(player)
-        .is_some_and(|p| p.survival.using_item.is_some());
-    if !using {
-        if let Some(p) = ents.player_mut(player) {
-            p.survival.using_item = Some(UsingItem {
-                hand,
-                item: stack.item,
-                ticks: 0,
-                duration,
-                crossbow: crate::crossbow::UseFlags::default(),
-                emptied: false,
-            });
-            p.survival.stabbed.clear();
-        }
-        mark(ents, player);
-        if use_vibrations(&stack) {
-            let event = crate::level::game_event::events().item_interact_start;
-            player_game_event(ents, env, player, event);
-        }
-    }
+    start_using(ents, env, player, hand, &stack, duration);
     // `Item.use` of a kinetic weapon: `KineticWeapon.makeSound`.
     if let Some(k) = kinetic {
         crate::spear::make_sound(ents, env, player, k.sound.as_ref());
+    }
+}
+
+/// `LivingEntity.startUsingItem(hand)` of `stack` (the stack in that hand) with its use
+/// duration; nothing while an item is in use.
+pub fn start_using(
+    ents: &mut Entities,
+    env: &mut Env<'_>,
+    player: EntityId,
+    hand: Hand,
+    stack: &ItemStack,
+    duration: i32,
+) {
+    let using = ents
+        .player(player)
+        .is_some_and(|p| p.survival.using_item.is_some());
+    if using || stack.is_empty() {
+        return;
+    }
+    if let Some(p) = ents.player_mut(player) {
+        p.survival.using_item = Some(UsingItem {
+            hand,
+            item: stack.item,
+            ticks: 0,
+            duration,
+            crossbow: crate::crossbow::UseFlags::default(),
+            emptied: false,
+        });
+        p.survival.stabbed.clear();
+    }
+    mark(ents, player);
+    if use_vibrations(stack) {
+        let event = crate::level::game_event::events().item_interact_start;
+        player_game_event(ents, env, player, event);
+    }
+}
+
+/// The stack in use was used up in its `use` (the last ender eye): it stays in use until the
+/// hand holds another item (Vanilla keeps the emptied stack as `useItem`).
+pub fn mark_emptied(ents: &mut Entities, player: EntityId) {
+    if let Some(u) = ents
+        .player_mut(player)
+        .and_then(|p| p.survival.using_item.as_mut())
+    {
+        u.emptied = true;
     }
 }
 
@@ -337,7 +361,8 @@ pub fn tick(ents: &mut Entities, env: &mut Env<'_>, player: EntityId) {
     }
     // `onUseTick` sees the remaining ticks before this tick's decrement.
     on_use_tick(ents, env, player, &stack, remaining.saturating_add(1));
-    if remaining <= 0 && u.duration < 72000 {
+    // `--useItemRemaining == 0`: an item used with duration 0 (the ender eye) stays in use.
+    if remaining == 0 && u.duration < 72000 {
         finish(ents, env, player, u);
     }
 }
@@ -383,6 +408,16 @@ pub fn tick_brushes(level: &mut crate::level::Level) {
         }
         let (pos, face) = hit;
         let state = level.block(pos);
+        // `spawnDustParticles`: the server shows no particles, but their count and deltas
+        // draw from the level random.
+        if dusts(state) {
+            use vanillite_base::random::RandomSource;
+            let random = level.random();
+            for _ in 0..random.next_int_between(7, 12) {
+                random.next_double();
+                random.next_double();
+            }
+        }
         let sound = crate::block::brushable::brush_sound(state);
         let sound = crate::block::sound_id(sound.strip_prefix("minecraft:").unwrap_or(sound));
         level.play_block_sound(
@@ -417,6 +452,26 @@ pub fn tick_brushes(level: &mut crate::level::Level) {
             *slot = brush;
         }
     }
+}
+
+/// `shouldSpawnTerrainParticles` and a render shape other than `INVISIBLE`.
+fn dusts(state: vanillite_data::block::BlockState) -> bool {
+    let name = state.block().name();
+    !matches!(
+        name.strip_prefix("minecraft:").unwrap_or(name),
+        "air"
+            | "cave_air"
+            | "void_air"
+            | "water"
+            | "lava"
+            | "bubble_column"
+            | "barrier"
+            | "light"
+            | "structure_void"
+            | "end_portal"
+            | "end_gateway"
+            | "moving_piston"
+    )
 }
 
 /// `ProjectileUtil.getHitResultOnViewVector(player, CAN_BE_PICKED, blockInteractionRange)`:

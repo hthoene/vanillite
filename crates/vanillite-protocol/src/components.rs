@@ -167,6 +167,9 @@ pub mod ids {
     pub const BLOCK_TRANSFORMER: u16 = find("minecraft:block_transformer");
     pub const COMPOSTABLE: u16 = find("minecraft:compostable");
     pub const COOKING_FUEL: u16 = find("minecraft:cooking_fuel");
+    pub const BREWING_FUEL: u16 = find("minecraft:brewing_fuel");
+    pub const MOB_VISIBILITY: u16 = find("minecraft:mob_visibility");
+    pub const CUSHION_COLOR: u16 = find("minecraft:cushion/color");
     pub const VILLAGER_FOOD: u16 = find("minecraft:villager_food");
 }
 

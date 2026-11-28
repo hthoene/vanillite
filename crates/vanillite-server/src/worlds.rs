@@ -297,6 +297,9 @@ impl WorldFactory {
             level.set_tree_features(Arc::clone(trees));
         }
         level.set_maps(Arc::clone(&global.level.maps));
+        level.entities.elsewhere = vanillite_game::presence::Elsewhere(Some(Arc::new(
+            crate::player_list::WorldElsewhere::new(global, id),
+        )));
         let block_commands = crate::commands::BlockCommands::new(global, id);
         let lent_levels = block_commands.lent();
         level.set_command_runner(Arc::new(block_commands));

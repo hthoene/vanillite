@@ -56,20 +56,22 @@ pub fn protecting_hand(
 }
 
 /// `DeathProtection.applyEffects` on an effect host (`random` rolls the probabilities): the
-/// effects that touch the status effects, and `play_sound` through `sound`
-/// (`PlaySoundConsumeEffect`). `teleport_randomly` is not applied here.
+/// effects that touch the status effects, `play_sound` through `sound`
+/// (`PlaySoundConsumeEffect`) and `teleport_randomly` (diameter, directional particles)
+/// through `teleport`.
 pub fn apply_effects(
     effects: &[ConsumeEffect],
     kind: vanillite_data::entity::EntityTypeId,
     host: &mut dyn EffectHost,
     random: &mut dyn FnMut() -> f32,
     sound: &mut dyn FnMut(&str),
+    teleport: &mut dyn FnMut(f32, bool),
 ) {
     for effect in effects {
-        if let ConsumeEffect::PlaySound(name) = effect {
-            sound(name);
-        } else {
-            crate::effect::consume::apply_status(effect, kind, host, random);
+        match effect {
+            ConsumeEffect::PlaySound(name) => sound(name),
+            &ConsumeEffect::Teleport(diameter, particles) => teleport(diameter, particles),
+            _ => crate::effect::consume::apply_status(effect, kind, host, random),
         }
     }
 }
