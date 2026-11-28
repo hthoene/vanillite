@@ -644,10 +644,6 @@ impl Session {
                 return;
             }
         };
-        if received.disconnected {
-            self.close_silently("the client disconnected");
-            return;
-        }
         for game in received.game {
             let mut packets = std::mem::take(&mut self.scratch);
             packets.clear();
@@ -674,6 +670,10 @@ impl Session {
                 }
             }
             self.scratch = packets;
+        }
+        // After the packets that came with it (the client's last complaint among them).
+        if received.disconnected {
+            self.close_silently("the client disconnected");
         }
     }
 

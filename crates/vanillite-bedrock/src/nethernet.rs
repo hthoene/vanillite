@@ -801,11 +801,16 @@ impl NetConn {
                 self.drain();
             }
         }
-        if let Some(why) = &self.closed {
+        // A client that rejects a packet sends packet_violation_warning or disconnect and closes
+        // the channel at once: hand out what arrived before the close (the next tick reports it).
+        let game = std::mem::take(&mut self.game);
+        if game.is_empty()
+            && let Some(why) = &self.closed
+        {
             return Err(why.clone());
         }
         Ok(Received {
-            game: std::mem::take(&mut self.game),
+            game,
             ..Received::default()
         })
     }
@@ -1063,6 +1068,34 @@ mod tests {
             .flat_map(|s| s.get(1..).unwrap_or_default().iter().copied())
             .collect();
         assert_eq!(joined, payload);
+    }
+
+    /// The packets a client sends right before it closes the channel (its packet_violation_warning
+    /// when it rejects a packet) are still handed out; the close follows (#280: the complaint was
+    /// dropped, so the log never named the rejected packet).
+    #[test]
+    fn packets_that_arrive_with_the_close_are_handed_out() {
+        let start = Instant::now();
+        let client_addr: SocketAddr = "127.0.0.1:40002".parse().expect("addr");
+        let server_addr: SocketAddr = "127.0.0.1:40003".parse().expect("addr");
+        let mut client = Rtc::builder().build(start);
+        client.add_local_candidate(Candidate::host(client_addr, "udp").expect("candidate"));
+        let mut api = client.sdp_api();
+        let _ = api.add_channel(RELIABLE.into());
+        let (offer, _pending) = api.apply().expect("offer");
+        let sdp = offer.to_sdp_string();
+        let parsed = parse_offer(&sdp).expect("offer parses");
+        let key = <p384::SecretKey as p384::elliptic_curve::Generate>::generate();
+        let (mut conn, _) =
+            connect(&parsed, server_addr, None, 1 << 20, &key, start).expect("connect");
+        conn.game.push(vec![156, 1, 2]);
+        conn.closed = Some("the client closed the connection".into());
+        let got = conn
+            .receive(client_addr, &[], start)
+            .expect("the last packets come first");
+        assert_eq!(got.game, vec![vec![156, 1, 2]]);
+        assert!(conn.receive(client_addr, &[], start).is_err());
+        assert!(conn.closed().is_some());
     }
 
     #[test]

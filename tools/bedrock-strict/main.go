@@ -72,6 +72,7 @@ var (
 	itemDescriptorCount = reflect.TypeOf(protocol.ItemDescriptorCount{})
 	itemStack           = reflect.TypeOf(protocol.ItemStack{})
 	skin                = reflect.TypeOf(protocol.Skin{})
+	playerListEntry     = reflect.TypeOf(protocol.PlayerListEntry{})
 )
 
 // maxJSONDepth is the deepest nesting accepted in skin JSON fields (vanillite-bedrock's limit).
@@ -139,6 +140,10 @@ func walk(p *problems, name string, v reflect.Value, path string) {
 		return
 	}
 	switch v.Type() {
+	case playerListEntry:
+		if v.Interface().(protocol.PlayerListEntry).ActionType == protocol.PlayerListActionRemove {
+			return // only the UUID is on the wire: the zero skin is not sent
+		}
 	case itemDescriptorCount:
 		d := v.Interface().(protocol.ItemDescriptorCount)
 		if d.Count < 0 || d.Count > 64 {
