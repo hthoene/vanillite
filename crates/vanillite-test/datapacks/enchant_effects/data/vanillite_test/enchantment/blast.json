@@ -1,0 +1,65 @@
+{
+  "anvil_cost": 4,
+  "description": "Blast",
+  "max_cost": {
+    "base": 25,
+    "per_level_above_first": 10
+  },
+  "max_level": 1,
+  "min_cost": {
+    "base": 10,
+    "per_level_above_first": 10
+  },
+  "slots": [
+    "mainhand"
+  ],
+  "supported_items": "#minecraft:enchantable/weapon",
+  "weight": 2,
+  "effects": {
+    "minecraft:post_attack": [
+      {
+        "enchanted": "attacker",
+        "affected": "victim",
+        "effect": {
+          "type": "minecraft:all_of",
+          "effects": [
+            {
+              "type": "minecraft:explode",
+              "damage_type": "minecraft:magic",
+              "radius": 1.0,
+              "offset": [
+                0.0,
+                0.5,
+                0.0
+              ],
+              "block_interaction": "block",
+              "immune_blocks": "minecraft:glass",
+              "knockback_multiplier": 0.5,
+              "small_particle": {
+                "type": "minecraft:explosion"
+              },
+              "large_particle": {
+                "type": "minecraft:explosion_emitter"
+              },
+              "block_particles": [
+                {
+                  "particle": {
+                    "type": "minecraft:smoke"
+                  },
+                  "scaling": 1.0,
+                  "speed": 0.5,
+                  "weight": 1
+                }
+              ],
+              "sound": "minecraft:entity.generic.explode"
+            },
+            {
+              "type": "minecraft:summon_entity",
+              "entity": "minecraft:snowball"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "anvil_cost": 4,
+  "description": "Shatter",
+  "max_cost": {
+    "base": 25,
+    "per_level_above_first": 10
+  },
+  "max_level": 1,
+  "min_cost": {
+    "base": 10,
+    "per_level_above_first": 10
+  },
+  "slots": [
+    "mainhand"
+  ],
+  "supported_items": "#minecraft:enchantable/bow",
+  "weight": 2,
+  "effects": {
+    "minecraft:hit_block": [
+      {
+        "effect": {
+          "type": "minecraft:replace_block",
+          "block_state": {
+            "id": "minecraft:red_stained_glass"
+          },
+          "trigger_game_event": "minecraft:block_change"
+        },
+        "requirements": {
+          "type": "minecraft:all_of",
+          "terms": [
+            {
+              "type": "minecraft:match_block",
+              "blocks": "minecraft:glass"
+            },
+            {
+              "type": "minecraft:entity_properties",
+              "entity": "this",
+              "predicate": {
+                "minecraft:entity_type": "#minecraft:arrows"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -416,6 +416,8 @@ fn hit_entity(
             raining: false,
             thundering: false,
             location: None,
+            enchantment_active: None,
+            block_state: None,
         };
         damage = enchants.modify_damage(&d.item, &cx, t.env.random, damage);
     }
@@ -439,83 +441,10 @@ fn hit_entity(
 /// `hitBlockEnchantmentEffects`: the `hit_block` effects of the trident (Channeling on a
 /// lightning rod in a thunderstorm).
 fn hit_block_effects(t: &mut MissileTick<'_, '_>, d: &MissileData, block: BlockPos, at: Vec3) {
-    if d.item.is_empty() {
-        return;
-    }
-    let combat = crate::mob::attack::combat_data();
-    let (enchants, tags): (
-        &crate::enchant::Enchantments,
-        &dyn crate::predicate::EntityTags,
-    ) = (&combat.enchants, &*combat);
-    let state = t.level.block(block);
-    let sees_sky = crate::mob::can_see_sky(t.level, block);
-    let effects = {
-        let cx = crate::enchant::EnchantContext {
-            types: t.env.types,
-            tags,
-            this: crate::mob::attack::facts(t.ents, t.id),
-            attacker: d.owner.and_then(|o| crate::mob::attack::facts(t.ents, o)),
-            direct_attacker: None,
-            attacking_player: None,
-            source: None,
-            raining: t.level.is_raining(),
-            thundering: t.level.is_thundering(),
-            location: Some((state, sees_sky)),
-        };
-        enchants.hit_block_effects(&d.item, &cx, t.env.random)
-    };
-    // The position clamped into the block.
-    let clamp = |v: f64, b: i32| v.clamp(f64::from(b), f64::from(b) + 1.0);
-    let pos = Vec3::new(
-        clamp(at.x, block.x),
-        clamp(at.y, block.y),
-        clamp(at.z, block.z),
+    let owner = d.owner;
+    crate::mob::attack::hit_block_effects(
+        t.level, t.ents, t.env, t.cx, &d.item, t.id, owner, block, at,
     );
-    for (effect, _) in effects {
-        run_block_effect(t, d, &effect, pos);
-    }
-}
-
-fn run_block_effect(
-    t: &mut MissileTick<'_, '_>,
-    d: &MissileData,
-    effect: &crate::enchant::EntityEffect,
-    pos: Vec3,
-) {
-    use crate::enchant::EntityEffect;
-    match effect {
-        EntityEffect::SummonLightning => {
-            let cause = d.owner.filter(|&o| t.ents.player(o).is_some());
-            t.cx.actions.push(crate::mob::WorldAction::Level(
-                crate::mob::boss::warden::LevelAction::Lightning { pos, cause },
-            ));
-        }
-        EntityEffect::PlaySound {
-            sounds,
-            volume,
-            pitch,
-        } => {
-            let Some(s) = sounds.first() else {
-                return;
-            };
-            play_sound(
-                t.env.out,
-                None,
-                pos,
-                s,
-                SoundSource::Neutral,
-                *volume,
-                *pitch,
-                crate::survival::sound_seed(),
-            );
-        }
-        EntityEffect::AllOf(list) => {
-            for e in list {
-                run_block_effect(t, d, e, pos);
-            }
-        }
-        _ => {}
-    }
 }
 
 /// `AbstractArrow.playerTouch` of a trident (`ThrownTrident.playerTouch` and `tryPickup`):

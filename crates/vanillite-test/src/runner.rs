@@ -437,6 +437,11 @@ fn check_where(tier: Tier, factory: WorldFactory, skip: &[&str]) -> Vec<String> 
         .filter(|(i, _)| i % parts == part - 1)
         .map(|(_, s)| s)
         .collect();
+    // Scenarios with a data pack change the installed game data (`install_game_data`, e.g.
+    // enchantment registry ids) that every server of the process reads: they run alone,
+    // after the others.
+    let (alone, todo): (Vec<&Scenario>, Vec<&Scenario>) =
+        todo.into_iter().partition(|s| s.world.datapack.is_some());
     // Scenarios are independent: run them on all cores, report in name order.
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -462,6 +467,11 @@ fn check_where(tier: Tier, factory: WorldFactory, skip: &[&str]) -> Vec<String> 
             .flat_map(|w| w.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
             .collect()
     });
+    for (i, s) in alone.iter().enumerate() {
+        if let Err(e) = check(s, factory) {
+            results.push((todo.len().saturating_add(i), format!("{}: {e}", s.name)));
+        }
+    }
     results.sort_by_key(|r| r.0);
     results.into_iter().map(|r| r.1).collect()
 }

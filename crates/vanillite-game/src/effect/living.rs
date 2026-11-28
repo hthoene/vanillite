@@ -1268,6 +1268,7 @@ pub fn player_death_effects(level: &mut Level, id: EntityId, cramming: i32) {
                         resistance: crate::level::explosion::BlockResistance::WindCharge,
                         fire: false,
                         bad_respawn_point: false,
+                        damage: None,
                     },
                 );
             }

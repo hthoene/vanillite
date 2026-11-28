@@ -72,6 +72,10 @@ pub fn tick(t: &mut Tick<'_, '_>) {
     }
     // `detectEquipmentUpdates`.
     super::fam::undead::cubes::detect_equipment(t);
+    crate::enchant::location::mob_equipment_changes(t);
+    if !t.exists() {
+        return;
+    }
     ai_step(t);
     if t.mob_ref().removed || !t.exists() {
         return;
@@ -126,6 +130,11 @@ fn update_control_flags(t: &mut Tick<'_, '_>) {
 
 /// `Entity.baseTick` + `LivingEntity.baseTick` + `Mob.baseTick`.
 fn base_tick(t: &mut Tick<'_, '_>) {
+    // `LivingEntity.baseTick` starts with `EnchantmentHelper.tickEffects`.
+    crate::enchant::location::mob_tick_effects(t);
+    if !t.exists() {
+        return;
+    }
     {
         let m = t.mob();
         m.was_in_powder_snow = m.in_powder_snow;
@@ -217,7 +226,13 @@ fn base_tick(t: &mut Tick<'_, '_>) {
             return;
         }
         let p = t.block_pos();
-        t.mob().last_pos = p;
+        if std::mem::replace(&mut t.mob().last_pos, p) != p {
+            // `onChangedBlock`.
+            crate::enchant::location::mob_changed_block(t);
+            if !t.exists() {
+                return;
+            }
+        }
     }
     {
         let m = t.mob();
@@ -2032,6 +2047,11 @@ fn check_fall_damage(
     if on_ground {
         let distance = t.mob_ref().fall_distance;
         if distance > 0.0 {
+            // `onChangedBlock` of a landing.
+            crate::enchant::location::mob_changed_block(t);
+            if !t.exists() {
+                return;
+            }
             fall_particles(t, distance, on_state, on_pos);
         }
     }

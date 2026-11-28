@@ -21,6 +21,7 @@ pub mod game_event;
 pub mod locate;
 pub mod mob_env;
 mod neighbors;
+pub mod particle_options;
 pub mod particles;
 pub mod place;
 #[cfg(test)]
@@ -173,6 +174,8 @@ pub struct LevelSettings {
     pub projectiles_can_break_blocks: bool,
     /// `block_explosion_drop_decay` game rule.
     pub block_explosion_drop_decay: bool,
+    /// `mob_explosion_drop_decay` game rule.
+    pub mob_explosion_drop_decay: bool,
     /// `players_sleeping_percentage` game rule.
     pub players_sleeping_percentage: i32,
     /// The dimension's `gameplay/bed_rule` attribute.
@@ -223,6 +226,7 @@ impl Default for LevelSettings {
             mob_griefing: true,
             projectiles_can_break_blocks: true,
             block_explosion_drop_decay: true,
+            mob_explosion_drop_decay: true,
             players_sleeping_percentage: 100,
             bed_rule: crate::block::bed::BedRule::can_sleep_when_dark(),
             straw_bed_rule: crate::block::bed::BedRule::destroy_on_leave(),
@@ -278,6 +282,7 @@ impl LevelSettings {
             self.projectiles_can_break_blocks = v != 0;
         }
         self.block_explosion_drop_decay = rules.bool(Rule::BLOCK_EXPLOSION_DROP_DECAY);
+        self.mob_explosion_drop_decay = rules.bool(Rule::MOB_EXPLOSION_DROP_DECAY);
         if let Some(v) = get("players_sleeping_percentage") {
             self.players_sleeping_percentage = v;
         }
@@ -541,6 +546,9 @@ pub struct Level {
     /// The block phase of the last explosion, waiting for the entities it hit to take their
     /// damage ([`Level::finish_explosion`]).
     pending_blast: Option<explosion::PendingBlast>,
+    /// The immune blocks and look of the enchantment explosion in progress
+    /// ([`Level::explode_custom`]).
+    custom_explosion: Option<explosion::CustomExplosion>,
     /// Menus blocks asked to open for the player that used them (`player.openMenu`); taken
     /// by the player handlers.
     menu_requests: Vec<crate::menu::container::MenuRequest>,
@@ -674,6 +682,7 @@ impl Level {
             game_time: 0,
             output: LevelOutput::default(),
             pending_blast: None,
+            custom_explosion: None,
             menu_requests: Vec::new(),
             sign_editors: Vec::new(),
             player_block_uses: Vec::new(),

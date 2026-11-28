@@ -32,7 +32,7 @@ pub fn combat_data() -> std::sync::Arc<crate::player::play::GameData> {
 }
 
 /// The wire id of a game mode (`GameType.getId`).
-fn game_mode_id(mode: vanillite_config::GameMode) -> i32 {
+pub(crate) fn game_mode_id(mode: vanillite_config::GameMode) -> i32 {
     use vanillite_config::GameMode;
     match mode {
         GameMode::Survival => 0,
@@ -128,6 +128,12 @@ pub fn facts(ents: &Entities, id: EntityId) -> Option<EntityFacts> {
         player: ents
             .player(id)
             .map(|p| (game_mode_id(p.game_mode), p.survival.food.food_level)),
+        tick_count: ents.player(id).map_or_else(
+            || ents.mob(id).map_or(0, |m| m.tick_count),
+            |p| p.survival.tick_count,
+        ),
+        movement: crate::spear::known_movement(ents, id),
+        movement_block: None,
     })
 }
 
@@ -161,6 +167,8 @@ pub fn damage_context<'a>(
         raining: false,
         thundering: false,
         location: None,
+        enchantment_active: None,
+        block_state: None,
     }
 }
 
@@ -177,6 +185,17 @@ pub fn player_attribute(
     let Some(p) = ents.player(player) else {
         return base;
     };
+    player_data_attribute(p, name, base, min, max)
+}
+
+/// [`player_attribute`] of a player's data.
+pub fn player_data_attribute(
+    p: &crate::player::PlayerData,
+    name: &str,
+    base: f64,
+    min: f64,
+    max: f64,
+) -> f64 {
     let mut mods = Vec::new();
     for slot in crate::player::encode::EQUIPMENT_SLOTS {
         item::attribute_modifiers(p.inventory.equipment(slot), slot, name, &mut mods);
@@ -522,6 +541,8 @@ pub fn post_piercing_attack(
             raining: false,
             thundering: false,
             location: None,
+            enchantment_active: None,
+            block_state: None,
         };
         enchants.post_piercing_attack_effects(&weapon, &ecx, env.random)
     };
@@ -1211,6 +1232,67 @@ pub fn post_attack_effects(
     post_attack(level, ents, env, cx, victim, source, weapon.as_ref());
 }
 
+/// `EnchantmentHelper.onHitBlock` of a projectile (`hitBlockEnchantmentEffects`): the
+/// `hit_block` effects of `weapon` whose requirements hold for the projectile, the hit
+/// position clamped into the block and the hit block (Channeling on lightning rods).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn hit_block_effects(
+    level: &Level,
+    ents: &mut Entities,
+    env: &mut Env<'_>,
+    cx: &mut MobContext,
+    weapon: &crate::item::ItemStack,
+    projectile: EntityId,
+    owner: Option<EntityId>,
+    block: vanillite_base::BlockPos,
+    at: Vec3,
+) {
+    if weapon.is_empty() {
+        return;
+    }
+    let combat = combat_data();
+    if !combat
+        .enchants
+        .of(weapon)
+        .any(|(e, _)| !e.hit_block.is_empty())
+    {
+        return;
+    }
+    let state = level.block(block);
+    let sees_sky = super::can_see_sky(level, block);
+    // `blockHitContext`: the projectile, the hit position and the hit block.
+    let effects = {
+        let ecx = EnchantContext {
+            types: env.types,
+            tags: &*combat,
+            this: facts(ents, projectile),
+            attacker: None,
+            direct_attacker: None,
+            attacking_player: None,
+            source: None,
+            raining: level.is_raining(),
+            thundering: level.is_thundering(),
+            location: Some((state, sees_sky)),
+            enchantment_active: None,
+            block_state: Some(state),
+        };
+        combat.enchants.hit_block_effects(weapon, &ecx, env.random)
+    };
+    let clamp = |v: f64, b: i32| v.clamp(f64::from(b), f64::from(b) + 1.0);
+    let pos = Vec3::new(
+        clamp(at.x, block.x),
+        clamp(at.y, block.y),
+        clamp(at.z, block.z),
+    );
+    // `EnchantedItemInUse(weapon, null, owner)`: a living owner.
+    let owner = owner.filter(|&o| ents.mob(o).is_some() || ents.player(o).is_some());
+    for (effect, ench_level) in effects {
+        run_entity_effect_at(
+            level, ents, env, cx, &effect, ench_level, projectile, pos, owner, None,
+        );
+    }
+}
+
 /// The entity a post attack effect affects (`TargetedConditionalEffect.affected`).
 fn affected_entity(affected: Party, victim: EntityId, source: &DamageSource) -> Option<EntityId> {
     match affected {
@@ -1232,6 +1314,31 @@ fn run_entity_effect(
     ench_level: i32,
     target: EntityId,
     item: Option<(EntityId, EquipmentSlot)>,
+) {
+    let Some(pos) = ents.store.get(target).map(|e| e.pos()) else {
+        return;
+    };
+    let (owner, slot) = item.map_or((None, None), |(o, s)| (Some(o), Some(s)));
+    run_entity_effect_at(
+        level, ents, env, cx, effect, ench_level, target, pos, owner, slot,
+    );
+}
+
+/// `EnchantmentEntityEffect.apply(level, enchantmentLevel, item, entity, position)`: `owner`
+/// and `slot` are those of the enchanted item (`EnchantedItemInUse`; a projectile's weapon
+/// has no slot).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_entity_effect_at(
+    level: &Level,
+    ents: &mut Entities,
+    env: &mut Env<'_>,
+    cx: &mut MobContext,
+    effect: &EntityEffect,
+    ench_level: i32,
+    target: EntityId,
+    pos: Vec3,
+    owner: Option<EntityId>,
+    slot: Option<EquipmentSlot>,
 ) {
     match effect {
         EntityEffect::Ignite(seconds) => {
@@ -1286,7 +1393,6 @@ fn run_entity_effect(
                 return;
             };
             // `new DamageSource(type, item.owner())`.
-            let owner = item.map(|(o, _)| o);
             let source = match owner {
                 Some(o) => entity_source(ents, kind, o, o),
                 None => DamageSource::of(kind),
@@ -1296,13 +1402,15 @@ fn run_entity_effect(
         EntityEffect::ChangeItemDamage(amount) => {
             #[allow(clippy::cast_possible_truncation)]
             let amount = amount.calculate(ench_level) as i32;
-            if let Some((owner, slot)) = item {
+            if let (Some(owner), Some(slot)) = (owner, slot) {
                 hurt_equipment(ents, env, owner, slot, amount);
             }
         }
         EntityEffect::AllOf(list) => {
             for e in list {
-                run_entity_effect(level, ents, env, cx, e, ench_level, target, item);
+                run_entity_effect_at(
+                    level, ents, env, cx, e, ench_level, target, pos, owner, slot,
+                );
             }
         }
         EntityEffect::WindBurst {
@@ -1310,9 +1418,6 @@ fn run_entity_effect(
             knockback,
             sound,
         } => {
-            let Some(pos) = ents.store.get(target).map(|e| e.pos()) else {
-                return;
-            };
             cx.actions
                 .push(super::WorldAction::WindBurst(super::WindBurst {
                     source: None,
@@ -1322,41 +1427,37 @@ fn run_entity_effect(
                     sound: static_sound(sound),
                 }));
         }
-        EntityEffect::SummonLightning => {
-            if let Some(pos) = ents.store.get(target).map(|e| e.pos()) {
-                let cause = item
-                    .map(|(owner, _)| owner)
-                    .filter(|&o| ents.player(o).is_some());
-                cx.actions.push(super::WorldAction::Level(
-                    super::boss::warden::LevelAction::Lightning { pos, cause },
-                ));
-            }
-        }
         EntityEffect::PlaySound {
             sounds,
             volume,
             pitch,
         } => {
-            let Some(pos) = ents.store.get(target).map(|e| e.pos()) else {
-                return;
-            };
-            let Some(sound) = EntityEffect::sound_of_level(sounds, ench_level) else {
-                return;
-            };
-            let source = ents.mob(target).map_or(
-                vanillite_protocol::packets::play::clientbound::SoundSource::Players,
-                |m| m.sound_source(),
-            );
-            crate::survival::play_sound(
-                env.out,
-                None,
-                pos,
-                sound,
-                source,
-                *volume,
-                *pitch,
-                crate::survival::sound_seed(),
-            );
+            if let Some((sound, source, volume, pitch)) =
+                crate::enchant::world::sound(ents, sounds, volume, pitch, ench_level, target)
+            {
+                crate::survival::play_sound(
+                    env.out,
+                    None,
+                    pos,
+                    &sound,
+                    source,
+                    volume,
+                    pitch,
+                    crate::survival::sound_seed(),
+                );
+            }
+        }
+        EntityEffect::SpawnParticles(p) => {
+            if let Some(packet) = crate::enchant::world::spawn_particles(ents, p, target, pos) {
+                cx.actions
+                    .push(super::WorldAction::Particles(Box::new(packet)));
+            }
+        }
+        EntityEffect::World(w) => {
+            let action =
+                crate::enchant::world::action(w, ench_level, target, pos, owner, env.types);
+            cx.actions
+                .push(super::WorldAction::Enchant(Box::new(action)));
         }
         EntityEffect::ApplyExhaustion(amount) => {
             if let Some(p) = ents.player_mut(target) {
@@ -1375,7 +1476,7 @@ fn run_entity_effect(
             *coordinate_scale,
             magnitude.calculate(ench_level),
         ),
-        EntityEffect::Unsupported => {}
+        EntityEffect::Attribute(_) | EntityEffect::Unsupported => {}
     }
 }
 
@@ -1487,7 +1588,7 @@ fn look_transform(x_rot: f32, y_rot: f32, v: [f64; 3]) -> Vec3 {
 }
 
 /// The burst sounds of the `explode` effects as static names.
-fn static_sound(sound: &str) -> &'static str {
+pub(crate) fn static_sound(sound: &str) -> &'static str {
     match sound {
         "minecraft:entity.wind_charge.wind_burst" => "minecraft:entity.wind_charge.wind_burst",
         "minecraft:entity.generic.explode" => "minecraft:entity.generic.explode",
@@ -1677,6 +1778,8 @@ pub fn armor_effectiveness<'t>(
             raining: false,
             thundering: false,
             location: None,
+            enchantment_active: None,
+            block_state: None,
         };
         crate::experience_orb::with_entity_random(|r| {
             combat

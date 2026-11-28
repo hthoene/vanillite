@@ -918,6 +918,11 @@ pub fn tick_arrow(
             velocity = Vec3::ZERO;
             a.last_state = Some(level.block(hit_pos));
             super::missile::hit_block(level, cx, id, hit_pos, at);
+            if let Some(weapon) = &a.weapon {
+                super::attack::hit_block_effects(
+                    level, ents, env, cx, weapon, id, a.owner, hit_pos, at,
+                );
+            }
             let pitch = 1.2 / (random.next_float() * 0.2 + 0.9);
             let seed = crate::survival::sound_seed();
             play_sound(
@@ -1469,6 +1474,8 @@ fn weapon_hit_values(
         raining: false,
         thundering: false,
         location: None,
+        enchantment_active: None,
+        block_state: None,
     };
     #[allow(clippy::cast_possible_truncation)]
     let damage = enchants.modify_damage(weapon, &cx, env.random, base_damage as f32);
