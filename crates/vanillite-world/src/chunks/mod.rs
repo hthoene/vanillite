@@ -2145,6 +2145,7 @@ impl Chunks {
                 self.slots.executor.spawn(
                     priority,
                     Box::new(move || {
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         light.light_chunks(&mut targets, &mut Neighbours::new(&mut neighbours));
@@ -2171,6 +2172,7 @@ impl Chunks {
                             });
                             return;
                         }
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         generator.generate(
@@ -3314,6 +3316,20 @@ impl Chunks {
 /// work for the chunks after them.
 fn urgency(level: u8, reach: u8) -> u8 {
     level.saturating_sub(reach)
+}
+
+/// Restores Java's floating point environment on the calling worker before a generation or
+/// light job, in case a native library changed it (#291): logged once.
+fn ensure_fp_default() {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if let Some(found) = vanillite_base::fpenv::ensure_default()
+        && !LOGGED.swap(true, Ordering::Relaxed)
+    {
+        log::warn!(
+            "A native library changed the floating point mode of a worker thread \
+             (control register {found:#x}); restored it so world generation stays exact"
+        );
+    }
 }
 
 /// The compute-pool priority of a chunk job: by urgency ([`urgency`]), then by level, then by
