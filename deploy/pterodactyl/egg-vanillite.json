@@ -812,6 +812,46 @@
       "field_type": "text"
     },
     {
+      "name": "Performance: Crowd › Near Radius",
+      "description": "Players farther than this many blocks (horizontally) from a viewer are in its far tier: their movement, rotation and head reach that viewer every `far-interval` ticks instead of with every Vanilla update. Coming nearer, the viewer gets their exact position at once. Deviation: far players move less smoothly (the client interpolates between the updates). \"disabled\" sends every player's movement to everyone at Vanilla's rate. Applies to every world. Range: 8 to 512. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: performance.crowd.near-radius.",
+      "env_variable": "VANILLITE_PERFORMANCE__CROWD__NEAR_RADIUS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|regex:/^(?!disabled[0-9])(disabled)?[0-9]*$/",
+      "field_type": "text"
+    },
+    {
+      "name": "Performance: Crowd › Far Interval",
+      "description": "Ticks between two movement updates of a far player (`near-radius`). Applies to every world. Range: 2 to 64. Empty: the profile's value (vanilla profile: 8). vanillite.toml: performance.crowd.far-interval.",
+      "env_variable": "VANILLITE_PERFORMANCE__CROWD__FAR_INTERVAL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|integer|between:2,64",
+      "field_type": "text"
+    },
+    {
+      "name": "Performance: Crowd › Max Visible Players",
+      "description": "Players each player sees at most: only the nearest ones are spawned for it (with some slack, so the set does not change at every step); the others stay in the tab list and on the locator bar. Deviation: players beyond the limit are invisible. Bounds the traffic of a crowd to players × this value. \"disabled\" shows every player within the tracking range. Applies to every world. Range: 8 to 100000. Also accepts disabled. Empty: the profile's value (vanilla profile: disabled). vanillite.toml: performance.crowd.max-visible-players.",
+      "env_variable": "VANILLITE_PERFORMANCE__CROWD__MAX_VISIBLE_PLAYERS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|regex:/^(?!disabled[0-9])(disabled)?[0-9]*$/",
+      "field_type": "text"
+    },
+    {
+      "name": "Performance: Crowd › Waypoint Interval",
+      "description": "Ticks between two position updates of a player on the locator bar (changes of visibility, team colour and view still apply at once). Deviation: with more than 1, the locator bar follows moving players with a delay of up to this many ticks. Applies to every world. Range: 1 to 100. Empty: the profile's value (vanilla profile: 1). vanillite.toml: performance.crowd.waypoint-interval.",
+      "env_variable": "VANILLITE_PERFORMANCE__CROWD__WAYPOINT_INTERVAL",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|integer|between:1,100",
+      "field_type": "text"
+    },
+    {
       "name": "Performance: Chunks › Unload Delay",
       "description": "Ticks a chunk stays loaded after no player or ticket needs it, so walking back does not load it again. Applies to every world. Range: 0 to 6000. Empty: the profile's value (vanilla profile: 100). vanillite.toml: performance.chunks.unload-delay.",
       "env_variable": "VANILLITE_PERFORMANCE__CHUNKS__UNLOAD_DELAY",

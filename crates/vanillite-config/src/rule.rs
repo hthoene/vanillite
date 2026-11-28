@@ -38,16 +38,20 @@ pub enum Profile {
     /// Vanillite's strongest optimizations that change Vanilla behaviour only a little
     /// (activation range, merge radii, spawn and despawn tuning, overload protection, ...).
     Performance,
+    /// `performance` plus crowd mode (`performance.crowd`): far players move less smoothly and
+    /// each player sees only the nearest players, so thousands fit into one place.
+    Crowd,
 }
 
 impl Profile {
     /// All profiles, in documentation order.
-    pub const ALL: [Profile; 5] = [
+    pub const ALL: [Profile; 6] = [
         Profile::Vanilla,
         Profile::Technical,
         Profile::Paper,
         Profile::Spigot,
         Profile::Performance,
+        Profile::Crowd,
     ];
 
     /// The name used in `vanillite.toml`.
@@ -58,6 +62,7 @@ impl Profile {
             Profile::Paper => "paper",
             Profile::Spigot => "spigot",
             Profile::Performance => "performance",
+            Profile::Crowd => "crowd",
         }
     }
 
@@ -577,7 +582,8 @@ impl<T: RuleValue> RuleValue for DisabledOr<T> {
 ///
 /// The TOML key of a rule is `<group key>.<key>`; hot paths read plain fields
 /// (`rules.chunks.send_rate`). Profiles not given take the `vanilla` value (also
-/// `performance`: it never inherits `paper`). `range` bounds
+/// `performance`: it never inherits `paper`), except `crowd`, which takes the `performance`
+/// value. `range` bounds
 /// numeric values (inclusive, checked on load); `restart = true` marks rules that are read only at
 /// startup, all others are hot-reloadable.
 #[macro_export]
@@ -598,6 +604,7 @@ macro_rules! rules {
                             $(, paper = $paper:expr)?
                             $(, spigot = $spigot:expr)?
                             $(, performance = $performance:expr)?
+                            $(, crowd = $crowd:expr)?
                         ;
                     )*
                 }
@@ -655,6 +662,10 @@ macro_rules! rules {
                                         $crate::__rules_pick!($($spigot)? ; $vanilla),
                                     $crate::Profile::Performance =>
                                         $crate::__rules_pick!($($performance)? ; $vanilla),
+                                    $crate::Profile::Crowd => $crate::__rules_pick!(
+                                        $($crowd)? ;
+                                        $crate::__rules_pick!($($performance)? ; $vanilla)
+                                    ),
                                 },
                             )*
                         },

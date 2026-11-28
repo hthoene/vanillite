@@ -186,7 +186,7 @@ impl Config {
         let profile = match profile_name {
             Some(name) => Profile::parse(&name).ok_or_else(|| {
                 format!(
-                    "unknown profile {name:?} (vanilla, technical, paper, spigot or performance)"
+                    "unknown profile {name:?} (vanilla, technical, paper, spigot, performance or crowd)"
                 )
             })?,
             None => Profile::Vanilla,
@@ -392,8 +392,9 @@ pub fn default_vanillite_toml() -> String {
     let mut out = String::from(
         "# Vanillite configuration. Vanilla's options are in server.properties.\n\
          #\n\
-         # A profile presets every rule: vanilla, technical, paper, spigot or\n\
-         # performance (Vanillite's optimizations that deviate a little from Vanilla).\n\
+         # A profile presets every rule: vanilla, technical, paper, spigot,\n\
+         # performance (Vanillite's optimizations that deviate a little from Vanilla) or\n\
+         # crowd (performance plus crowd mode, for thousands of players in one place).\n\
          # Uncomment a key to override the profile. Per-world overrides go into\n\
          # [worlds.\"minecraft:the_nether\"] sections with the same keys.\n\
          # Extra worlds besides level-name (own folder, seed and generator) go into\n\

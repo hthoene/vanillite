@@ -485,6 +485,12 @@ impl WorldPlayers {
         }
     }
 
+    /// Ticks between two position updates on the locator bar
+    /// (`performance.crowd.waypoint-interval`).
+    pub(crate) fn set_waypoint_interval(&mut self, interval: u8) {
+        self.waypoints.interval = interval;
+    }
+
     /// The players that asked to respawn since the last call.
     pub(crate) fn take_respawns(&mut self) -> Vec<EntityId> {
         std::mem::take(&mut self.respawns)
@@ -1205,7 +1211,7 @@ impl WorldPlayers {
             player.connection.chat.command_spam.tick();
         }
         self.waypoints
-            .tick(entities, global, compute, global.plugins.packet_tap());
+            .tick(entities, global, compute, global.plugins.packet_tap(), tick);
         // `PlayerList.tick`: latencies for the tab list. The first world sends them for all.
         if tick.is_multiple_of(LATENCY_UPDATE_TICKS)
             && self.level.dimension.as_str() == "minecraft:overworld"

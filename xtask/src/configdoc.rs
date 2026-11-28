@@ -79,6 +79,11 @@ pub fn render() -> String {
                 "Vanillite's strongest optimisations that change Vanilla behaviour only a little \
                  (activation range, merge radii, spawn and despawn tuning, overload protection)."
             }
+            Profile::Crowd => {
+                "`performance` plus crowd mode (`performance.crowd`) for thousands of players in \
+                 one place: far players move less smoothly, each player sees only the nearest \
+                 players, the locator bar updates less often."
+            }
         };
         let _ = writeln!(out, "| `{}` | {what} |", profile.name());
     }

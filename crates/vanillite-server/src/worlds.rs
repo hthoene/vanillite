@@ -26,7 +26,7 @@ use vanillite_storage::{
     WorldFormat,
 };
 use vanillite_world::chunks::{ChunkSettings, ChunkSlots, Chunks, Executor, SaveSettings};
-use vanillite_world::tracking::{EntityTrackerProvider, TrackerSettings};
+use vanillite_world::tracking::{CrowdSettings, EntityTrackerProvider, TrackerSettings};
 
 use crate::dimensions::Environment;
 use crate::global::Global;
@@ -203,7 +203,8 @@ impl WorldFactory {
             i32::from(view_distance),
             config.properties.entity_broadcast_range_percentage,
             &rules.tracking,
-        );
+        )
+        .with_crowd(CrowdSettings::new(&rules.crowd));
         let tracker = self.tracker.create(&tracker_settings);
         let player_range = tracker_settings.range(vanillite_data::entity::ids::PLAYER);
         let info = crate::world_setup::world_info(packs, place.dir.clone(), dimension, kind, seed)?;

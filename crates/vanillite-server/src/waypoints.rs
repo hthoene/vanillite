@@ -80,6 +80,21 @@ impl Snapshot {
             || self.icon != before.icon
     }
 
+    /// Keeps the position of `before` if nothing but the position changed
+    /// (`performance.crowd.waypoint-interval` between two position updates).
+    fn hold_position(&mut self, before: &Snapshot) {
+        if self.view == before.view
+            && self.transmit_range.to_bits() == before.transmit_range.to_bits()
+            && self.spectator == before.spectator
+            && self.vehicles == before.vehicles
+            && self.icon == before.icon
+        {
+            self.pos = before.pos;
+            self.block = before.block;
+            self.chunk = before.chunk;
+        }
+    }
+
     fn distance(&self, other: &Snapshot) -> f64 {
         let (dx, dy, dz) = (
             self.pos.x - other.pos.x,
@@ -118,6 +133,9 @@ pub(crate) struct Waypoints {
     kinds: Vec<Vec<u64>>,
     /// Per receiver slot: the last angle of its azimuth connections by source slot.
     angles: Vec<FxHashMap<u32, f32>>,
+    /// Ticks between two position updates of a player (`performance.crowd.waypoint-interval`;
+    /// 0 and 1 = every tick).
+    pub(crate) interval: u8,
 }
 
 /// The kind of a connection in [`Waypoints::kinds`].
@@ -480,14 +498,18 @@ struct PairCtx<'a> {
 impl Waypoints {
     /// The tick's update: the players that left get their connections removed, then the
     /// connections of the players that moved or changed are made, updated or broken. Each
-    /// receiver gets its packets as one batch, built in parallel over the receivers.
+    /// receiver gets its packets as one batch, built in parallel over the receivers. With an
+    /// [`Self::interval`] above 1 (crowd mode), a player's position counts only every
+    /// `interval` ticks.
     pub(crate) fn tick(
         &mut self,
         entities: &Entities,
         global: &Global,
         compute: &Compute,
         tap: &PacketTap,
+        tick: u64,
     ) {
+        let interval = self.interval;
         let enabled = global
             .level
             .rules()
@@ -551,6 +573,15 @@ impl Waypoints {
                 now.resize_with(i + 1, || None);
             }
             now[i] = Some((id, snap));
+        }
+        if interval > 1 {
+            for (slot, (now, before)) in (0u64..).zip(now.iter_mut().zip(&self.players)) {
+                if let (Some((_, now)), Some((_, before))) = (now, before)
+                    && !(tick + slot).is_multiple_of(u64::from(interval))
+                {
+                    now.hold_position(before);
+                }
+            }
         }
         let changed: Vec<bool> = now
             .iter()
