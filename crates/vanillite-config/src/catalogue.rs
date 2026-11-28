@@ -852,12 +852,13 @@ mod tests {
     use super::*;
     use crate::{Profile, RuleSet};
 
-    /// Only `performance` gives up the tick-exact redstone wire: `paper` and `spigot` follow
-    /// their servers' defaults, `technical` needs Vanilla's update order.
+    /// Only `performance` (and `crowd`, which builds on it) gives up the tick-exact redstone
+    /// wire: `paper` and `spigot` follow their servers' defaults, `technical` needs Vanilla's
+    /// update order.
     #[test]
     fn redstone_wire_by_profile() {
         for profile in Profile::ALL {
-            let expected = if profile == Profile::Performance {
+            let expected = if matches!(profile, Profile::Performance | Profile::Crowd) {
                 RedstoneImplementation::AlternateCurrent
             } else {
                 RedstoneImplementation::Vanilla
