@@ -1122,6 +1122,7 @@ fn with_memory(g: MobGoal, ticks: i32) -> MobGoal {
             interval,
             found,
             filter,
+            kinds,
             players_only,
             precheck,
         }) => {
@@ -1131,6 +1132,7 @@ fn with_memory(g: MobGoal, ticks: i32) -> MobGoal {
                 interval,
                 found,
                 filter,
+                kinds,
                 players_only,
                 precheck,
             })

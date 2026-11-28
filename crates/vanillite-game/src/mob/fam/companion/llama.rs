@@ -546,7 +546,7 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
             let range = t.mob_ref().attrs.follow_range * 0.25;
             let area = t.aabb().inflate(range, range, range);
             let wolves: TargetFilter = wolf_not_tame;
-            *found = crate::mob::common::find_nearest(t, wolves, range, false, false, area);
+            *found = crate::mob::common::find_nearest(t, wolves, None, range, false, false, area);
             found.is_some()
         }
         Goal::DefendTrader {

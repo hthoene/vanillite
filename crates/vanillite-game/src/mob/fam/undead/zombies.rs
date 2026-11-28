@@ -364,19 +364,29 @@ pub fn register_goals(m: &mut MobData) {
             );
             tg.add(
                 3,
-                goals::Goal::Common(CommonGoal::nearest(10, false, common::villager)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, false, common::villager).of_kinds(&common::VILLAGERS),
+                ),
             );
             tg.add(
                 3,
-                goals::Goal::Common(CommonGoal::nearest(10, true, common::iron_golem)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, true, common::iron_golem)
+                        .of_kinds(&common::IRON_GOLEMS),
+                ),
             );
             tg.add(
                 3,
-                goals::Goal::Common(CommonGoal::nearest(10, true, axolotl)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, true, axolotl).of_kinds(&common::AXOLOTLS),
+                ),
             );
             tg.add(
                 5,
-                goals::Goal::Common(CommonGoal::nearest(10, true, common::baby_turtle_on_land)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, true, common::baby_turtle_on_land)
+                        .of_kinds(&common::TURTLES),
+                ),
             );
         }
         Kind::ZombifiedPiglin => {
@@ -414,15 +424,23 @@ pub fn register_goals(m: &mut MobData) {
             tg.add(2, goals::Goal::nearest_player(true));
             tg.add(
                 3,
-                goals::Goal::Common(CommonGoal::nearest(10, false, common::villager)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, false, common::villager).of_kinds(&common::VILLAGERS),
+                ),
             );
             tg.add(
                 3,
-                goals::Goal::Common(CommonGoal::nearest(10, true, common::iron_golem)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, true, common::iron_golem)
+                        .of_kinds(&common::IRON_GOLEMS),
+                ),
             );
             tg.add(
                 5,
-                goals::Goal::Common(CommonGoal::nearest(10, true, common::baby_turtle_on_land)),
+                goals::Goal::Common(
+                    CommonGoal::nearest(10, true, common::baby_turtle_on_land)
+                        .of_kinds(&common::TURTLES),
+                ),
             );
         }
     }
