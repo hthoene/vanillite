@@ -313,7 +313,9 @@ pub fn rearing_offset(m: &MobData, y_rot: f32, scale: f32) -> Vec3 {
 
 /// `AbstractHorse.tick` counters (after `LivingEntity.tick`; here before the next one).
 pub fn before_tick(t: &mut Tick<'_, '_>) {
+    let rot = t.core().rot();
     let m = t.mob();
+    st_mut(m).view_rot_o = [rot.y_head_rot, rot.x_rot];
     let mut changed = false;
     {
         let s = st_mut(m);
@@ -734,7 +736,27 @@ fn try_saddle(ix: &mut Interact<'_, '_>) -> bool {
         m.equipment.set_guaranteed_drop(EquipmentSlot::Saddle);
     }
     send_equipment(ix);
-    sound(ix, "minecraft:entity.horse.saddle", 1.0, 1.0);
+    // `LivingEntity.onEquipItem`: the equip sound takes its seed from the mob's random.
+    let pos = ix.ents.store.get(ix.target).map(|e| e.pos());
+    if let (Some(pos), Some(m)) = (pos, ix.ents.mob_mut(ix.target))
+        && !m.silent
+    {
+        let seed = m.random.next_long();
+        let source = m.sound_source();
+        crate::survival::play_sound(
+            ix.env.out,
+            None,
+            pos,
+            "minecraft:entity.horse.saddle",
+            source,
+            1.0,
+            1.0,
+            seed,
+        );
+    }
+    let event = crate::level::game_event::events().equip;
+    let target = ix.target;
+    crate::mob::animal::entity_game_event(ix.ents, ix.env, target, event, Some(target));
     true
 }
 
@@ -778,6 +800,23 @@ fn ride(ix: &mut Interact<'_, '_>) -> Interaction {
         });
     }
     crate::riding::start_riding(ix.ents, ix.env, ix.player, ix.target, false);
+    // `AbstractHorse.addPassenger`: the rider looks where the horse looked at the start of its
+    // last tick (`absSnapRotationTo(getViewYRot(0), getViewXRot(0))`); the mount teleport of
+    // the player keeps that rotation.
+    if ix.ents.vehicle_of(ix.player) == Some(ix.target) {
+        let [y, x] = ix
+            .ents
+            .mob(ix.target)
+            .map_or([0.0; 2], |m| st(m).view_rot_o);
+        if let Some(mut p) = ix.ents.store.get_mut(ix.player) {
+            let y_rot = y % 360.0;
+            p.set_rot(Rotation {
+                y_rot,
+                x_rot: x.clamp(-90.0, 90.0),
+                y_head_rot: y_rot,
+            });
+        }
+    }
     Interaction::Success
 }
 

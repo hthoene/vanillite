@@ -1170,6 +1170,22 @@ pub fn play_ambient_sound(t: &mut Tick<'_, '_>) {
         super::boss::warden::play_ambient_sound(t);
         return;
     }
+    if t.mob_ref().kind == Kind::Fox {
+        // `Fox.playAmbientSound`: a screech louder, else `super.playAmbientSound()`, which asks
+        // `getAmbientSound` again.
+        let fox = super::fam::companion::fox::ambient_sound_at;
+        if fox(t) == "minecraft:entity.fox.screech" {
+            let m = t.mob();
+            let pitch = (m.random.next_float() - m.random.next_float()) * 0.2
+                + if m.baby { 1.5 } else { 1.0 };
+            play_sound(t, "minecraft:entity.fox.screech", 2.0, pitch);
+        } else {
+            let sound = fox(t);
+            let id = t.id;
+            combat::mob_sound(t.ents, t.env, id, sound);
+        }
+        return;
+    }
     if t.mob_ref().kind == Kind::Parrot {
         let sound = super::fam::companion::parrot::ambient_sound(t);
         let id = t.id;

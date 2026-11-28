@@ -86,6 +86,11 @@ impl SentLog {
         self.record(ms, Reader::new(body).varint().ok(), body.len());
     }
 
+    /// Records a shared packet by its id and body length.
+    pub(crate) fn shared(&self, ms: u64, id: Option<i32>, len: usize) {
+        self.record(ms, id, len);
+    }
+
     /// Records the first [`BATCH_FRAMES`] frames of a batch built for `compressed` or
     /// uncompressed framing: a crowd's batch holds thousands of small frames, and reading
     /// them all would cost the writer more than writing them. The id of a compressed frame is

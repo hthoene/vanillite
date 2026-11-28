@@ -147,11 +147,12 @@ pub fn brush(
     pos: BlockPos,
     face: Direction,
     stack: &mut ItemStack,
+    slot: crate::item::EquipmentSlot,
 ) -> bool {
     // Player luck is 0 until the `luck` attribute exists.
     let done = brush_block(level, game_time, pos, Some(player), 0.0, face);
     if done {
-        super::hurt_item(level, stack, 1, player);
+        super::hurt_item(level, stack, 1, player, slot);
     }
     done
 }

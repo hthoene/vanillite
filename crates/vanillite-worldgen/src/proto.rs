@@ -166,21 +166,17 @@ impl DenseBlocks {
     }
 }
 
-thread_local! {
-    /// A spare state buffer of [`DenseBlocks`], so chunks on one thread reuse it.
-    static SPARE_DENSE: std::cell::Cell<Vec<u16>> = const { std::cell::Cell::new(Vec::new()) };
-}
-
 impl ProtoChunk {
     /// Moves the blocks into a dense buffer until [`Self::end_dense`]: block reads and writes
     /// are much cheaper there. [`Self::sections`] must not be read for blocks meanwhile.
-    pub fn begin_dense(&mut self) {
+    /// `spare` is a reused allocation for the buffer (taken; [`Self::end_dense`] gives it back).
+    pub fn begin_dense(&mut self, spare: &mut Vec<u16>) {
         if self.dense.is_some() {
             return;
         }
         let air = BlockState::AIR.0;
         let height = self.sections.len() << 4;
-        let mut states = SPARE_DENSE.take();
+        let mut states = std::mem::take(spare);
         states.clear();
         states.resize(height << 8, air);
         let mut non_air = Vec::with_capacity(self.sections.len());
@@ -207,8 +203,9 @@ impl ProtoChunk {
         });
     }
 
-    /// Packs the dense buffer of [`Self::begin_dense`] back into the sections.
-    pub fn end_dense(&mut self) {
+    /// Packs the dense buffer of [`Self::begin_dense`] back into the sections and leaves its
+    /// allocation in `spare`.
+    pub fn end_dense(&mut self, spare: &mut Vec<u16>) {
         let Some(dense) = self.dense.take() else {
             return;
         };
@@ -228,7 +225,7 @@ impl ProtoChunk {
             let biomes = std::mem::replace(section.biomes_mut(), PalettedContainer::new(0));
             *section = Section::from_containers(blocks, biomes);
         }
-        SPARE_DENSE.set(dense.states);
+        *spare = dense.states;
     }
 
     /// An empty chunk of air with every biome set to `biome`.
@@ -296,7 +293,7 @@ impl ProtoChunk {
     /// else (heightmaps, block entities, ticks) and must get sections back with
     /// [`Self::set_sections`] before it is used again.
     pub fn take_sections(&mut self) -> Vec<Section> {
-        self.end_dense();
+        self.end_dense(&mut Vec::new());
         std::mem::take(&mut self.sections)
     }
 
@@ -346,7 +343,7 @@ impl ProtoChunk {
 
     /// Mutable section by index.
     pub fn section_mut(&mut self, index: usize) -> &mut Section {
-        self.end_dense();
+        self.end_dense(&mut Vec::new());
         self.final_heightmaps_exact = false;
         &mut self.sections[index]
     }
@@ -988,7 +985,7 @@ impl ProtoChunk {
 
     /// The finished chunk; its heightmaps are primed from the blocks.
     pub fn into_chunk(mut self) -> Chunk {
-        self.end_dense();
+        self.end_dense(&mut Vec::new());
         let count = self.sections.len();
         Chunk::from_sections(
             self.min_y >> 4,

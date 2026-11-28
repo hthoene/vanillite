@@ -1080,7 +1080,12 @@ pub fn reload_brain(m: &mut MobData, tag: &Compound) {
 
 /// `Bucketable.saveDefaultDataToBucketTag`: the bucket `item` with the mob's custom name, and
 /// the default `bucket_entity_data` the kind adds to before [`set_bucket_data`].
-pub(crate) fn bucket_default(m: &MobData, item: &str) -> (ItemStack, Compound) {
+pub(crate) fn bucket_default(
+    m: &MobData,
+    flags: vanillite_world::entity::EntityFlags,
+    item: &str,
+) -> (ItemStack, Compound) {
+    use vanillite_world::entity::EntityFlags;
     let mut stack = super::equipment::stack(item);
     if let Some(name) = m.custom_name.as_deref() {
         stack.set_component(
@@ -1094,6 +1099,15 @@ pub(crate) fn bucket_default(m: &MobData, item: &str) -> (ItemStack, Compound) {
     }
     if m.silent {
         data.insert("Silent", true);
+    }
+    if flags.contains(EntityFlags::NO_GRAVITY) {
+        data.insert("NoGravity", true);
+    }
+    if flags.contains(EntityFlags::GLOWING_TAG) {
+        data.insert("Glowing", true);
+    }
+    if flags.contains(EntityFlags::INVULNERABLE) {
+        data.insert("Invulnerable", true);
     }
     if m.persistent {
         data.insert("PersistenceRequired", true);
@@ -1112,10 +1126,44 @@ pub(crate) fn set_bucket_data(stack: &mut ItemStack, data: Compound) {
     }
 }
 
+/// `loadDefaultDataFromBucketTag`'s entity flags (`NoGravity`, `Glowing`, `Invulnerable`) of
+/// the bucket's `bucket_entity_data` on the spawned mob.
+pub fn load_bucket_flags(ents: &mut crate::entities::Entities, id: EntityId, stack: &ItemStack) {
+    use vanillite_world::entity::EntityFlags;
+    let Some(vanillite_nbt::Tag::Compound(tag)) = vanillite_data::registry::DATA_COMPONENT_TYPE
+        .id("minecraft:bucket_entity_data")
+        .and_then(|c| stack.component(c))
+        .and_then(crate::mob::nbt::component_tag)
+    else {
+        return;
+    };
+    let glowing_effect = ents
+        .mob(id)
+        .is_some_and(|m| m.effects.has(crate::effect::MobEffect::GLOWING));
+    let Some(mut e) = ents.store.get_mut(id) else {
+        return;
+    };
+    let before = e.as_ref().flags();
+    for (key, flag) in [
+        ("NoGravity", EntityFlags::NO_GRAVITY),
+        ("Glowing", EntityFlags::GLOWING_TAG),
+        ("Invulnerable", EntityFlags::INVULNERABLE),
+    ] {
+        if let Some(v) = crate::mob::entity_nbt::get_bool(&tag, key) {
+            e.set_flags(flag, v);
+        }
+    }
+    let tagged = e.as_ref().flags().contains(EntityFlags::GLOWING_TAG);
+    e.set_flags(EntityFlags::GLOWING, tagged || glowing_effect);
+    if e.as_ref().flags() != before {
+        e.mark_data_dirty();
+    }
+}
+
 /// `MobBucketItem.spawn` after the mob is created: `Bucketable.loadFromBucketTag` of the
 /// bucket's `bucket_entity_data` and `setFromBucket(true)` (its components are applied by
-/// [`crate::mob::item_components::apply_spawn_item`]). `NoGravity`, `Glowing` and
-/// `Invulnerable` are entity flags the mob data does not hold.
+/// [`crate::mob::item_components::apply_spawn_item`]); the entity flags follow with
+/// [`load_bucket_flags`].
 pub fn load_from_bucket(m: &mut MobData, stack: &crate::item::ItemStack) {
     let tag = vanillite_data::registry::DATA_COMPONENT_TYPE
         .id("minecraft:bucket_entity_data")

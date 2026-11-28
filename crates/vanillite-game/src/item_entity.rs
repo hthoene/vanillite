@@ -1071,9 +1071,6 @@ pub fn tick(
     out.moved_block = floor(old.x) != floor(out.pos.x)
         || floor(old.y) != floor(out.pos.y)
         || floor(old.z) != floor(out.pos.z);
-    if data.age != UNLIMITED_LIFETIME {
-        data.age = data.age.saturating_add(1);
-    }
     // The second `updateFluidInteraction`, where the item is now.
     let touched = if out.pos == old {
         touched
@@ -1088,10 +1085,16 @@ pub fn tick(
     let dy = v.y - old_velocity.y;
     let dz = v.z - old_velocity.z;
     out.needs_sync = in_fluid || dx * dx + dy * dy + dz * dz > 0.01;
-    if data.age >= input.lifetime && data.age != UNLIMITED_LIFETIME {
-        out.discard = true;
-    }
     out
+}
+
+/// The end of `ItemEntity.tick`, after `mergeWithNeighbours`: `age++` (not for an unlimited
+/// lifetime), then whether it reached `lifetime` and is discarded.
+pub fn age_tick(data: &mut ItemData, lifetime: i16) -> bool {
+    if data.age != UNLIMITED_LIFETIME {
+        data.age = data.age.saturating_add(1);
+    }
+    data.age >= lifetime && data.age != UNLIMITED_LIFETIME
 }
 
 /// `state.isCollisionShapeFullBlock(level, pos)`: a moving piston's shape comes from its block

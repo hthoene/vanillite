@@ -631,11 +631,19 @@ fn water_bottle_on_mud(ctx: &mut PlayContext<'_>, click: Click) -> Used {
     let Some(level) = ctx.level.level_mut() else {
         return Used::Success;
     };
-    // `sendParticles(SPLASH, ...)` five times; the particles are the client's.
+    // `sendParticles(SPLASH, x + nextDouble, y + 1, z + nextDouble, 1, 0, 0, 0, 1)` five
+    // times.
     for _ in 0..5 {
         use vanillite_base::random::RandomSource;
-        level.random().next_double();
-        level.random().next_double();
+        let x = f64::from(pos.x) + level.random().next_double();
+        let z = f64::from(pos.z) + level.random().next_double();
+        level.send_particles(
+            crate::level::particles::simple("minecraft:splash"),
+            Vec3::new(x, f64::from(pos.y) + 1.0, z),
+            1,
+            Vec3::ZERO,
+            1.0,
+        );
     }
     let empty = sound_id("item.bottle.empty");
     level.play_block_sound(None, pos, empty, SOUND_BLOCKS, 1.0, 1.0);
@@ -891,14 +899,13 @@ fn block_predicate(
         let entity = level.and_then(|level| level.block_entity_nbt(pos));
         matches &= entity.is_some_and(|e| nbt_contains(&Tag::Compound(e), &tag));
     }
-    // Component matchers: blocks are matched against their block entity's components, which
-    // are not collected for predicates; a predicate with any never matches.
+    // Component matchers: `matches(BlockInWorld)` tests only the state and the NBT, so
+    // `AdventureModePredicate` ignores them.
     let exact = r.varint().ok()?;
     for _ in 0..exact.clamp(0, 256) {
         let type_id = u16::try_from(r.varint().ok()?).ok()?;
         let len = vanillite_protocol::components::value_len(type_id, r.rest()).ok()?;
         r.skip(len).ok()?;
-        matches = false;
     }
     let partial = r.varint().ok()?;
     for _ in 0..partial.clamp(0, 64) {
@@ -910,7 +917,6 @@ fn block_predicate(
         vanillite_nbt::read::read_network(&mut input, &mut budget).ok()?;
         let consumed = r.rest().len().saturating_sub(input.len());
         r.skip(consumed).ok()?;
-        matches = false;
     }
     Some(matches)
 }
@@ -1371,6 +1377,14 @@ fn spawn_egg_in_liquid(
     let Some((pos, face, _)) = pov_hit(ctx, y_rot, x_rot, true) else {
         return Used::Pass;
     };
+    // `EntityType.canSpawn`: no monsters in Peaceful (the egg is kept).
+    let peaceful = ctx
+        .level
+        .level()
+        .is_some_and(|l| l.spawner_env.difficulty == crate::survival::rules::Difficulty::Peaceful);
+    if peaceful && !kind.allowed_in_peaceful() {
+        return Used::Fail;
+    }
     let state = ctx.level.block(pos);
     if !state.is(blocks::WATER) && !state.is(blocks::LAVA) {
         return Used::Pass;
@@ -1379,7 +1393,7 @@ fn spawn_egg_in_liquid(
     // `level.mayInteract` and `player.mayUseItemAt(pos, face, stack)`.
     let may_build = ctx.actor.game_mode != vanillite_config::GameMode::Adventure
         || can_place_on(ctx, &stack, pos.relative(face.opposite()));
-    if (ctx.spawn_protected)(pos) || !may_build {
+    if !may_interact(ctx, pos) || !may_build {
         return Used::Fail;
     }
     let player = ctx.actor.entity;
@@ -1399,6 +1413,11 @@ fn spawn_egg_in_liquid(
     }
     used_stat(ctx, stack.item);
     Used::Success
+}
+
+/// `ServerLevel.mayInteract`: not spawn protected and inside the world border.
+fn may_interact(ctx: &PlayContext<'_>, pos: BlockPos) -> bool {
+    !(ctx.spawn_protected)(pos) && ctx.level.within_border(pos)
 }
 
 /// The mob of a mob bucket item.
@@ -1421,7 +1440,7 @@ fn bucket(ctx: &mut PlayContext<'_>, hand: Hand, y_rot: f32, x_rot: f32, content
     // tests `can_place_on` against the clicked block.
     let may_build = ctx.actor.game_mode != vanillite_config::GameMode::Adventure
         || can_place_on(ctx, &stack, pos);
-    if (ctx.spawn_protected)(pos) || !may_build || !ctx.level.is_loaded(pos) {
+    if !may_interact(ctx, pos) || !may_build || !ctx.level.is_loaded(pos) {
         return Used::Fail;
     }
     let sneaking = ctx.actor.sneaking;
@@ -1583,13 +1602,11 @@ fn glass_bottle(ctx: &mut PlayContext<'_>, hand: Hand, y_rot: f32, x_rot: f32) -
         .store
         .for_each_in(&area, false, |id| clouds.push(id));
     let cloud = clouds.into_iter().find(|&id| {
-        level.entities.cloud(id).is_some_and(|c| {
-            c.owner.is_some_and(|o| {
-                level
-                    .entities
-                    .mob(o)
-                    .is_some_and(|m| m.kind == crate::mob::Kind::EnderDragon)
-            })
+        crate::effect::cloud::owner(&mut level.entities, id).is_some_and(|o| {
+            level
+                .entities
+                .mob(o)
+                .is_some_and(|m| m.kind == crate::mob::Kind::EnderDragon)
         })
     });
     if let Some(cloud) = cloud {
@@ -1612,7 +1629,7 @@ fn glass_bottle(ctx: &mut PlayContext<'_>, hand: Hand, y_rot: f32, x_rot: f32) -
     let Some((pos, _, _)) = pov_hit(ctx, y_rot, x_rot, true) else {
         return Used::Pass;
     };
-    if (ctx.spawn_protected)(pos) {
+    if !may_interact(ctx, pos) {
         return Used::Pass;
     }
     let Some(level) = ctx.level.level_mut() else {
@@ -1650,7 +1667,7 @@ fn swap_with_equipment_slot(ctx: &mut PlayContext<'_>, hand: Hand) -> Used {
     };
     let worn = ctx.inventory.get(index).clone();
     let creative = ctx.actor.creative();
-    let bound = ctx.data.enchantment_level(&worn, "minecraft:binding_curse") > 0;
+    let bound = ctx.data.prevents_armor_change(&worn);
     if (bound && !creative) || in_hand.same_item_same_components(&worn) {
         return Used::Fail;
     }

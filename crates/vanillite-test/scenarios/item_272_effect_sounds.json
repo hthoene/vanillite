@@ -1,0 +1,63 @@
+{
+  "description": "MobEffect.onEffectAdded (#272, S-14): Bad Omen and Trial Omen added to a player and to a zombie play their sound; Level.playSound seeds from its own sound seed generator, so the level random does not move.",
+  "tier": "fast",
+  "level_rng": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 8,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        5.5,
+        -60.0,
+        5.5
+      ]
+    },
+    {
+      "name": "z",
+      "type": "minecraft:zombie",
+      "pos": [
+        9.5,
+        -60.0,
+        9.5
+      ],
+      "seed": 3
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "effect",
+      "entity": "p",
+      "effect": "minecraft:bad_omen",
+      "duration": 600
+    },
+    {
+      "tick": 2,
+      "op": "effect",
+      "entity": "z",
+      "effect": "minecraft:trial_omen",
+      "duration": 600
+    },
+    {
+      "tick": 4,
+      "op": "command",
+      "command": "effect give @a minecraft:trial_omen 30"
+    }
+  ]
+}

@@ -297,6 +297,9 @@ impl WorldFactory {
             level.set_tree_features(Arc::clone(trees));
         }
         level.set_maps(Arc::clone(&global.level.maps));
+        level.entities.elsewhere = vanillite_game::presence::Elsewhere(Some(Arc::new(
+            crate::player_list::WorldElsewhere::new(global, id),
+        )));
         let block_commands = crate::commands::BlockCommands::new(global, id);
         let lent_levels = block_commands.lent();
         level.set_command_runner(Arc::new(block_commands));
@@ -311,10 +314,24 @@ impl WorldFactory {
             dimension,
             &global.level,
             bounds,
+            global
+                .dimensions
+                .facts(id)
+                .map_or(i32::try_from(bounds.1).unwrap_or(384), |f| f.logical_height),
             player_range,
             climate,
         );
         let saved_tickets = crate::chunk_tickets::load(&data, &mut level);
+        match data.read(vanillite_game::level::structure_refs::SAVED_DATA) {
+            Ok(Some(tag)) => level.set_structure_refs(
+                vanillite_game::level::structure_refs::StructureReferences::load(&tag),
+            ),
+            Ok(None) => {}
+            Err(e) => log::error!(
+                "Cannot read {}: {e}",
+                vanillite_game::level::structure_refs::SAVED_DATA
+            ),
+        }
         let mobs = crate::mobs::WorldMobs::new(self.spawn_table.clone(), seed, &rules);
         let mut world = ServerWorld::new(
             id,

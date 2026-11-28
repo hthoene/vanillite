@@ -57,6 +57,8 @@ pub struct PlayerEntry {
     pub bedrock: bool,
     /// `requestedDebugSubscriptions`: bit `n` = `debug_subscription` registry id `n`.
     pub debug_subscriptions: u32,
+    /// Where the player is, as its world publishes it for the others.
+    pub presence: Arc<vanillite_game::presence::Presence>,
 }
 
 /// A player's connection with its chat inbox.
@@ -131,6 +133,17 @@ impl PlayerList {
         let mut players = self.lock();
         let index = players.iter().position(|p| p.uuid == uuid)?;
         Some(players.remove(index))
+    }
+
+    /// The world of an online player with its published presence.
+    pub fn presence(
+        &self,
+        uuid: Uuid,
+    ) -> Option<(WorldId, Arc<vanillite_game::presence::Presence>)> {
+        self.lock()
+            .iter()
+            .find(|p| p.uuid == uuid)
+            .map(|p| (p.world, Arc::clone(&p.presence)))
     }
 
     /// The world an online player is in.
@@ -303,5 +316,39 @@ impl PlayerList {
         for sink in sinks {
             sink.send_shared(shared);
         }
+    }
+}
+
+/// The players one world finds in the other worlds (`getPlayerInAnyDimension`): their
+/// presence as published before the world's current tick.
+pub(crate) struct WorldElsewhere {
+    global: std::sync::Weak<crate::global::Global>,
+    world: WorldId,
+    tick: std::sync::atomic::AtomicU64,
+}
+
+impl WorldElsewhere {
+    /// For the world `world`.
+    pub(crate) fn new(global: &Arc<crate::global::Global>, world: WorldId) -> WorldElsewhere {
+        WorldElsewhere {
+            global: Arc::downgrade(global),
+            world,
+            tick: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+impl vanillite_game::presence::PlayersElsewhere for WorldElsewhere {
+    fn find(&self, uuid: u128) -> Option<vanillite_game::presence::RemotePlayer> {
+        let global = self.global.upgrade()?;
+        let (world, presence) = global.players.presence(Uuid(uuid))?;
+        if world == self.world {
+            return None;
+        }
+        presence.read(self.tick.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    fn set_tick(&self, tick: u64) {
+        self.tick.store(tick, std::sync::atomic::Ordering::Relaxed);
     }
 }

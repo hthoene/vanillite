@@ -159,8 +159,8 @@ impl IntProvider {
     }
 }
 
-/// Loads the `minecraft:context_int_provider` entries the compostable items refer to (later
-/// packs override). The registry's other entries (cooking, brewing) are read elsewhere.
+/// Loads the `minecraft:context_int_provider` entries (later packs override) of the kinds
+/// [`IntProvider`] covers.
 pub fn load_providers(roots: &[PathBuf]) -> HashMap<String, IntProvider> {
     let mut files = BTreeMap::new();
     for root in roots {
@@ -176,15 +176,18 @@ pub fn load_providers(roots: &[PathBuf]) -> HashMap<String, IntProvider> {
             );
         }
     }
+    // Every entry: patched `compostable` and `brewing_fuel` components may name any of them.
     let used: HashSet<&str> = ITEMS.iter().map(|i| i.compostable).collect();
-    files.retain(|id, _| used.contains(id.as_str()));
     let mut out = HashMap::new();
     for (id, json) in crate::loot::read_files(&files) {
         match json.ok().and_then(|v| IntProvider::parse(&v)) {
             Some(p) => {
                 out.insert(id, p);
             }
-            None => log::warn!("Unsupported context_int_provider {id}"),
+            None if used.contains(id.as_str()) => {
+                log::warn!("Unsupported context_int_provider {id}");
+            }
+            None => {}
         }
     }
     out
@@ -202,6 +205,24 @@ pub(super) fn fill(block: BlockId, b: &mut BlockBehaviour) {
 pub(super) fn compostable(stack: &ItemStack) -> Option<IntProvider> {
     if stack.is_empty() {
         return None;
+    }
+    // The stack's own `compostable` (patched or removed): a number or a provider id.
+    use vanillite_protocol::components::ids::COMPOSTABLE;
+    if let Some(p) = stack.patch() {
+        if let Some(v) = p.get(COMPOSTABLE) {
+            let mut r = vanillite_protocol::codec::Reader::new(v);
+            return match crate::recipe::read_resolvable(&mut r, false)? {
+                Value::String(id) => {
+                    crate::player::play::game_data().and_then(|d| d.compostables.get(&id).cloned())
+                }
+                n => Some(IntProvider::Constant(
+                    n.as_i64().and_then(|n| i32::try_from(n).ok())?,
+                )),
+            };
+        }
+        if p.is_removed(COMPOSTABLE) {
+            return None;
+        }
     }
     let name = item::item_id(stack).info().compostable;
     if name.is_empty() {

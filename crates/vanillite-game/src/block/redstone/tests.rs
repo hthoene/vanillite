@@ -221,3 +221,45 @@ fn alternate_current_bench() {
     assert!(vanilla.iter().flatten().any(|&p| p > 0));
     assert_eq!(vanilla, alternate);
 }
+
+/// Measures the dust part of the `redstone` server benchmark: 93 lines of 15 dust, each
+/// switched on and off at one end. Prints the time and update steps per switch of all lines.
+/// `cargo test -p vanillite-game --release -- --ignored wire_lines_bench --nocapture`.
+#[test]
+#[ignore]
+fn wire_lines_bench() {
+    use crate::level::NEIGHBOR_STEPS;
+
+    const LINES: i32 = 93;
+    const ROUNDS: u32 = 200;
+    let y = -60;
+    let mut level = flat_level();
+    for line in 0..LINES {
+        for x in 1..=15 {
+            place(
+                &mut level,
+                BlockPos::new(x, y, line * 2),
+                ids::REDSTONE_WIRE.default_state(),
+            );
+        }
+    }
+    let steps = NEIGHBOR_STEPS.with(|s| s.get());
+    let start = std::time::Instant::now();
+    for _ in 0..ROUNDS {
+        for (source, first) in [
+            (ids::REDSTONE_BLOCK.default_state(), 15),
+            (BlockState::AIR, 0),
+        ] {
+            for line in 0..LINES {
+                place(&mut level, BlockPos::new(0, y, line * 2), source);
+            }
+            assert_eq!(power(&level, BlockPos::new(1, y, 0)), first);
+        }
+    }
+    let switches = ROUNDS * 2;
+    println!(
+        "{:?} and {} neighbour/shape update steps per switch",
+        start.elapsed() / switches,
+        (NEIGHBOR_STEPS.with(|s| s.get()) - steps) / u64::from(switches)
+    );
+}

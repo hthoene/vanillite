@@ -379,6 +379,9 @@ pub struct PoiManager {
     dirty: FxHashSet<ChunkPos>,
     /// Village center sections by chunk column: their section y.
     centers: FxHashMap<ChunkPos, Vec<i32>>,
+    /// Lodestones removed since the server started: a compass far away finds its lodestone
+    /// gone while the chunk is not loaded (Vanilla loads the POI section from disk).
+    removed_lodestones: FxHashSet<BlockPos>,
 }
 
 impl PoiManager {
@@ -430,6 +433,9 @@ impl PoiManager {
             .add_record(PoiRecord::new(pos, ty));
         if added {
             self.set_dirty(section);
+            if ty == PoiType::Lodestone {
+                self.removed_lodestones.remove(&pos);
+            }
         }
         added
     }
@@ -437,11 +443,21 @@ impl PoiManager {
     /// `remove(pos)`.
     pub fn remove(&mut self, pos: BlockPos) {
         let section = pos.section();
+        let lodestone = self.get_type(pos) == Some(PoiType::Lodestone);
         if let Some(s) = self.sections.get_mut(&section)
             && s.remove(pos)
         {
             self.set_dirty(section);
+            if lodestone {
+                self.removed_lodestones.insert(pos);
+            }
         }
+    }
+
+    /// `existsAtPosition(LODESTONE, pos)` of a chunk whose POI are not loaded: `false` once
+    /// the lodestone there was removed (until one is placed there again).
+    pub fn lodestone_removed(&self, pos: BlockPos) -> bool {
+        self.removed_lodestones.contains(&pos)
     }
 
     fn record_mut(&mut self, pos: BlockPos) -> Option<&mut PoiRecord> {

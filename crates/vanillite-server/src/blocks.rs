@@ -339,6 +339,10 @@ pub struct WorldLevel<'a> {
 }
 
 impl PlayLevel for WorldLevel<'_> {
+    fn spectators(&self) -> Vec<EntityId> {
+        self.spectators.iter().copied().collect()
+    }
+
     fn level_mut(&mut self) -> Option<&mut Level> {
         Some(self.level)
     }
@@ -520,6 +524,10 @@ impl PlayLevel for WorldLevel<'_> {
 
     fn random_double(&mut self) -> f64 {
         self.level.random().next_double()
+    }
+
+    fn random_gaussian(&mut self) -> f64 {
+        self.level.random().next_gaussian()
     }
 
     fn random_boolean(&mut self) -> bool {
@@ -741,7 +749,39 @@ pub fn tick_item(
     for &gone in &scratch.gone {
         entities.despawn(gone);
     }
+    // `age++` after the merge, then the lifetime.
+    if !scratch.gone.contains(&id)
+        && entities
+            .item_mut(id)
+            .is_some_and(|d| item_entity::age_tick(d, lifetime))
+    {
+        entities.despawn(id);
+    }
     burn
+}
+
+/// `ItemEntity.teleport`: an item that arrived merges with its neighbours at once (when it
+/// can be merged).
+pub(crate) fn merge_after_teleport(entities: &mut Entities, id: EntityId, settings: ItemSettings) {
+    if !entities
+        .item(id)
+        .is_some_and(|d| d.is_mergable(settings.lifetime))
+    {
+        return;
+    }
+    let mut near = Vec::new();
+    let mut gone = Vec::new();
+    merge_with_neighbours(
+        entities,
+        id,
+        settings.lifetime,
+        settings.merge_radius,
+        &mut near,
+        &mut gone,
+    );
+    for g in gone {
+        entities.despawn(g);
+    }
 }
 
 /// `ItemEntity.mergeWithNeighbours` within `radius` (Vanilla 0.5) horizontally and `radius`

@@ -363,6 +363,8 @@ pub(crate) fn teleport_local(
             x_rot: body.x_rot,
             y_head_rot: body.y_rot,
         });
+        // `teleportSetPosition`: `setOldPosAndRot`.
+        entity.set_old_pos();
         if !body.fall_flying {
             let v = body.velocity;
             entity.set_velocity(Vec3::new(v.x, 0.0, v.z));

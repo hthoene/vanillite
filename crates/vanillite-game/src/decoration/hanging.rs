@@ -572,6 +572,32 @@ fn set_item(
     cx.actions.push(WorldAction::OutputSignal(pos));
 }
 
+/// The item of frame `id` (`ItemFrame.getItem`), `None` for other entities.
+pub fn held_item(ents: &Entities, id: EntityId) -> Option<&ItemStack> {
+    match ents.decor(id).map(|d| &d.data) {
+        Some(DecorData::Frame(f)) => Some(&f.item),
+        _ => None,
+    }
+}
+
+/// `ItemFrame.getSlot(0).set` from a command (`/item`, `/loot`): the frame holds one of
+/// `stack`. Its sound and comparator update are left out. Whether `id` is a frame.
+pub fn set_frame_item(ents: &mut Entities, id: EntityId, stack: ItemStack) -> bool {
+    let Some(DecorData::Frame(f)) = ents.decor_mut(id).map(|d| &mut d.data) else {
+        return false;
+    };
+    f.item = if stack.is_empty() {
+        ItemStack::EMPTY
+    } else {
+        stack.with_count(1)
+    };
+    if let Some(mut e) = ents.store.get_mut(id) {
+        e.mark_data_dirty();
+    }
+    super::refresh_box(ents, id);
+    true
+}
+
 /// `dropItem(level, causedBy)` of a painting or frame (the break sound, the item, the event).
 pub fn drop_item(
     level: &Level,
@@ -807,7 +833,8 @@ pub fn tick_framed_map(level: &Level, ents: &mut Entities, env: &Env<'_>, id: En
     };
     let frame = crate::map::Frame {
         pos: f.attached.pos,
-        rotation: data_2d(f.attached.direction).max(0) * 90,
+        // `getDirection().get2DDataValue() * 90`: -90 for floor and ceiling frames.
+        rotation: data_2d(f.attached.direction) * 90,
         entity_id: network_id,
     };
     let statics = crate::map::static_decorations(&f.item);

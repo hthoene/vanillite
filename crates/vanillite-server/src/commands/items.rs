@@ -938,6 +938,8 @@ pub(crate) enum EntitySlot {
     ItemEntity,
     /// An equipment slot of a mob (`LivingEntity.getSlot`).
     Equipment(EquipmentSlot),
+    /// The item of an item frame (`ItemFrame.getSlot(0)`).
+    Frame,
 }
 
 /// The slot `index` of an entity, if it has it.
@@ -945,6 +947,9 @@ pub(crate) fn entity_slot(entities: &Entities, id: EntityId, index: i32) -> Opti
     let kind = entities.store.get(id)?.kind();
     if kind == entity_ids::ITEM {
         return (index == 0).then_some(EntitySlot::ItemEntity);
+    }
+    if vanillite_game::decoration::hanging::held_item(entities, id).is_some() {
+        return (index == 0).then_some(EntitySlot::Frame);
     }
     if entities.mob(id).is_some() {
         // `LivingEntity.getEquipmentSlot(slot)`.
@@ -985,6 +990,7 @@ pub(crate) fn slot_get(entities: &Entities, id: EntityId, slot: EntitySlot) -> I
         EntitySlot::Cursor => entities.player(id).map(|p| &p.inventory.menu.carried),
         EntitySlot::Craft(i) => entities.player(id).and_then(|p| p.inventory.craft.get(i)),
         EntitySlot::Equipment(e) => entities.mob(id).map(|m| m.equipment.get(e)),
+        EntitySlot::Frame => vanillite_game::decoration::hanging::held_item(entities, id),
     };
     stack.cloned().unwrap_or_default()
 }
@@ -1001,6 +1007,9 @@ pub(crate) fn slot_set(
             i.stack = stack;
             true
         });
+    }
+    if let EntitySlot::Frame = slot {
+        return vanillite_game::decoration::hanging::set_frame_item(entities, id, stack);
     }
     if let EntitySlot::Equipment(e) = slot {
         // `createEquipmentSlotAccess`: below the head only items for that slot.
@@ -1037,7 +1046,7 @@ pub(crate) fn slot_set(
         EntitySlot::EnderChest(i) => inventory.ender_chest.get_mut(i),
         EntitySlot::Cursor => Some(&mut inventory.menu.carried),
         EntitySlot::Craft(i) => inventory.craft.get_mut(i),
-        EntitySlot::ItemEntity | EntitySlot::Equipment(_) => None,
+        EntitySlot::ItemEntity | EntitySlot::Equipment(_) | EntitySlot::Frame => None,
     };
     target.is_some_and(|t| {
         *t = stack;
