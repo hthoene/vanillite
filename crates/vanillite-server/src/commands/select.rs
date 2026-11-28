@@ -380,10 +380,22 @@ pub(crate) fn select(
     };
     let players = || online_players(entities, global, here);
     if let Some(name) = &selector.player_name {
-        return players()
+        let found: Vec<Target> = players()
             .into_iter()
             .filter(|p| p.name.eq_ignore_ascii_case(name))
             .take(1)
+            .collect();
+        if !found.is_empty() {
+            return found;
+        }
+        // A player of this world outside the player list (a level run without a server's
+        // connections, as the parity scenarios do).
+        return entities
+            .players
+            .iter()
+            .find(|(_, p)| p.profile.name.eq_ignore_ascii_case(name))
+            .and_then(|(id, _)| local(entities, here, id))
+            .into_iter()
             .collect();
     }
     if let Some(uuid) = selector.uuid {

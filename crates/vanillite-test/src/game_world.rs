@@ -1604,6 +1604,8 @@ fn goal_name(kind: Kind, goal: &Goal) -> &'static str {
         Goal::LookAtPlayer { .. } => "LookAtPlayerGoal",
         Goal::RandomLook { .. } => "RandomLookAroundGoal",
         Goal::Melee { .. } if kind == Kind::Bee => "BeeAttackGoal",
+        Goal::Melee { .. } if kind == Kind::Panda => "PandaAttackGoal",
+        Goal::Melee { .. } if kind == Kind::Fox => "FoxMeleeAttackGoal",
         Goal::Melee { kind, .. } => match kind {
             MeleeKind::Plain => "MeleeAttackGoal",
             MeleeKind::Zombie => "ZombieAttackGoal",

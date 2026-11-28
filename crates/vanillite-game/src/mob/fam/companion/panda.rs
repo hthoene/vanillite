@@ -12,7 +12,7 @@ use super::{
 use crate::item::{EquipmentSlot, ItemStack};
 use crate::mob::animal::Interaction;
 use crate::mob::common::{CommonGoal, TargetFilter};
-use crate::mob::equipment::{self, PickupRules};
+use crate::mob::equipment::PickupRules;
 use crate::mob::fam::Hurt;
 use crate::mob::goals::{flag, reduced};
 use crate::mob::kinds::Kind;
@@ -135,7 +135,7 @@ fn eating(m: &MobData) -> bool {
 }
 
 /// `canPerformAction`.
-fn can_perform(t: &Tick<'_, '_>) -> bool {
+pub(crate) fn can_perform(t: &Tick<'_, '_>) -> bool {
     let m = t.mob_ref();
     !has(m, ON_BACK) && !scared(t) && !eating(m) && !has(m, ROLLING) && !has(m, SITTING)
 }
@@ -247,6 +247,9 @@ pub fn after_tick(t: &mut Tick<'_, '_>) {
     }
     let unhappy = st(t.mob_ref()).unhappy;
     if unhappy > 0 {
+        if let Some(o) = t.mob_ref().target.and_then(|id| t.other(id)) {
+            crate::mob::kinds::look_at_entity(t, o, 90.0, 90.0);
+        }
         if unhappy == 29 || unhappy == 14 {
             crate::mob::kinds::play_sound(t, "minecraft:entity.panda.cant_breed", 1.0, 1.0);
         }
@@ -298,9 +301,11 @@ fn after_sneeze(t: &mut Tick<'_, '_>) {
         }
     }
     t.cx.ids = ids;
-    // `gameplay/panda_sneeze`: a slime ball one in 700.
-    if t.env.rules.bool(Rule::MOB_DROPS) && t.mob().random.next_int_bounded(700) == 0 {
-        crate::mob::equipment::spawn_at_location(t, equipment::stack("minecraft:slime_ball"), 0.0);
+    // `dropFromGiftLootTable(gameplay/panda_sneeze)`: rolled with the table's random sequence.
+    if t.env.rules.bool(Rule::MOB_DROPS) {
+        for stack in crate::mob::fam::brainy::gift_loot(t, "minecraft:gameplay/panda_sneeze") {
+            crate::mob::equipment::spawn_at_location(t, stack, 0.0);
+        }
     }
 }
 
