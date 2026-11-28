@@ -3084,8 +3084,7 @@ impl Chunks {
                 ticks.extend(
                     self.block_ticks
                         .ticks_in(ChunkPos::new(cx, cz))
-                        .filter(|t| inside(t.pos))
-                        .copied(),
+                        .filter(|t| inside(t.pos)),
                 );
             }
         }
