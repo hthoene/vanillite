@@ -227,9 +227,22 @@ fn hash_set_order(positions: [BlockPos; 7]) -> [BlockPos; 7] {
                 .wrapping_add(p.x);
         (h ^ ((h as u32) >> 16) as i32) & 15
     };
+    // A counting sort over the 16 buckets: each position is hashed once, and the insertion
+    // order within a bucket stays.
+    let buckets = positions.map(|p| bucket(p) as usize);
+    let mut next = [0usize; 16];
+    for &b in &buckets {
+        next[b] += 1;
+    }
+    let mut start = 0;
+    for slot in &mut next {
+        start += std::mem::replace(slot, start);
+    }
     let mut order = positions;
-    // A stable sort keeps the insertion order within a bucket.
-    order.sort_by_key(|&p| bucket(p));
+    for (p, b) in positions.into_iter().zip(buckets) {
+        order[next[b]] = p;
+        next[b] += 1;
+    }
     order
 }
 
@@ -258,4 +271,47 @@ fn is_cross(state: BlockState) -> bool {
 /// `isDot`.
 fn is_dot(state: BlockState) -> bool {
     HORIZONTAL.into_iter().all(|d| !is_connected(state, d))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The counting sort gives the order of a stable sort by bucket.
+    #[test]
+    fn hash_set_order_is_a_stable_sort_by_bucket() {
+        let bucket = |p: &BlockPos| {
+            let h =
+                p.y.wrapping_add(p.z.wrapping_mul(31))
+                    .wrapping_mul(31)
+                    .wrapping_add(p.x);
+            (h ^ ((h as u32) >> 16) as i32) & 15
+        };
+        let coordinates = [
+            -30_000_000,
+            -65_537,
+            -17,
+            -1,
+            0,
+            1,
+            15,
+            16,
+            4_095,
+            29_999_999,
+        ];
+        for x in coordinates {
+            for y in -64..64 {
+                for z in coordinates {
+                    let pos = BlockPos::new(x, y, z);
+                    let mut positions = [pos; 7];
+                    for (i, direction) in DIRECTIONS.into_iter().enumerate() {
+                        positions[i + 1] = pos.relative(direction);
+                    }
+                    let mut expected = positions;
+                    expected.sort_by_key(bucket);
+                    assert_eq!(hash_set_order(positions), expected, "{pos:?}");
+                }
+            }
+        }
+    }
 }

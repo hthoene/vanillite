@@ -326,6 +326,28 @@ pub fn damage_type(stack: &ItemStack) -> Option<&'static str> {
     }
 }
 
+/// The stack's `attack_animation` (`getAttackAnimation`): the `SwingAnimationType` id (1
+/// whack, 2 stab) and the duration; `SwingAnimation.DEFAULT` (whack, 6) without one. Only
+/// the spears (`piercing_weapon`) have a default one: a stab.
+pub fn attack_animation(stack: &ItemStack) -> (i32, i32) {
+    if stack.is_empty() {
+        return (1, 6);
+    }
+    match patched(stack, ids::ATTACK_ANIMATION) {
+        Patched::Value(v) => {
+            let mut r = Reader::new(v);
+            let kind = r.varint().unwrap_or(1);
+            (kind, r.varint().unwrap_or(6))
+        }
+        Patched::Removed => (1, 6),
+        Patched::Default => {
+            let info = item_id(stack).info();
+            let kind = if info.piercing_weapon.is_some() { 2 } else { 1 };
+            (kind, i32::from(info.attack_animation_ticks))
+        }
+    }
+}
+
 /// The ticks of the stack's `attack_animation` (`SwingAnimation.duration`; 6 without one).
 pub fn attack_animation_ticks(stack: &ItemStack) -> i32 {
     if stack.is_empty() {

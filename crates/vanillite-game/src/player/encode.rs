@@ -233,7 +233,12 @@ fn entity_data(entity: &EntityRef<'_>, entities: &Entities, all: bool) -> Option
                 .minecart(entity.id())
                 .and_then(|m| m.custom_name.as_deref())
         })
-        .or_else(|| crate::decoration::custom_name(entities, entity.id()));
+        .or_else(|| crate::decoration::custom_name(entities, entity.id()))
+        .or_else(|| {
+            entities
+                .cloud(entity.id())
+                .and_then(|c| c.custom_name.as_deref())
+        });
     if all || name.is_some() {
         item(
             &mut out,

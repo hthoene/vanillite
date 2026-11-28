@@ -116,6 +116,15 @@ impl SharedTerrain {
         generator
     }
 
+    /// The generator if it is in memory (without building it).
+    pub fn current(&self) -> Option<Arc<TerrainGenerator>> {
+        self.0
+            .current
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     /// Whether the generator is in memory.
     pub fn is_built(&self) -> bool {
         self.0
@@ -553,6 +562,12 @@ impl ChunkGenerator for VanillaChunkGenerator {
         // Starts are a function of the seed and of what the chunks store: forgotten ones are
         // made again when a chunk needs them (as beyond `MAX_KEPT_STARTS`).
         *self.kept_starts() = FxHashMap::default();
+    }
+
+    fn trim_idle(&self) {
+        if let Some(terrain) = self.terrain.current() {
+            terrain.release_scratch();
+        }
     }
 
     fn spawns_original_mobs(&self) -> bool {

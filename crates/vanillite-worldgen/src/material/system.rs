@@ -7,6 +7,7 @@ use rustc_hash::FxHashMap;
 
 use vanillite_base::math::{floor, floor_div, java_min};
 use vanillite_base::random::{PositionalRandomFactory, RandomSource};
+use vanillite_base::scratch::ScratchPool;
 use vanillite_chunk::BiomeId;
 use vanillite_data::block::{BlockId, BlockState};
 use vanillite_datapack::LoadedPacks;
@@ -129,6 +130,8 @@ pub struct MaterialSystem {
     /// ([`Program::cells_private_to`]): then a vein that provably places nothing in a chunk
     /// need not be sampled there.
     pub(super) ore_cells_private: bool,
+    /// The contexts the bounds of the ore vein densities are computed in, reused per chunk.
+    pub(super) bounds_scratch: ScratchPool<SamplerContext>,
     eroded_badlands: Option<BiomeId>,
     frozen_ocean: Option<BiomeId>,
     deep_frozen_ocean: Option<BiomeId>,
@@ -188,6 +191,7 @@ impl MaterialSystem {
         let noise_random = *random_state.random();
         let noise = |id: &str| random_state.noise(id);
         Ok(Self {
+            bounds_scratch: ScratchPool::default(),
             default_block: settings.default_block,
             sea_level: settings.sea_level,
             generator_min_y: settings.min_y,
@@ -246,6 +250,11 @@ impl MaterialSystem {
             chunk.min_y(),
             chunk.height(),
         )
+    }
+
+    /// Drops the reused bounds contexts (made again by the next chunk).
+    pub fn release_scratch(&self) {
+        self.bounds_scratch.release();
     }
 
     /// `buildSurface`: applies the material rule to every solid block of the chunk, top down per

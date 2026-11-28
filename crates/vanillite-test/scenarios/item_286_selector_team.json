@@ -1,0 +1,22 @@
+{
+  "description": "Selectors and teams in the harness (#286): @a reaches the scenario players, so team join and gamemode apply to them; with friendlyFire false a team mate's attack does no damage, the player outside the team is hurt (where pvp allows it), and @a[team=blue] moves only the team members.",
+  "tier": "fast",
+  "player_state": true,
+  "rules": {"spawn_monsters": "false"},
+  "region": [[0, -61, 0], [15, -57, 15]],
+  "ticks": 12,
+  "entities": [
+    {"name": "a", "type": "minecraft:player", "pos": [4.5, -60.0, 8.5], "rot": [-90, 0]},
+    {"name": "b", "type": "minecraft:player", "pos": [5.5, -60.0, 8.5], "rot": [90, 0]},
+    {"name": "c", "type": "minecraft:player", "pos": [4.5, -60.0, 10.5], "rot": [0, 0]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "team add blue"},
+    {"tick": 1, "op": "command", "command": "team modify blue friendlyFire false"},
+    {"tick": 1, "op": "command", "command": "team join blue @a[name=!c]"},
+    {"tick": 1, "op": "command", "command": "gamemode adventure @a"},
+    {"tick": 3, "op": "attack_entity", "entity": "a", "target": "b"},
+    {"tick": 6, "op": "attack_entity", "entity": "a", "target": "c"},
+    {"tick": 9, "op": "command", "command": "tp @a[team=blue] 2.5 -60 2.5"}
+  ]
+}

@@ -26,6 +26,7 @@ pub mod place;
 #[cfg(test)]
 pub(crate) use neighbors::STEPS as NEIGHBOR_STEPS;
 pub mod signal;
+pub mod structure_refs;
 mod tick;
 pub mod tiles;
 pub mod update;
@@ -561,6 +562,8 @@ pub struct Level {
     pub test_instance_actions: Vec<crate::block::technical::test_instance::Action>,
     /// The server's maps (shared by all worlds).
     maps: Option<Arc<crate::map::Maps>>,
+    /// The references exploration maps added to structure starts.
+    structure_refs: Arc<structure_refs::StructureReferences>,
     /// The server's structure templates (`getStructureTemplateManager`, shared by all worlds).
     templates: Option<Arc<vanillite_worldgen::template::manager::StructureTemplateManager>>,
     /// The data packs loaded at start (template pools of jigsaw blocks).
@@ -680,6 +683,7 @@ impl Level {
             player_awards: Vec::new(),
             test_instance_actions: Vec::new(),
             maps: None,
+            structure_refs: Arc::default(),
             templates: None,
             packs: None,
             min_y,
@@ -753,6 +757,16 @@ impl Level {
     /// Uses the server's map store.
     pub fn set_maps(&mut self, maps: Arc<crate::map::Maps>) {
         self.maps = Some(maps);
+    }
+
+    /// Uses saved structure start references.
+    pub fn set_structure_refs(&mut self, refs: structure_refs::StructureReferences) {
+        self.structure_refs = Arc::new(refs);
+    }
+
+    /// The references exploration maps added to structure starts.
+    pub fn structure_refs(&self) -> &Arc<structure_refs::StructureReferences> {
+        &self.structure_refs
     }
 
     /// The server's map store.

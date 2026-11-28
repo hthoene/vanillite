@@ -1,0 +1,73 @@
+{
+  "description": "Level.mayInteract (#272, I1-12): with the world border 6 wide around the origin, a water bucket aimed at the ground outside it places no water, one aimed inside does.",
+  "tier": "fast",
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      -2,
+      -61,
+      -2
+    ],
+    [
+      10,
+      -57,
+      10
+    ]
+  ],
+  "ticks": 12,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        3.5,
+        -60.0,
+        1.5
+      ],
+      "rot": [
+        -90,
+        50
+      ]
+    },
+    {
+      "name": "q",
+      "type": "minecraft:player",
+      "pos": [
+        1.5,
+        -60.0,
+        1.5
+      ],
+      "rot": [
+        0,
+        50
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "worldborder center 0 0"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "worldborder set 6"
+    },
+    {
+      "tick": 3,
+      "op": "use_item",
+      "entity": "p",
+      "item": "minecraft:water_bucket"
+    },
+    {
+      "tick": 5,
+      "op": "use_item",
+      "entity": "q",
+      "item": "minecraft:water_bucket"
+    }
+  ]
+}

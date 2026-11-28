@@ -1002,6 +1002,7 @@ impl FamilyHooks for Hooks {
             Kind::Bee => {
                 if let Some(m) = h.ents.mob_mut(h.target) {
                     st_mut(m).pollinating = false;
+                    m.nav.paused = false;
                 }
             }
             _ => {}

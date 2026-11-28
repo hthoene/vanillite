@@ -400,13 +400,23 @@ fn use_instrument(
         pos,
         None,
     ));
-    if instrument.durability_damage > 0
-        && !creative
+    // `hurtAndBreak(durabilityDamage, player, hand)`.
+    let change = if instrument.durability_damage > 0 {
+        crate::durability::change(
+            p.inventory.get(i),
+            instrument.durability_damage,
+            creative,
+            env.random,
+        )
+    } else {
+        0
+    };
+    let mut broke = false;
+    if change != 0
         && let Some(s) = p.inventory.get_mut(i)
-        && item::is_damageable(s)
     {
-        let d = item::damage(s).saturating_add(instrument.durability_damage);
-        crate::advancements::view::apply_damage(
+        let d = item::damage(s).saturating_add(change);
+        broke = crate::advancements::view::apply_damage(
             Some(&mut p.advancements),
             Some(&mut p.stats),
             s,
@@ -420,6 +430,9 @@ fn use_instrument(
         p.survival.cooldowns.add(stack, ticks, sink.as_ref());
     }
     p.stats.award(Stat::of(StatType::Used, stack.item), 1);
+    if broke {
+        crate::durability::broken_in_env(ents, env, player, crate::player::using::hand_slot(hand));
+    }
 }
 
 /// `BundleItem.onUseTick`: the first tick, then every second tick after ten, one stack drops

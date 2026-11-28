@@ -289,7 +289,7 @@ impl PacketTap {
     /// and reused for every other receiver. A packet that outlives a change of the listeners
     /// (a cached chunk) runs the stage on every send from then on.
     pub fn shared(&self, state: State, packet: &Arc<SharedPacket>) -> Verdict<Arc<SharedPacket>> {
-        let Some(id) = packet_id(packet.body()) else {
+        let Some(id) = packet.id() else {
             return Verdict::Pass;
         };
         if !self.wants_at(Stage::Broadcast, state, id) {

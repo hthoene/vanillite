@@ -364,6 +364,26 @@ pub struct Recipes {
     fuel_normal: HashMap<u16, Fuel>,
     /// Fuels of blast furnaces and smokers (`fast_cooking`) by item id.
     fuel_fast: HashMap<u16, Fuel>,
+    /// The `context_int_provider` and `context_float_provider` entries (patched
+    /// `cooking_fuel` values refer to them).
+    providers: (HashMap<String, Value>, HashMap<String, Value>),
+}
+
+/// A `ResolvableInt` / `ResolvableFloat` from the wire (`either(INT or FLOAT, ResourceKey)`)
+/// as the provider JSON it stands for: the number or the provider id.
+pub fn read_resolvable(
+    r: &mut vanillite_protocol::codec::Reader<'_>,
+    float: bool,
+) -> Option<Value> {
+    if r.u8().ok()? != 0 {
+        if float {
+            serde_json::Number::from_f64(f64::from(r.f32().ok()?)).map(Value::Number)
+        } else {
+            Some(Value::from(r.i32().ok()?))
+        }
+    } else {
+        Some(Value::String(r.string(32767).ok()?.to_owned()))
+    }
 }
 
 /// Items whose crafting leaves something behind (`Item.Properties.craftRemainder`).
@@ -522,6 +542,7 @@ impl Recipes {
                 }
             }
         }
+        recipes.providers = (ints, floats);
         recipes
     }
 
@@ -962,6 +983,28 @@ impl Recipes {
     pub fn fuel(&self, stack: &ItemStack, fast: bool) -> Option<Fuel> {
         if stack.is_empty() {
             return None;
+        }
+        // `FuelValues.burnDuration`: the stack's own `cooking_fuel` (patched or removed).
+        use vanillite_protocol::components::ids::COOKING_FUEL;
+        if let Some(p) = stack.patch() {
+            if let Some(v) = p.get(COOKING_FUEL) {
+                let mut r = vanillite_protocol::codec::Reader::new(v);
+                let burn = read_resolvable(&mut r, false)?;
+                let speed = read_resolvable(&mut r, true)?;
+                let ctx = ProviderContext {
+                    ints: &self.providers.0,
+                    floats: &self.providers.1,
+                    fast,
+                };
+                return Some(Fuel {
+                    burn_time: ctx.int(&burn, 0),
+                    speed: ctx.float(&speed, 0),
+                })
+                .filter(|f| f.burn_time > 0);
+            }
+            if p.is_removed(COOKING_FUEL) {
+                return None;
+            }
         }
         let table = if fast {
             &self.fuel_fast
@@ -2146,5 +2189,52 @@ impl ProviderContext<'_> {
             },
             _ => 1.0,
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod fuel_component_tests {
+    use super::*;
+
+    /// `FuelValues.burnDuration` reads the stack's `cooking_fuel` (I6-35 of #272): a patched
+    /// value (number or provider id) replaces the item's, a removed one makes it no fuel.
+    #[test]
+    fn patched_and_removed_cooking_fuel() {
+        use vanillite_protocol::components::ids::COOKING_FUEL;
+        let mut recipes = Recipes::default();
+        recipes
+            .providers
+            .0
+            .insert("minecraft:test/burn".into(), Value::from(250));
+        let coal = ITEM.id("minecraft:coal").unwrap();
+        recipes.fuel_normal.insert(
+            coal,
+            Fuel {
+                burn_time: 1600,
+                speed: 1.0,
+            },
+        );
+        let plain = ItemStack::new(coal, 1);
+        assert_eq!(recipes.fuel(&plain, false).unwrap().burn_time, 1600);
+        // Burn time: the provider `minecraft:test/burn`; speed: the number 2.0.
+        let mut wire = vec![0u8];
+        vanillite_protocol::codec::write_str(&mut wire, "minecraft:test/burn");
+        wire.push(1);
+        wire.extend_from_slice(&2.0f32.to_be_bytes());
+        let mut patched = plain.clone();
+        patched.patch_mut().set(COOKING_FUEL, wire.into());
+        let fuel = recipes.fuel(&patched, false).unwrap();
+        assert_eq!((fuel.burn_time, fuel.speed), (250, 2.0));
+        let mut stick = ItemStack::new(ITEM.id("minecraft:stick").unwrap(), 1);
+        let mut constant = vec![1u8];
+        constant.extend_from_slice(&40i32.to_be_bytes());
+        constant.push(1);
+        constant.extend_from_slice(&1.0f32.to_be_bytes());
+        stick.patch_mut().set(COOKING_FUEL, constant.into());
+        assert_eq!(recipes.fuel(&stick, true).unwrap().burn_time, 40);
+        let mut removed = plain;
+        removed.remove_component(COOKING_FUEL);
+        assert!(recipes.fuel(&removed, false).is_none());
     }
 }

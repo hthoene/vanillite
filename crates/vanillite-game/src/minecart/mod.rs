@@ -985,6 +985,7 @@ pub fn use_item_on(
     pos: BlockPos,
     stack: &mut ItemStack,
     infinite: bool,
+    op: bool,
 ) -> bool {
     let Some(kind) = MinecartKind::of_item(crate::item::item_id(stack)) else {
         return false;
@@ -1012,6 +1013,7 @@ pub fn use_item_on(
         Rotation::default(),
         data,
     );
+    crate::vehicle::apply_stack_entity_data(ents, id, stack, op);
     if !ents.spawned(id, vanillite_abi::spawn_reason::DEFAULT, 0) {
         return false;
     }
@@ -1028,7 +1030,7 @@ pub fn dispense(
     kind: MinecartKind,
     dispenser: BlockPos,
     facing: vanillite_base::Direction,
-    name: Option<Box<[u8]>>,
+    stack: &ItemStack,
 ) -> bool {
     use vanillite_base::Direction;
     let [fx, fy, fz] = facing.normal();
@@ -1056,7 +1058,9 @@ pub fn dispense(
     };
     let at = Vec3::new(x, y + offset, z);
     let mut data = MinecartData::new(kind, crate::survival::sound_seed());
-    data.custom_name = name;
+    data.custom_name = stack
+        .component(vanillite_protocol::components::ids::CUSTOM_NAME)
+        .map(Into::into);
     let network_ids = std::sync::Arc::clone(level.network_ids_arc());
     let id = spawn(
         &mut level.entities,
@@ -1066,6 +1070,7 @@ pub fn dispense(
         Rotation::default(),
         data,
     );
+    crate::vehicle::apply_stack_entity_data(&mut level.entities, id, stack, false);
     level
         .entities
         .spawned(id, vanillite_abi::spawn_reason::DISPENSER, 0);

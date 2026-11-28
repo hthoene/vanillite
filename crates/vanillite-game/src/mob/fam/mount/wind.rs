@@ -212,9 +212,9 @@ fn face_normal(block: BlockPos, at: Vec3) -> Vec3 {
         .map_or(Vec3::ZERO, |c| c.1)
 }
 
-/// `ProjectileUtil.getEntityHitResult` along the move: the closest living entity whose box
+/// `ProjectileUtil.getEntityHitResult` along the move: the closest pickable entity whose box
 /// (grown by the margin) the segment crosses, not the owner before it left, no other wind
-/// charges.
+/// charges or end crystals.
 fn hit_entity(
     t: &MissileTick<'_, '_>,
     from: Vec3,
@@ -248,7 +248,12 @@ fn hit_entity(
             t.ents.special(id),
             Some(crate::mob::boss::special::SpecialData::EndCrystal(_))
         );
-        if crystal || !crate::effect::thrown::can_be_hit(t.ents, id) {
+        // `canBeHitByProjectile`: shulker bullets and fireballs (`#redirectable_projectile`)
+        // are pickable too.
+        let projectile = t.ents.missile(id).is_some_and(|d| {
+            !d.removed && matches!(d.kind, MissileKind::ShulkerBullet | MissileKind::Fireball)
+        });
+        if crystal || !(projectile || crate::effect::thrown::can_be_hit(t.ents, id)) {
             return;
         }
         let Some(e) = t.ents.store.get(id) else {
@@ -302,10 +307,14 @@ fn update_left_owner(t: &mut MissileTick<'_, '_>, owner: Option<EntityId>, pos: 
 
 /// `AbstractWindCharge.onHitEntity`: 1 wind charge damage, then the burst.
 fn on_hit_entity(t: &mut MissileTick<'_, '_>, target: EntityId, owner: Option<EntityId>, at: Vec3) {
-    if let Some(o) = owner
-        && let Some(m) = t.ents.mob_mut(o)
-    {
-        m.last_hurt_mob = Some(target);
+    // `owner.setLastHurtMob(target)` of any living owner, players too.
+    let living = crate::effect::thrown::is_living(t.ents, target);
+    if let Some(o) = owner {
+        if let Some(m) = t.ents.mob_mut(o) {
+            m.last_hurt_mob = living.then_some(target);
+        } else if let Some(p) = t.ents.player_mut(o) {
+            p.survival.last_hurt_mob = living.then_some((target, p.survival.tick_count));
+        }
     }
     let kind = t.env.types.named("minecraft:wind_charge");
     let mut source = DamageSource::of(kind);

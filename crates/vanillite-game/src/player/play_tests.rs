@@ -145,6 +145,7 @@ fn with_ctx(
         swings: &mut swings,
         stats: None,
         advancements: None,
+        cooldowns: None,
     };
     f(&mut ctx);
     inventory
