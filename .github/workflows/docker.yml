@@ -14,6 +14,13 @@ on:
           its source, built with this branch's Dockerfile. Empty: an image of the commit only.
         required: false
         default: ""
+      retag:
+        description: >-
+          With release_tag: build nothing, only point the moving tags (as this branch's
+          scripts/release/meta.sh computes them) at the published image of that release.
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -34,11 +41,11 @@ jobs:
         with:
           ref: ${{ inputs.release_tag || github.ref }}
           fetch-depth: 0
-      # A rebuilt release keeps its source but takes the Dockerfile (build fixes) of the branch
-      # the workflow runs from.
-      - name: Use this branch's Dockerfile
+      # A rebuilt release keeps its source but takes the Dockerfile (build fixes) and the tag
+      # rules of the branch the workflow runs from.
+      - name: Use this branch's Dockerfile and tag rules
         if: env.HAS_SECRETS == 'true' && inputs.release_tag != ''
-        run: git checkout "${{ github.sha }}" -- Dockerfile
+        run: git checkout "${{ github.sha }}" -- Dockerfile scripts/release/meta.sh
       - id: source
         if: env.HAS_SECRETS == 'true'
         run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -50,9 +57,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       # Docker tags cannot hold the `+` of v<version>+mc<minecraft>, so scripts/release/meta.sh
-      # computes them: 0.1.0-beta.1-mc26.3, mc26.3-beta and beta for a pre-release,
-      # 0.1.0-mc26.3, mc26.3, mc26.3-beta, latest and beta for a stable version; beta and latest
-      # only for the newest version of deploy/minecraft-versions.txt. Manual runs: the commit only.
+      # computes them: 0.1.0-beta.1-mc26.3, mc26.3-beta, beta and (while no stable release
+      # exists) latest for a pre-release, 0.1.0-mc26.3, mc26.3, mc26.3-beta, latest and beta for a
+      # stable version; beta and latest only for the newest version of
+      # deploy/minecraft-versions.txt. Manual runs without release_tag: the commit only.
       - id: release
         if: env.HAS_SECRETS == 'true' && (github.ref_type == 'tag' || inputs.release_tag != '')
         env:
@@ -64,9 +72,22 @@ jobs:
             sed -n 's/^docker_tags=//p' "$RUNNER_TEMP/release" | tr ',' '\n' | sed 's/^/type=raw,value=/'
             echo EOF
           } >> "$GITHUB_OUTPUT"
+          sed -n 's/^docker_tags=//p' "$RUNNER_TEMP/release" | tr ',' ' ' | sed 's/^/list=/' >> "$GITHUB_OUTPUT"
+      # Retag: the first tag is the immutable one of the published release (multi-arch index).
+      - name: Point the moving tags at the published release image
+        if: env.HAS_SECRETS == 'true' && inputs.retag && inputs.release_tag != ''
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/vanillite
+          TAGS: ${{ steps.release.outputs.list }}
+        run: |
+          read -r source rest <<< "$TAGS"
+          args=()
+          for tag in $rest; do args+=(--tag "$IMAGE:$tag"); done
+          docker buildx imagetools create "${args[@]}" "$IMAGE:$source"
+          docker buildx imagetools inspect "$IMAGE:$source"
       - id: meta
         uses: docker/metadata-action@v5
-        if: env.HAS_SECRETS == 'true'
+        if: env.HAS_SECRETS == 'true' && !inputs.retag
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/vanillite
           tags: |
@@ -75,7 +96,7 @@ jobs:
           flavor: latest=false
       # The binaries are cross-compiled in the build stage (cargo-zigbuild): no emulation.
       - uses: docker/build-push-action@v6
-        if: env.HAS_SECRETS == 'true'
+        if: env.HAS_SECRETS == 'true' && !inputs.retag
         with:
           context: .
           platforms: linux/amd64,linux/arm64

@@ -97,13 +97,13 @@ plugins and cache live in the volume `/data`.
 ```sh
 docker run -d --name vanillite -p 25565:25565 -v vanillite-data:/data \
     -e VANILLITE_EULA=true -e VANILLITE_MOTD="A Vanillite server" \
-    --stop-timeout 60 thoenehannes/vanillite:beta
+    --stop-timeout 60 thoenehannes/vanillite:latest
 ```
 
 ```yaml
 services:
   vanillite:
-    image: thoenehannes/vanillite:beta
+    image: thoenehannes/vanillite:latest
     ports:
       - "25565:25565"
     volumes:
@@ -119,6 +119,7 @@ volumes:
 
 | Tag | Follows |
 |---|---|
+| `latest` | the newest release: the newest beta until the first stable release, then the newest stable |
 | `beta` | the newest beta, also across Minecraft versions |
 | `mc26.3-beta` | the newest beta for Minecraft 26.3 |
 | `0.1.0-beta.3-mc26.3` | exactly this release |
