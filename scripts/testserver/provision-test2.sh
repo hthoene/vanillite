@@ -193,6 +193,34 @@ Host vanillite-recordings
 EOF
 fi
 
+echo "== vanillite-limited (one core and a memory limit for cargo xtask loadtest weak, #270)"
+write_if_changed /usr/local/bin/vanillite-limited 755 <<'EOF'
+#!/usr/bin/env bash
+# Usage: sudo vanillite-limited <cpu> <memory MiB> <command...>
+# Runs the command as the calling user in a systemd scope with a CPU quota of one core and a
+# memory limit without swap, pinned to CPU <cpu> (AllowedCPUs does not apply in this
+# container): the server of `cargo xtask loadtest weak` (#270), run by vanillite-work.
+# Installed by scripts/testserver/provision-test2.sh.
+set -euo pipefail
+usage="usage: sudo vanillite-limited <cpu> <memory MiB> <command...>"
+cpu=${1:?$usage}
+mem=${2:?$usage}
+shift 2
+if ! [[ $cpu =~ ^[0-9]+$ && $mem =~ ^[0-9]+$ ]] || [ "$#" -eq 0 ]; then
+    echo "$usage" >&2
+    exit 2
+fi
+exec systemd-run --scope --quiet --uid="${SUDO_UID:?run through sudo}" \
+    --gid="${SUDO_GID:?run through sudo}" -p CPUQuota=100% -p "MemoryMax=${mem}M" \
+    -p MemorySwapMax=0 -- taskset -c "$cpu" "$@"
+EOF
+tmp=$(mktemp)
+echo 'vanillite-work ALL=(root) NOPASSWD: /usr/local/bin/vanillite-limited' > "$tmp"
+if visudo -cqf "$tmp"; then
+    write_if_changed /etc/sudoers.d/vanillite-limited 440 < "$tmp"
+fi
+rm -f "$tmp"
+
 echo "== nightly heavy tests (vanillite-nightly.timer, 00:30 Europe/Berlin)"
 install -d /var/lib/vanillite-nightly
 write_if_changed /usr/local/bin/vanillite-nightly 755 <<'EOF'

@@ -1318,7 +1318,7 @@ fn no_setup(_: i32, _: i32, _: i32) -> Vec<String> {
     Vec::new()
 }
 
-fn redstone(x0: i32, y: i32, z0: i32) -> Vec<String> {
+pub(crate) fn redstone(x0: i32, y: i32, z0: i32) -> Vec<String> {
     let mut c = vec![platform(x0, y, z0)];
     let units: Vec<(i32, i32)> = (0..31)
         .flat_map(|row| (0..3).map(move |u| (x0 + 2 + 20 * u, z0 + 1 + 2 * row)))
@@ -1368,7 +1368,7 @@ fn pen(x: i32, y: i32, z: i32) -> Vec<String> {
     ]
 }
 
-fn mobs(x: i32, y: i32, z: i32) -> Vec<String> {
+pub(crate) fn mobs(x: i32, y: i32, z: i32) -> Vec<String> {
     let mut c = pen(x, y, z);
     for i in 0..500 {
         let cx = f64::from(x) + 2.0 + f64::from(i % 25) * 2.5;
