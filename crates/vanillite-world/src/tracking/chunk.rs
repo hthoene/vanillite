@@ -312,8 +312,10 @@ impl ChunkTracker {
             };
             state.row = u32::try_from(row).unwrap_or(u32::MAX);
             state.pos = core.pos[row];
-            if state.square.is_none() || state.view != *viewer {
-                state.view = *viewer;
+            let changed = state.square.is_none()
+                || sees_more(&state.view, viewer, &self.by_chunk, self.radius);
+            state.view = *viewer;
+            if changed {
                 queue(&mut self.moved, state, slot, self.stamp);
             }
             state.present = true;
@@ -356,6 +358,29 @@ impl ChunkTracker {
         }
         self.gone_slots.clear();
     }
+}
+
+/// Whether a viewer's new view can change what it sees: another centre or distance, or a
+/// changed `sent_radius` whose rings in between hold tracked entities. Rings beyond `radius`
+/// (the largest tracking range in chunks plus a margin) hold none the viewer could see.
+fn sees_more(old: &Viewer, new: &Viewer, by_chunk: &FxHashMap<i64, Vec<u32>>, radius: i32) -> bool {
+    if old.entity != new.entity
+        || old.view_center != new.view_center
+        || old.view_distance != new.view_distance
+    {
+        return true;
+    }
+    if old.sent_radius == new.sent_radius {
+        return false;
+    }
+    let from = old.sent_radius.min(new.sent_radius).max(0);
+    let to = old.sent_radius.max(new.sent_radius).min(radius);
+    (from..=to).any(|ring| {
+        let c = new.view_center;
+        let has =
+            |x: i32, z: i32| by_chunk.contains_key(&ChunkPos::new(c.x + x, c.z + z).as_long());
+        (-ring..=ring).any(|d| has(d, -ring) || has(d, ring) || has(-ring, d) || has(ring, d))
+    })
 }
 
 /// Queues a viewer in `moved` once per update.
@@ -603,11 +628,11 @@ impl Pairing<'_, '_> {
             return;
         }
         let target = Target::new(self.input, self.settings, row);
-        let visible = is_visible(self.input, &target, state)
-            && self
-                .crowd
-                .as_deref()
-                .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos));
+        let visible = self
+            .crowd
+            .as_deref()
+            .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos))
+            && is_visible(self.input, &target, state);
         if visible != state.viewing.contains(index(entry.id)) {
             self.update(entry, row, &[slot], out);
         }
@@ -633,11 +658,11 @@ impl Pairing<'_, '_> {
             if state.entity == id {
                 continue;
             }
-            let visible = is_visible(self.input, &target, state)
-                && self
-                    .crowd
-                    .as_deref()
-                    .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos));
+            let visible = self
+                .crowd
+                .as_deref()
+                .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos))
+                && is_visible(self.input, &target, state);
             let seen = entry.seen_slots.contains(slot);
             if visible == seen {
                 continue;
