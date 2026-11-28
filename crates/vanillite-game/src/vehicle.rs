@@ -1025,14 +1025,10 @@ pub fn use_boat_item(
     else {
         return false;
     };
-    let reach = crate::mob::attack::player_attribute(
-        ents,
-        player,
-        "minecraft:block_interaction_range",
-        4.5,
-        0.0,
-        64.0,
-    );
+    // `blockInteractionRange()` with the creative mode modifier.
+    let reach = ents.player(player).map_or(4.5, |p| {
+        crate::player::play::interaction_ranges(&p.inventory, p.game_mode).0
+    });
     let Some(e) = ents.store.get(player) else {
         return false;
     };
@@ -1101,6 +1097,7 @@ pub fn use_boat_item(
         .map(Into::into);
     let uuid = crate::mob::new_uuid();
     let id = spawn_boat(ents, network_ids, uuid, hit, rot.y_rot, data);
+    apply_stack_entity_data(ents, id, stack, false);
     if !ents.spawned(id, vanillite_abi::spawn_reason::DEFAULT, 0) {
         return false;
     }
@@ -1115,6 +1112,93 @@ pub fn use_boat_item(
         stack.shrink(1);
     }
     true
+}
+
+/// `EntityType.createDefaultStackConfig` on a new boat or minecart (after its custom name):
+/// the stack's `custom_data` (`applyComponentsFromItemStack`) and its `entity_data`
+/// (`updateCustomEntityTag`: same type only; command block and spawner minecarts only for an
+/// operator, `op`), loaded like `TypedEntityData.loadInto` (the saved data merged with it, the
+/// UUID kept).
+pub fn apply_stack_entity_data(ents: &mut Entities, id: EntityId, stack: &ItemStack, op: bool) {
+    use vanillite_nbt::{Compound, Tag};
+    use vanillite_protocol::components::ids;
+    if let Some(data) = stack.component(ids::CUSTOM_DATA).and_then(|w| {
+        crate::item_nbt::component_to_nbt(ids::CUSTOM_DATA, w).and_then(|t| match t {
+            Tag::Compound(c) => Some(c),
+            _ => None,
+        })
+    }) {
+        let mut extra = ents.extra(id).cloned().unwrap_or_default();
+        extra.data = (!data.is_empty()).then_some(data);
+        ents.set_extra(id, extra);
+    }
+    let Some(Tag::Compound(mut data)) = stack.component(ids::ENTITY_DATA).and_then(|w| {
+        vanillite_protocol::components_nbt::to_nbt(
+            ids::ENTITY_DATA,
+            w,
+            &vanillite_protocol::item::InstalledRegistries,
+        )
+        .ok()
+    }) else {
+        return;
+    };
+    let Some(kind) = ents.store.get(id).map(|e| e.kind()) else {
+        return;
+    };
+    let same = match data.remove("id") {
+        Some(Tag::String(t)) => {
+            let t = if t.contains(':') {
+                t
+            } else {
+                format!("minecraft:{t}")
+            };
+            t == kind.name()
+        }
+        _ => false,
+    };
+    let op_only = kind == vanillite_data::entity::ids::COMMAND_BLOCK_MINECART
+        || kind == vanillite_data::entity::ids::SPAWNER_MINECART;
+    if !same || (op_only && !op) {
+        return;
+    }
+    let tag: Option<Compound> = {
+        let Some(e) = ents.store.get(id) else {
+            return;
+        };
+        if let Some(b) = ents.boat(id) {
+            Some(crate::mob::nbt::save_boat(&e, b, None))
+        } else {
+            ents.minecart(id)
+                .map(|m| crate::mob::nbt::save_minecart(&e, m))
+        }
+    };
+    let Some(mut tag) = tag else {
+        return;
+    };
+    crate::mob::entity_nbt::save_base(ents, id, &mut tag);
+    crate::decoration::stand::merge(&mut tag, &data);
+    if let Some(b) = ents.boat_mut(id) {
+        crate::mob::nbt::apply_boat(b, &tag);
+    } else if let Some(m) = ents.minecart_mut(id) {
+        crate::mob::nbt::apply_minecart(m, &tag);
+    }
+    crate::mob::entity_nbt::load_base(ents, id, &tag, true);
+    let rotation = crate::mob::entity_nbt::rotation(tag.get("Rotation"));
+    if let Some(mut e) = ents.store.get_mut(id) {
+        if let Some(pos) = crate::mob::entity_nbt::vec3(tag.get("Pos")) {
+            e.set_pos(pos);
+        }
+        if let Some(motion) = crate::mob::entity_nbt::motion(tag.get("Motion")) {
+            e.set_velocity(motion);
+        }
+        if let Some((y, x)) = rotation {
+            let mut rot = e.as_ref().rot();
+            rot.y_rot = y;
+            rot.x_rot = x;
+            e.set_rot(rot);
+        }
+        e.mark_data_dirty();
+    }
 }
 
 #[cfg(test)]

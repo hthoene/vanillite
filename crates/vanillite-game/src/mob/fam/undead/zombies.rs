@@ -1071,8 +1071,8 @@ fn finish_curing(t: &mut Tick<'_, '_>) {
             if stack.is_empty() {
                 continue;
             }
-            let bound = crate::player::play::game_data()
-                .is_some_and(|d| d.enchantment_level(stack, "minecraft:binding_curse") > 0);
+            let bound =
+                crate::player::play::game_data().is_some_and(|d| d.prevents_armor_change(stack));
             if bound {
                 let index = match slot {
                     EquipmentSlot::OffHand | EquipmentSlot::Legs => 1,

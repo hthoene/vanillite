@@ -930,7 +930,8 @@ fn clamp_map_coordinate(d: f32) -> i8 {
     } else if d >= 63.0 {
         127
     } else {
-        (d * 2.0 + 0.5) as i32 as i8
+        // `deltaFromCenter * 2.0F + 0.5`: the addition is in double.
+        (f64::from(d * 2.0) + 0.5) as i32 as i8
     }
 }
 
@@ -1279,11 +1280,11 @@ fn fluid_corrected(state: BlockState) -> BlockState {
     }
 }
 
-/// `MapItem.update`: the carrier's surroundings are drawn, one column of 16 per tick. Unloaded
-/// chunks are skipped (Vanilla loads them).
+/// `MapItem.update`: the carrier's surroundings are drawn, one column of 16 per tick. A chunk
+/// that is not accessible is loaded or generated synchronously (`level.getChunk`).
 pub fn update(
     data: &mut MapData,
-    level: &Level,
+    level: &mut Level,
     dimension: &str,
     carrier: &Carrier,
     has_ceiling: bool,
@@ -1326,11 +1327,9 @@ pub fn update(
             let dither_black = dist > (radius - 2) * (radius - 2);
             let min_x = (center_x / scale + img_x - 64) * scale;
             let min_z = (center_z / scale + img_y - 64) * scale;
-            if level
-                .chunks
-                .chunk(vanillite_base::ChunkPos::new(min_x >> 4, min_z >> 4))
-                .is_none()
-            {
+            let chunk = vanillite_base::ChunkPos::new(min_x >> 4, min_z >> 4);
+            level.load_chunk(chunk);
+            if level.chunks.chunk(chunk).is_none() {
                 continue;
             }
             // `Multiset` in insertion order; the first with the highest count wins.
@@ -1503,7 +1502,10 @@ pub fn render_biome_preview(
 
 /// What exploration maps need of the server: the structure search and the biome tags.
 pub trait Explorer: Send + Sync {
-    /// `ChunkGenerator.findNearestMapStructure(level, #tag, origin, radius, skipKnown)`.
+    /// `ChunkGenerator.findNearestMapStructure(level, #tag, origin, radius, skipKnown)`; with
+    /// `known` (`skipKnownStructures`) it first claims the start the origin is in
+    /// (`claimStructureAt`) and finds and references only unreferenced starts.
+    #[allow(clippy::too_many_arguments)]
     fn nearest_structure(
         &self,
         terrain: &vanillite_worldgen::generator::TerrainGenerator,
@@ -1512,6 +1514,7 @@ pub trait Explorer: Send + Sync {
         radius: i32,
         min_y: i32,
         height: i32,
+        known: Option<&crate::level::structure_refs::StructureReferences>,
     ) -> Option<BlockPos>;
     /// A test whether the biome at a position is in `#water_on_map_outlines`.
     fn water_on_map_outlines<'a>(
@@ -1538,6 +1541,7 @@ pub fn exploration_map(
     sea_level: i32,
     request: &crate::loot::ExplorationMap,
     origin: vanillite_base::Vec3,
+    refs: &crate::level::structure_refs::StructureReferences,
 ) -> Option<ItemStack> {
     let explorer = EXPLORER.get()?;
     if !generation.structures {
@@ -1556,6 +1560,7 @@ pub fn exploration_map(
         request.search_radius,
         min_y,
         height,
+        request.skip_existing_chunks.then_some(refs),
     )?;
     let mut map = create(
         maps,
@@ -1579,6 +1584,19 @@ pub fn exploration_map(
 mod tests {
     use super::*;
 
+    /// `clampMapCoordinate` adds 0.5 in double (#272 I5-10): just below a half pixel the
+    /// marker stays on the lower pixel.
+    #[test]
+    fn clamp_map_coordinate_adds_in_double() {
+        assert_eq!(
+            clamp_map_coordinate(f32::from_bits(0.25_f32.to_bits() - 1)),
+            0
+        );
+        assert_eq!(clamp_map_coordinate(0.25), 1);
+        assert_eq!(clamp_map_coordinate(-10.3), -20);
+        assert_eq!(clamp_map_coordinate(63.0), 127);
+    }
+
     fn carrier(uuid: u128, x: f64) -> Carrier {
         Carrier {
             uuid,
@@ -1590,6 +1608,25 @@ mod tests {
             has_map: true,
             invisible: false,
         }
+    }
+
+    /// A map in a floor or ceiling frame (`get2DDataValue() * 90` = -90, #272 I5-07): the
+    /// frame marker gets rotation `(byte)(-98 * 16 / 360) & 15` = 12.
+    #[test]
+    fn floor_frame_marker_rotation() {
+        let mut data = MapData::fresh(0.0, 0.0, 0, true, false, "minecraft:overworld".into());
+        let frame = Frame {
+            pos: BlockPos::new(3, 64, 5),
+            rotation: -90,
+            entity_id: 7,
+        };
+        data.tick_carried_in(&carrier(1, 0.0), &[], 0, Some(frame));
+        let rots: Vec<i8> = data
+            .decorations()
+            .filter(|d| d.kind == decoration_type("minecraft:frame"))
+            .map(|d| d.rot)
+            .collect();
+        assert_eq!(rots, vec![12]);
     }
 
     #[test]

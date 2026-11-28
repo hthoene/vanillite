@@ -334,14 +334,11 @@ pub fn hurt_filter(h: &mut Hurt<'_, '_>, amount: f32) -> Option<f32> {
     let mut armor = m.equipment.get(EquipmentSlot::Body).clone();
     let before = crate::item::damage(&armor);
     let max = crate::item::max_damage(&armor);
+    // `hurtAndBreak(ceil(damage), this, BODY)`: Unbreaking from the level random.
     #[allow(clippy::cast_possible_truncation)]
-    let d = before + amount.ceil() as i32;
-    let broke = d >= max;
-    if broke {
-        armor = crate::item::ItemStack::default();
-    } else {
-        crate::item::set_damage(&mut armor, d);
-    }
+    let change = crate::durability::change(&armor, amount.ceil() as i32, false, h.env.random);
+    let d = before + change;
+    let broke = change != 0 && crate::durability::apply(&mut armor, d);
     m.equipment.set(EquipmentSlot::Body, armor);
     // `Crackiness.WOLF_ARMOR`: low under 0.95, medium under 0.69, high under 0.32 of the
     // durability left.
@@ -358,13 +355,27 @@ pub fn hurt_filter(h: &mut Hurt<'_, '_>, amount: f32) -> Option<f32> {
             0
         }
     };
-    if broke || crack(before) != crack(d) {
-        let s = if broke {
-            "minecraft:entity.item.break"
-        } else {
-            "minecraft:entity.wolf.armor_crack"
-        };
-        crate::mob::combat::mob_sound(h.ents, h.env, h.target, s);
+    if broke {
+        // `onEquippedItemBroken`: the body slot's break event (`item.wolf_armor.break`).
+        crate::mob::animal::entity_event(
+            h.ents,
+            h.env,
+            h.target,
+            crate::durability::break_event(EquipmentSlot::Body),
+        );
+    }
+    // `Crackiness.WOLF_ARMOR` of the armour now (none once it broke).
+    let after = if broke { 0 } else { crack(d) };
+    if crack(before) != after {
+        // `playSound(WOLF_ARMOR_CRACK)`: volume and pitch 1, no voice pitch draws.
+        crate::mob::animal::sound_at(
+            h.ents,
+            h.env,
+            h.target,
+            "minecraft:entity.wolf.armor_crack",
+            vanillite_protocol::packets::play::clientbound::SoundSource::Neutral,
+            1.0,
+        );
     }
     Some(0.0)
 }

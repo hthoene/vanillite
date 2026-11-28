@@ -435,6 +435,11 @@ pub trait ChunkGenerator: Send + Sync {
     /// when the server has been empty for a while; what `generate` produces must not change.
     fn release_memory(&self) {}
 
+    /// Frees the buffers the generator reuses from job to job. Called when no generation step
+    /// has run for a while (30 s) while players are online; must not change what `generate`
+    /// produces.
+    fn trim_idle(&self) {}
+
     /// Whether chunks get their first animals when they pass the spawn step
     /// (`ChunkGenerator.spawnOriginalMobs`): Vanilla's noise generator does unless its settings
     /// disable mob generation; flat and debug worlds do not.
@@ -541,6 +546,10 @@ pub trait LightEngine: Send + Sync {
         let _ = (old, new);
         true
     }
+
+    /// Frees the buffers the engine reuses from job to job. Called when no chunk job has run
+    /// for a while and when the server is empty; light results must not change.
+    fn release_memory(&self) {}
 }
 
 /// Creates the light engine of each world.

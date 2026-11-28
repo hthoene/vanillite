@@ -151,9 +151,10 @@ pub struct TrackerInput<'a> {
     /// Whether a chunk inside a viewer's view has not been sent to that viewer yet
     /// (Vanilla's `chunkSender.isPending`); entities there stay invisible.
     pub chunk_pending: &'a dyn Fn(EntityId, ChunkPos) -> bool,
-    /// Chunks sent to viewers since the last update (Vanilla's `playerLoadedChunk`): entities
-    /// there may have become visible to that viewer.
-    pub chunks_sent: &'a [(EntityId, ChunkPos)],
+    /// Viewers whose client moves the server took since the last update (`ChunkMap.move`):
+    /// every entity is checked against them again (`updatePlayer`), so entities in chunks
+    /// sent since become visible. Only then: Vanilla pairs nothing when a chunk is sent.
+    pub moved_viewers: &'a [EntityId],
     /// Factor on every entity type's movement update interval (1 = Vanilla). Larger under
     /// overload (`performance.entity-tracking.overload-tick-millis`).
     pub update_scale: i32,

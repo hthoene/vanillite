@@ -484,3 +484,27 @@ fn block_positions_pack_like_vanilla() {
         assert_eq!(unpack_pos(pack_pos(x, y, z)), [x, y, z]);
     }
 }
+
+/// `CustomData.COMPOUND_TAG_CODEC` (I6-02 of #272): `custom_data`, `bucket_entity_data` and the
+/// typed `entity_data` also read an SNBT string; `lock` does not.
+#[test]
+fn snbt_strings_for_compound_components() {
+    let names = TestNames::default();
+    let id = |n: &str| type_by_name(&format!("minecraft:{n}")).unwrap();
+    let snbt = Tag::String("{quest:1b,list:[1,2]}".into());
+    let wire = from_nbt(id("custom_data"), &snbt, &names).unwrap();
+    let back = to_nbt(id("custom_data"), &wire, &names).unwrap();
+    assert_eq!(
+        back,
+        Tag::Compound(vanillite_nbt::snbt::parse_compound("{quest:1b,list:[1,2]}").unwrap())
+    );
+    assert!(from_nbt(id("bucket_entity_data"), &snbt, &names).is_ok());
+    let typed = Tag::String("{id:\"minecraft:pig\",NoAI:1b}".into());
+    let wire = from_nbt(id("entity_data"), &typed, &names).unwrap();
+    let Tag::Compound(c) = to_nbt(id("entity_data"), &wire, &names).unwrap() else {
+        panic!("entity_data is a compound");
+    };
+    assert_eq!(c.get("NoAI"), Some(&Tag::Byte(1)));
+    assert!(from_nbt(id("lock"), &snbt, &names).is_err());
+    assert!(from_nbt(id("custom_data"), &Tag::String("{bad".into()), &names).is_err());
+}

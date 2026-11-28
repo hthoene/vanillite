@@ -51,8 +51,8 @@ impl JukeboxSong {
 pub struct Jukebox {
     /// The disc.
     pub item: ItemStack,
-    /// The registry id of the playing song (`song`).
-    pub song: Option<u32>,
+    /// The playing song (`song`): a registry entry or the disc's inline song.
+    pub song: Option<JukeboxSong>,
     /// `ticksSinceSongStarted`.
     pub ticks_since_song_started: i64,
 }
@@ -65,11 +65,11 @@ impl Jukebox {
             _ => ItemStack::EMPTY,
         };
         if let Some(Tag::Long(ticks)) = nbt.get("ticks_since_song_started")
-            && let Some(id) = song_of(&self.item)
-            && song(id, |s| !s.has_finished(*ticks)) == Some(true)
+            && let Some(s) = song_from_stack(&self.item)
+            && !s.has_finished(*ticks)
         {
             // `setSongWithoutPlaying`.
-            self.song = Some(id);
+            self.song = Some(s);
             self.ticks_since_song_started = *ticks;
         }
     }
@@ -89,9 +89,7 @@ impl Jukebox {
 
     /// `getComparatorOutput`: the comparator output of the disc's song.
     pub fn comparator_output(&self) -> i32 {
-        song_of(&self.item)
-            .and_then(|id| song(id, |s| s.comparator_output))
-            .unwrap_or(0)
+        song_from_stack(&self.item).map_or(0, |s| s.comparator_output)
     }
 }
 
@@ -101,6 +99,54 @@ fn song<R>(id: u32, f: impl FnOnce(&JukeboxSong) -> R) -> Option<R> {
         .jukebox_songs
         .get(usize::try_from(id).ok()?)
         .map(f)
+}
+
+/// `JukeboxSong.fromStack` with the song itself: a registry entry, or the inline
+/// (`Holder.direct`) song of a patched `jukebox_playable`.
+pub fn song_from_stack(stack: &ItemStack) -> Option<JukeboxSong> {
+    use vanillite_protocol::components::ids::JUKEBOX_PLAYABLE;
+    if let Some(v) = stack.patch().and_then(|p| p.get(JUKEBOX_PLAYABLE))
+        && !stack.is_empty()
+    {
+        let mut r = vanillite_protocol::codec::Reader::new(v);
+        if r.varint().ok()? == 0 {
+            return inline_song(&mut r);
+        }
+    }
+    song_of(stack).and_then(|id| song(id, Clone::clone))
+}
+
+/// `JukeboxSong.DIRECT_STREAM_CODEC`: the sound event (holder), the description (a text
+/// component), `length_in_seconds` and `comparator_output`. The name stays empty.
+fn inline_song(r: &mut vanillite_protocol::codec::Reader<'_>) -> Option<JukeboxSong> {
+    // `SoundEvent.STREAM_CODEC`: a registry id + 1, or 0 with the location and the range.
+    if r.varint().ok()? == 0 {
+        r.string(32767).ok()?;
+        if r.u8().ok()? != 0 {
+            r.f32().ok()?;
+        }
+    }
+    let mut rest = r.take_rest();
+    vanillite_nbt::read::read_network(&mut rest, &mut vanillite_nbt::read::Budget::network())
+        .ok()?;
+    let mut r = vanillite_protocol::codec::Reader::new(rest);
+    Some(JukeboxSong {
+        name: String::new(),
+        length_in_seconds: r.f32().ok()?,
+        comparator_output: r.varint().ok()?,
+    })
+}
+
+/// The registry id of a song (`-1` for an inline song, `Registry.getId` of a direct holder).
+fn song_id(s: &JukeboxSong) -> i32 {
+    crate::player::play::game_data()
+        .and_then(|d| {
+            d.jukebox_songs
+                .iter()
+                .position(|e| e.name == s.name && !s.name.is_empty())
+        })
+        .and_then(|i| i32::try_from(i).ok())
+        .unwrap_or(-1)
 }
 
 /// `JukeboxSong.fromStack`: the registry id of the stack's `jukebox_playable` song (a patched
@@ -241,7 +287,7 @@ fn on_song_changed(level: &mut Level, pos: BlockPos) {
 
 /// `setTheItem`: the jukebox shows the disc and plays its song, or stops.
 pub fn set_the_item(level: &mut Level, pos: BlockPos, item: ItemStack) {
-    let song = song_of(&item);
+    let song = song_from_stack(&item);
     let inserted = !item.is_empty();
     let Some(j) = jukebox_mut(level, pos) else {
         return;
@@ -264,18 +310,19 @@ pub fn set_the_item(level: &mut Level, pos: BlockPos, item: ItemStack) {
         );
     }
     match song {
-        Some(id) if inserted => play(level, pos, id),
+        Some(s) if inserted => play(level, pos, s),
         _ => stop(level, pos),
     }
 }
 
 /// `JukeboxSongPlayer.play`.
-fn play(level: &mut Level, pos: BlockPos, id: u32) {
+fn play(level: &mut Level, pos: BlockPos, s: JukeboxSong) {
+    let id = song_id(&s);
     if let Some(j) = jukebox_mut(level, pos) {
-        j.song = Some(id);
+        j.song = Some(s);
         j.ticks_since_song_started = 0;
     }
-    level.level_event(None, 1010, pos, i32::try_from(id).unwrap_or(-1));
+    level.level_event(None, 1010, pos, id);
     on_song_changed(level, pos);
 }
 
@@ -333,11 +380,11 @@ pub fn tick(level: &mut Level, pos: BlockPos, state: BlockState) {
     let Some(j) = jukebox(level, pos) else {
         return;
     };
-    let Some(id) = j.song else {
+    let Some(s) = &j.song else {
         return;
     };
     let ticks = j.ticks_since_song_started;
-    if song(id, |s| s.has_finished(ticks)).unwrap_or(true) {
+    if s.has_finished(ticks) {
         stop(level, pos);
         return;
     }
@@ -384,4 +431,35 @@ pub fn removed(level: &mut Level, pos: BlockPos, state: BlockState) {
         },
     );
     level.level_event(None, 1011, pos, 0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An inline (`Holder.direct`) song of a patched `jukebox_playable` (#272 I5-17): the
+    /// jukebox keeps its length and comparator output; its level event id is -1.
+    #[test]
+    fn inline_song_plays() {
+        use vanillite_protocol::components::ids::JUKEBOX_PLAYABLE;
+        let mut v = vec![0, 1, 8, 0, 1, b'x'];
+        v.extend_from_slice(&10.0f32.to_be_bytes());
+        v.push(7);
+        let mut disc = ItemStack::new(
+            vanillite_data::registry::ITEM
+                .id("minecraft:stick")
+                .unwrap_or(1),
+            1,
+        );
+        disc.set_component(JUKEBOX_PLAYABLE, v.into());
+        let s = song_from_stack(&disc).expect("inline song");
+        assert_eq!((s.length_in_seconds, s.comparator_output), (10.0, 7));
+        assert_eq!(song_id(&s), -1);
+        assert!(is_playable(&disc));
+        let j = Jukebox {
+            item: disc,
+            ..Jukebox::default()
+        };
+        assert_eq!(j.comparator_output(), 7);
+    }
 }

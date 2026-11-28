@@ -37,15 +37,6 @@ fn can_teleport_onto(state: BlockState) -> bool {
     }
 }
 
-/// `logicalHeight` of the vanilla dimension types.
-fn logical_height(dimension: &str) -> i32 {
-    match dimension {
-        "minecraft:the_nether" => 128,
-        "minecraft:the_end" => 256,
-        _ => 384,
-    }
-}
-
 /// `TeleportRandomlyConsumeEffect.apply` of a player. The tries draw from the player's own
 /// random. Returns whether it teleported.
 pub fn teleport_randomly(
@@ -61,7 +52,7 @@ pub fn teleport_randomly(
     let (old, dims) = (e.pos(), e.dims());
     let blocks = EnvBlocks(env.blocks);
     let min_y = f64::from(env.min_y);
-    let max_y = f64::from(env.min_y) + f64::from(logical_height(env.dimension)) - 1.0;
+    let max_y = f64::from(env.min_y) + f64::from(env.logical_height) - 1.0;
     let mut scratch = Vec::new();
     let mut found = None;
     for _ in 0..16 {
@@ -193,6 +184,20 @@ pub fn teleport_randomly(
         p.survival.impulse_grace = 0;
     }
     true
+}
+
+/// The `teleport_randomly` effects of a death protection the player used up in a hurt that
+/// had no access to the entities ([`crate::survival::player::Survival::pending_teleports`]).
+pub fn apply_pending_teleports(ents: &mut Entities, env: &mut Env<'_>, player: EntityId) {
+    let pending = match ents.player_mut(player) {
+        Some(p) if !p.survival.pending_teleports.is_empty() => {
+            std::mem::take(&mut p.survival.pending_teleports)
+        }
+        _ => return,
+    };
+    for (diameter, particles) in pending {
+        teleport_randomly(ents, env, player, f64::from(diameter), particles);
+    }
 }
 
 /// Rotation and motion stay (`teleportTo(x, y, z)`: `Relative.union(DELTA, ROTATION)`).

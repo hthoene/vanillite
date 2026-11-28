@@ -1,0 +1,79 @@
+{
+  "description": "Bucketable default data (#272, I1-13/I6-27): a cod with NoGravity and NoAI is picked up with a water bucket and released again; it keeps NoGravity (saveDefaultDataToBucketTag/loadDefaultDataFromBucketTag) and floats instead of sinking.",
+  "tier": "fast",
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 40,
+  "entities": [
+    {
+      "name": "p",
+      "type": "minecraft:player",
+      "pos": [
+        4.5,
+        -60.0,
+        4.5
+      ],
+      "rot": [
+        -90,
+        5
+      ]
+    },
+    {
+      "name": "fish",
+      "type": "minecraft:cod",
+      "pos": [
+        6.5,
+        -58.0,
+        4.5
+      ],
+      "rot": [
+        0,
+        0
+      ],
+      "seed": 3
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "fill 6 -60 4 6 -59 4 minecraft:stone"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "data merge entity @e[type=minecraft:cod,limit=1] {NoGravity:1b,NoAI:1b,Motion:[0.0,0.0,0.0]}"
+    },
+    {
+      "tick": 5,
+      "op": "interact",
+      "entity": "p",
+      "target": "fish",
+      "item": "minecraft:water_bucket"
+    },
+    {
+      "tick": 8,
+      "op": "use_item",
+      "entity": "p"
+    },
+    {
+      "tick": 12,
+      "op": "command",
+      "command": "fill 5 -60 4 6 -58 4 minecraft:air"
+    }
+  ]
+}

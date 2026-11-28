@@ -67,9 +67,46 @@ pub fn is_potion_input(stack: &ItemStack) -> bool {
     })
 }
 
-/// `BrewingStandMenu.FuelSlot.mayPlaceItem`: the `brewing_fuel` component.
+/// `BrewingStandMenu.FuelSlot.mayPlaceItem`: the `brewing_fuel` component (patched, removed or
+/// the item's: blaze powder).
 pub fn is_fuel(stack: &ItemStack) -> bool {
-    item::item_id(stack) == items::BLAZE_POWDER
+    use vanillite_protocol::components::ids::BREWING_FUEL;
+    match item::patched(stack, BREWING_FUEL) {
+        item::Patched::Value(_) => !stack.is_empty(),
+        item::Patched::Removed => false,
+        item::Patched::Default => item::item_id(stack) == items::BLAZE_POWDER,
+    }
+}
+
+/// `getUses` and `getSpeedMultiplier` of a fuel's `brewing_fuel`: numbers, or
+/// `context_int_provider` ids (`brewing/uses_default`: 20); a speed provider id other than
+/// `brewing/speed_default` counts as 1.
+fn fuel_values(level: &mut Level, pos: BlockPos, stack: &ItemStack) -> (i32, f32) {
+    use vanillite_protocol::components::ids::BREWING_FUEL;
+    let item::Patched::Value(v) = item::patched(stack, BREWING_FUEL) else {
+        return (FUEL_USES, 1.0);
+    };
+    let mut r = vanillite_protocol::codec::Reader::new(v);
+    let uses = crate::recipe::read_resolvable(&mut r, false);
+    let speed = crate::recipe::read_resolvable(&mut r, true);
+    let uses = match uses {
+        Some(serde_json::Value::String(id)) => {
+            let provider =
+                crate::player::play::game_data().and_then(|d| d.compostables.get(&id).cloned());
+            match provider {
+                Some(p) => {
+                    let state = level.block(pos);
+                    p.get(state, level.random())
+                }
+                None => 0,
+            }
+        }
+        Some(n) => n.as_i64().and_then(|n| i32::try_from(n).ok()).unwrap_or(0),
+        None => 0,
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let speed = speed.and_then(|s| s.as_f64()).map_or(1.0, |s| s as f32);
+    (uses, speed)
 }
 
 /// Whether the stack is a reagent of some brewing recipe.
@@ -201,12 +238,20 @@ pub fn server_tick(level: &mut Level, pos: BlockPos, state: BlockState) {
     };
     let mut changed = false;
     if stand.fuel <= 0 && is_fuel(&stand.items[4]) {
-        stand.fuel = FUEL_USES;
-        stand.total_fuel = FUEL_USES;
-        stand.speed = 1.0;
+        let fuel = stand.items[4].clone();
+        let (uses, speed) = fuel_values(level, pos, &fuel);
+        let Some(BlockEntity::BrewingStand(stand)) = level.block_entity_mut(pos) else {
+            return;
+        };
+        stand.fuel = uses;
+        stand.total_fuel = uses;
+        stand.speed = speed;
         stand.items[4].shrink(1);
         changed = true;
     }
+    let Some(BlockEntity::BrewingStand(stand)) = level.block_entity_mut(pos) else {
+        return;
+    };
     let reagent = stand.items[3].clone();
     let brewable = !reagent.is_empty()
         && recipes.is_brewing_reagent(&reagent)

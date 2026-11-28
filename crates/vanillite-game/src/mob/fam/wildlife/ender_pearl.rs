@@ -261,10 +261,12 @@ fn on_hit(t: &mut MissileTick<'_, '_>, owner: Owner) {
         t.env.rules.bool(Rule::SPAWN_MONSTERS) && t.env.difficulty != Difficulty::Peaceful;
     match owner {
         Owner::Player(id) => {
-            let allowed = t
-                .ents
-                .player(id)
-                .is_some_and(|p| !p.survival.is_dead_or_dying() && !p.connection.sink.is_closed());
+            let allowed = t.ents.player(id).is_some_and(|p| {
+                // `isAllowedToTeleportOwner`: alive and not sleeping.
+                !p.survival.is_dead_or_dying()
+                    && p.survival.sleeping_pos.is_none()
+                    && !p.connection.sink.is_closed()
+            });
             // Bukkit's `PlayerTeleportEvent` (`ENDER_PEARL`): cancelled, the owner stays; a
             // handler may move the landing within this world.
             let mut turn = (0.0, 0.0);
@@ -381,7 +383,8 @@ pub fn land(ents: &mut Entities, env: &mut Env<'_>, player: EntityId) {
     let Some(data) = players.get_mut(row) else {
         return;
     };
-    data.survival.fall_distance = 0.0;
+    // `ServerPlayer.resetFallDistance`: `FALL_FROM_HEIGHT` and the start of the fall.
+    crate::advancements::tracking::reset_fall_distance(data);
     data.survival.impulse_impact = None;
     data.survival.impulse_grace = 0;
     let source = DamageSource::of(env.types.named("minecraft:ender_pearl"));

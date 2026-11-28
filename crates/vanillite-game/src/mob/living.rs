@@ -735,6 +735,21 @@ fn ai_step(t: &mut Tick<'_, '_>) {
         t.mob().jumping = false;
         super::common::update_persistent_anger(t, true, (400, 780));
     }
+    // `equipment.tick`: lodestone compasses in the mob's equipment.
+    if t.mob_ref()
+        .equipment
+        .items
+        .iter()
+        .any(|s| s.item == vanillite_data::item::ids::COMPASS.0)
+    {
+        let (level, dimension) = (t.level, t.env.dimension);
+        let crate::entities::Entities {
+            poi, mobs, store, ..
+        } = &mut *t.ents;
+        if let Some(m) = store.get(t.id).and_then(|e| mobs.get_mut(e.kind_row())) {
+            crate::carried::tick_mob_compasses(level, poi, dimension, m);
+        }
+    }
     // `Monster.updateNoActionTime` (`Raider`: always).
     let kind = t.mob_ref().kind;
     if kind.extends_monster() && (kind.is_raider() || t.light_magic_value() > 0.5) {
@@ -936,21 +951,21 @@ fn tick_ridden(t: &mut Tick<'_, '_>, rider: EntityId) {
     t.mob().y_body_rot = y_rot;
 }
 
-/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment (without Unbreaking).
+/// `hurtAndBreak(amount, mob, slot)` of a mob's equipment: the `item_damage` effects
+/// (Unbreaking) from the level random, and the slot's break event when it breaks.
 pub fn hurt_equipment(t: &mut Tick<'_, '_>, slot: crate::item::EquipmentSlot, amount: i32) {
     let mut s = t.mob_ref().equipment.get(slot).clone();
-    if amount <= 0 || !crate::item::is_damageable(&s) {
+    let change = crate::durability::change(&s, amount, false, &mut *t.env.random);
+    if change == 0 {
         return;
     }
-    let d = crate::item::damage(&s) + amount;
-    if d >= crate::item::max_damage(&s) {
-        s = crate::item::ItemStack::default();
-        let sound = "minecraft:entity.item.break";
-        super::kinds::play_sound(t, sound, 0.8, 0.8);
-    } else {
-        crate::item::set_damage(&mut s, d);
-    }
+    let d = crate::item::damage(&s) + change;
+    let broke = crate::durability::apply(&mut s, d);
     t.mob().equipment.set(slot, s);
+    if broke {
+        let id = t.id;
+        entity_event(t, id, crate::durability::break_event(slot));
+    }
     super::equipment::broadcast(t);
 }
 
@@ -1017,8 +1032,17 @@ fn block_speed_factor(t: &Tick<'_, '_>) -> f32 {
             .info()
             .speed_factor
     };
+    // `getAttributeValue(MOVEMENT_EFFICIENCY)` with the equipment's (and enchantments')
+    // modifiers.
+    let m = t.mob_ref();
     #[allow(clippy::cast_possible_truncation)]
-    let efficiency = t.mob_ref().attrs.movement_efficiency as f32;
+    let efficiency = super::equipment::attribute(
+        m,
+        "minecraft:movement_efficiency",
+        m.attrs.movement_efficiency,
+        0.0,
+        1.0,
+    ) as f32;
     factor + efficiency * (1.0 - factor)
 }
 
@@ -1275,8 +1299,16 @@ fn travel_in_fluid(t: &mut Tick<'_, '_>, input: Vec3) {
     if t.mob_ref().fluids.in_water() {
         let mut slow_down = super::fam::water_slow_down(t.mob_ref().kind);
         let mut speed = 0.02_f32;
+        // Depth Strider on the boots (`getAttributeValue(WATER_MOVEMENT_EFFICIENCY)`).
+        let m = t.mob_ref();
         #[allow(clippy::cast_possible_truncation)]
-        let mut walker = t.mob_ref().attrs.water_movement_efficiency as f32;
+        let mut walker = super::equipment::attribute(
+            m,
+            "minecraft:water_movement_efficiency",
+            m.attrs.water_movement_efficiency,
+            0.0,
+            1.0,
+        ) as f32;
         if !t.on_ground() {
             walker *= 0.5;
         }

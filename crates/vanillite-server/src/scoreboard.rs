@@ -280,6 +280,12 @@ pub fn entity_team(global: &Global, holder: &str) -> Option<vanillite_game::scor
         .map(vanillite_game::scoreboard::Team::facts)
 }
 
+/// Swaps the server's scoreboard with `board`: a headless caller (the parity harness) keeps
+/// one scoreboard per level and lends it to the server while its commands run.
+pub fn swap_scoreboard(global: &Global, board: &mut vanillite_game::scoreboard::Scoreboard) {
+    std::mem::swap(&mut *global.systems.scoreboard(), board);
+}
+
 /// `ServerPlayer.doTick`'s `updateScoreForCriteria`: the changed built-in criteria (health,
 /// food, air, armour, experience, level) of this world's players.
 pub(crate) fn update_criteria(global: &Global, entities: &mut Entities) {

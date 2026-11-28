@@ -1,7 +1,7 @@
 //! What `data`, `execute store`/`if data` and `function ... with` read and write
 //! (`DataAccessor`: `EntityDataAccessor`, `BlockDataAccessor`, `StorageDataAccessor`).
 
-use vanillite_base::{BlockPos, Vec3};
+use vanillite_base::BlockPos;
 use vanillite_command::coords::Coordinates;
 use vanillite_command::error::CommandError;
 use vanillite_command::nbt_path::NbtPath;
@@ -179,169 +179,10 @@ pub(crate) fn single_tag(path: &NbtPath, root: &Tag) -> Result<Tag, CommandError
         .ok_or_else(|| CommandError::new("commands.data.get.multiple", vec![]))
 }
 
-/// A UUID as Vanilla's int array.
-fn uuid_tag(uuid: u128) -> Tag {
-    Tag::IntArray(vanillite_nbt::snbt::uuid_to_ints(uuid).to_vec())
-}
-
-fn vec3_list(v: Vec3) -> Tag {
-    Tag::List(List(vec![
-        Tag::Double(v.x),
-        Tag::Double(v.y),
-        Tag::Double(v.z),
-    ]))
-}
-
 /// `Entity.saveWithoutId` for the data the server keeps for every entity, with the kind's own
 /// data for players and items.
 pub(crate) fn entity_nbt(entities: &Entities, id: EntityId) -> Option<Compound> {
-    let mut nbt = own_entity_nbt(entities, id)?;
-    // `saveWithoutId`: the passengers as `saveAsPassenger` writes them (players are left out).
-    let passengers: Vec<Tag> = entities
-        .riding
-        .passengers_of(id)
-        .iter()
-        .filter(|&&p| entities.player(p).is_none())
-        .filter_map(|&p| {
-            let kind = entities.store.get(p)?.kind();
-            let mut c = Compound::new();
-            c.insert("id", Tag::String(kind.name().to_owned()));
-            for (k, v) in entity_nbt(entities, p)?.iter() {
-                c.insert(k, v.clone());
-            }
-            Some(Tag::Compound(c))
-        })
-        .collect();
-    if !passengers.is_empty() {
-        nbt.insert("Passengers", Tag::List(List(passengers)));
-    }
-    Some(nbt)
-}
-
-fn own_entity_nbt(entities: &Entities, id: EntityId) -> Option<Compound> {
-    let e = entities.store.get(id)?;
-    // Decorations, mobs (armor stands and mannequins too) and minecarts with all their
-    // stored data.
-    let full = vanillite_game::decoration::save(entities, id)
-        .or_else(|| {
-            entities
-                .mob(id)
-                .map(|m| vanillite_game::mob::nbt::save_mob(&e, m))
-        })
-        .or_else(|| {
-            entities
-                .minecart(id)
-                .map(|m| vanillite_game::mob::nbt::save_minecart(&e, m))
-        });
-    if let Some(mut full) = full {
-        full.remove("id");
-        vanillite_game::mob::entity_nbt::save_base(entities, id, &mut full);
-        let tags = entities.tags_of(id);
-        if !tags.is_empty() {
-            full.insert(
-                "Tags",
-                Tag::List(List(tags.iter().map(|t| Tag::String(t.clone())).collect())),
-            );
-        }
-        return Some(full);
-    }
-    let mut out = Compound::new();
-    out.insert("Pos", vec3_list(e.pos()));
-    out.insert("Motion", vec3_list(e.velocity()));
-    let rot = e.rot();
-    out.insert(
-        "Rotation",
-        Tag::List(List(vec![Tag::Float(rot.y_rot), Tag::Float(rot.x_rot)])),
-    );
-    out.insert("fall_distance", Tag::Double(0.0));
-    out.insert("Fire", Tag::Short(-1));
-    out.insert("Air", Tag::Short(300));
-    out.insert(
-        "OnGround",
-        Tag::Byte(i8::from(
-            e.flags()
-                .contains(vanillite_world::entity::EntityFlags::ON_GROUND),
-        )),
-    );
-    vanillite_game::mob::entity_nbt::save_flags(e.flags(), &mut out);
-    out.insert("PortalCooldown", Tag::Int(0));
-    out.insert("UUID", uuid_tag(e.uuid()));
-    vanillite_game::mob::entity_nbt::save_base(entities, id, &mut out);
-    let tags = entities.tags_of(id);
-    if !tags.is_empty() {
-        out.insert(
-            "Tags",
-            Tag::List(List(tags.iter().map(|t| Tag::String(t.clone())).collect())),
-        );
-    }
-    if e.kind() == ids::PLAYER
-        && let Some(p) = entities.player(id)
-    {
-        p.survival.save(&mut out);
-        p.inventory.save(&mut out);
-        out.insert("playerGameType", Tag::Int(game_type(p.game_mode)));
-        if let Some(prev) = p.previous_game_mode {
-            out.insert("previousPlayerGameType", Tag::Int(game_type(prev)));
-        }
-        // `ServerPlayer.addAdditionalSaveData`'s other live state.
-        out.insert(
-            "FallFlying",
-            Tag::Byte(i8::from(
-                e.flags()
-                    .contains(vanillite_world::entity::EntityFlags::FALL_FLYING),
-            )),
-        );
-        out.insert(
-            "abilities",
-            Tag::Compound(crate::players::abilities_nbt(
-                p.game_mode,
-                p.survival.flying,
-            )),
-        );
-        out.insert("recipeBook", p.recipe_book.save());
-        out.insert(
-            "post_effects",
-            Tag::List(List(
-                p.post_effects
-                    .iter()
-                    .map(|e| Tag::String(e.clone()))
-                    .collect(),
-            )),
-        );
-        // `NbtPredicate.getEntityTagToCompare`: the selected item of a player.
-        let selected = p.inventory.selected_item();
-        if !selected.is_empty() {
-            out.insert(
-                "SelectedItem",
-                Tag::Compound(vanillite_game::inventory::stack_to_nbt(selected)),
-            );
-        }
-    } else if e.kind() == ids::ITEM
-        && let Some(item) = entities.item(id)
-    {
-        out.insert(
-            "Item",
-            Tag::Compound(vanillite_game::inventory::stack_to_nbt(&item.stack)),
-        );
-        out.insert("Age", Tag::Short(item.age));
-        out.insert("PickupDelay", Tag::Short(item.pickup_delay));
-        if let Some(owner) = item.target {
-            out.insert("Owner", uuid_tag(owner));
-        }
-        if let Some(thrower) = item.thrower {
-            out.insert("Thrower", uuid_tag(thrower));
-        }
-    }
-    Some(out)
-}
-
-fn game_type(mode: vanillite_config::GameMode) -> i32 {
-    match mode {
-        vanillite_config::GameMode::Survival => 0,
-        vanillite_config::GameMode::Creative => 1,
-        vanillite_config::GameMode::Adventure => 2,
-        vanillite_config::GameMode::Spectator => 3,
-    }
+    vanillite_game::mob::entity_nbt::save_full(entities, id)
 }
 
 /// `Entity.load` of a whole entity compound: position, motion, rotation, tags, the common

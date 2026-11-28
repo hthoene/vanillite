@@ -84,6 +84,10 @@ impl ChunkGenerator for Populating {
         self.inner.release_memory();
     }
 
+    fn trim_idle(&self) {
+        self.inner.trim_idle();
+    }
+
     fn spawns_original_mobs(&self) -> bool {
         self.inner.spawns_original_mobs()
     }

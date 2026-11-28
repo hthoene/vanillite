@@ -59,6 +59,7 @@ pub fn with_mob_env<R>(
             difficulty: level_ref.spawner_env.difficulty,
             game_time: level_ref.game_time(),
             min_y: level_ref.min_y(),
+            logical_height: level_ref.max_y() - level_ref.min_y() + 1,
             dimension: "",
             raining_at: &raining,
             border: Some(&level_ref.border),

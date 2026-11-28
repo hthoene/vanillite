@@ -1371,12 +1371,20 @@ const IMPLICIT_COMPONENTS: [u16; 11] = [
     components::BEES,
 ];
 
+/// What signs use themselves besides [`IMPLICIT_COMPONENTS`].
+const SIGN_COMPONENTS: [u16; 3] = [
+    components::SIGN_TEXT_FRONT,
+    components::SIGN_TEXT_BACK,
+    components::WAXED,
+];
+
 /// `BlockEntity.applyComponents`: the stack's component patch without the implicit
-/// components, in its saved form.
-fn kept_of(stack: &ItemStack) -> Option<Compound> {
+/// components (of a sign also its texts and `waxed`), in its saved form.
+fn kept_of(stack: &ItemStack, sign: bool) -> Option<Compound> {
     let patch = stack.patch()?;
     let mut kept = patch.clone();
-    for id in IMPLICIT_COMPONENTS {
+    let own: &[u16] = if sign { &SIGN_COMPONENTS } else { &[] };
+    for &id in IMPLICIT_COMPONENTS.iter().chain(own) {
         kept.unset(id);
         if let Ok(i) = kept.removed.binary_search(&id) {
             kept.removed.remove(i);
@@ -1413,6 +1421,19 @@ pub fn collect_component(entity: &BlockEntity, id: u16) -> Option<Box<[u8]>> {
             }
         }
         BlockEntity::Beehive(hive) => hive.component(id),
+        BlockEntity::Sign(sign) => match id {
+            components::SIGN_TEXT_FRONT => sign.front.component(id),
+            components::SIGN_TEXT_BACK => sign.back.component(id),
+            components::WAXED => sign.waxed.then(|| Box::from([].as_slice())),
+            _ => None,
+        },
+        BlockEntity::CommandBlock(block) => {
+            if id == components::CUSTOM_NAME {
+                encode_name(block.base.custom_name.as_ref())
+            } else {
+                None
+            }
+        }
         BlockEntity::Crafter(crafter) => {
             if id == components::CONTAINER {
                 Some(container_value(&crafter.items))
@@ -1518,9 +1539,10 @@ pub fn apply_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
         level.block_entity(pos),
         None | Some(BlockEntity::CopperGolemStatue(_))
     ) {
+        let sign = matches!(level.block_entity(pos), Some(BlockEntity::Sign(_)));
         level
             .block_entities
-            .set_kept_components(pos, kept_of(stack));
+            .set_kept_components(pos, kept_of(stack, sign));
     }
     let contents = || {
         stack
@@ -1554,6 +1576,18 @@ pub fn apply_components(level: &mut Level, pos: BlockPos, stack: &ItemStack) {
         }
         Some(BlockEntity::EnchantingTable(name)) => {
             *name = decode_name(stack).map(Box::new);
+        }
+        // `SignBlockEntity.applyImplicitComponents`: both texts (`SignText.EMPTY` without
+        // them) and `waxed`.
+        Some(BlockEntity::Sign(sign)) => {
+            use crate::block::sign::SignText;
+            sign.front = SignText::of_component(stack, components::SIGN_TEXT_FRONT);
+            sign.back = SignText::of_component(stack, components::SIGN_TEXT_BACK);
+            sign.waxed = stack.component(components::WAXED).is_some();
+        }
+        // `CommandBlockEntity.applyImplicitComponents`: the custom name.
+        Some(BlockEntity::CommandBlock(block)) => {
+            block.base.custom_name = decode_name(stack);
         }
         Some(BlockEntity::Beehive(hive)) => {
             hive.apply(stack);

@@ -7,12 +7,14 @@ pub mod aabb;
 pub mod arena;
 pub mod bitset;
 pub mod date;
+pub mod fpenv;
 pub mod hash;
 pub mod math;
 mod mth_tables;
 pub mod pos;
 pub mod prefetch;
 pub mod random;
+pub mod scratch;
 pub mod slot_map;
 pub mod vec3;
 

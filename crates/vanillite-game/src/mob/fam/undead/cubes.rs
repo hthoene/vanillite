@@ -1066,7 +1066,14 @@ fn bucket(ix: &mut Interact<'_, '_>, pos: Vec3) -> Interaction {
     }
     // `SulfurCube.saveToBucketTag`: the default data, the swallowed block as
     // `sulfur_cube_content`, the age and the age lock.
-    let (mut stack, mut data) = crate::mob::fam::bucket_default(m, "minecraft:sulfur_cube_bucket");
+    let flags = ix
+        .ents
+        .store
+        .get(ix.target)
+        .map(|e| e.flags())
+        .unwrap_or_default();
+    let (mut stack, mut data) =
+        crate::mob::fam::bucket_default(m, flags, "minecraft:sulfur_cube_bucket");
     let body = m.equipment.get(EquipmentSlot::Body);
     if !body.is_empty()
         && let Some(id) =

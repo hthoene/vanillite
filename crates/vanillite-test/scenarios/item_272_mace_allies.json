@@ -1,0 +1,99 @@
+{
+  "description": "Mace smash knockback (#272, I3-13): a player whose client reports a fall of 5.5 blocks smashes a pig; of the two pigs next to it, the one in the attacker's team stays (knockbackPredicate: not allied to the attacker), the other is knocked away.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 30,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        6.5,
+        -60.0,
+        5.5
+      ]
+    },
+    {
+      "name": "pig",
+      "type": "minecraft:pig",
+      "pos": [
+        6.5,
+        -60.0,
+        8.0
+      ],
+      "seed": 3,
+      "finalize": false
+    },
+    {
+      "name": "ally",
+      "type": "minecraft:pig",
+      "pos": [
+        8.5,
+        -60.0,
+        8.5
+      ],
+      "seed": 4,
+      "finalize": false
+    },
+    {
+      "name": "other",
+      "type": "minecraft:pig",
+      "pos": [
+        4.5,
+        -60.0,
+        8.5
+      ],
+      "seed": 5,
+      "finalize": false
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "team add red"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "team join red steve"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "team join red @e[type=minecraft:pig,x=8.5,y=-60,z=8.5,distance=..0.5]"
+    },
+    {
+      "tick": 3,
+      "op": "use_item",
+      "entity": "steve",
+      "item": "minecraft:mace"
+    },
+    {
+      "tick": 5,
+      "op": "attack_entity",
+      "entity": "steve",
+      "target": "pig",
+      "fall_distance": 5.5
+    },
+    {
+      "tick": 28,
+      "op": "command",
+      "command": "team remove red"
+    }
+  ]
+}

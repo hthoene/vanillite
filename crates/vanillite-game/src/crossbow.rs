@@ -482,7 +482,6 @@ pub fn shoot(
             let arrow = crate::mob::projectile::shoot_arrow(
                 ents,
                 network_ids,
-                random,
                 start,
                 to_vec3(dir),
                 power,
@@ -652,6 +651,7 @@ pub fn mob_shoot(t: &mut crate::mob::Tick<'_, '_>, target: Option<EntityId>, pow
     let mut random = t.mob_ref().random.clone();
     let id = t.id;
     let mut broke = false;
+    let level_random = &mut *t.env.random;
     shoot(
         t.ents,
         &network_ids,
@@ -669,23 +669,19 @@ pub fn mob_shoot(t: &mut crate::mob::Tick<'_, '_>, target: Option<EntityId>, pow
                 return false;
             };
             let mut s = m.equipment.get(slot).clone();
-            if !item::is_damageable(&s) {
+            let change = crate::durability::change(&s, amount, false, &mut *level_random);
+            if change == 0 {
                 return false;
             }
-            let d = item::damage(&s) + amount;
-            if d >= item::max_damage(&s) {
-                s = ItemStack::EMPTY;
-                broke = true;
-            } else {
-                item::set_damage(&mut s, d);
-            }
+            let d = item::damage(&s) + change;
+            broke |= crate::durability::apply(&mut s, d);
             m.equipment.set(slot, s);
             broke
         },
     );
     t.mob().random = random;
     if broke {
-        crate::mob::kinds::play_sound(t, "minecraft:entity.item.break", 0.8, 0.8);
+        crate::mob::living::entity_event(t, id, crate::durability::break_event(slot));
     }
     crate::mob::equipment::broadcast(t);
 }

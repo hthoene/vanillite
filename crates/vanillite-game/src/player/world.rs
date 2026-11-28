@@ -71,6 +71,10 @@ pub trait PlayLevel {
     fn random_float(&mut self) -> f32;
     /// A uniform random double in `[0, 1)` from the world's random source.
     fn random_double(&mut self) -> f64;
+    /// `nextGaussian()` of the world's random source.
+    fn random_gaussian(&mut self) -> f64 {
+        0.0
+    }
     /// A uniform random boolean from the world's random source.
     fn random_boolean(&mut self) -> bool;
     /// `nextInt(bound)` of the world's random source; `bound` is at least 1.
@@ -83,6 +87,10 @@ pub trait PlayLevel {
     }
     /// `WorldBorder.isWithinBounds(pos)` of this world: the border part of
     /// `ServerLevel.mayInteract`.
+    /// The players in spectator mode (out of the entities while players are handled).
+    fn spectators(&self) -> Vec<vanillite_world::entity::EntityId> {
+        Vec::new()
+    }
     fn within_border(&self, _pos: BlockPos) -> bool {
         true
     }

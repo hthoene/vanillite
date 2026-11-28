@@ -103,6 +103,8 @@ struct ViewerState {
     view: Viewer,
     /// Centre of the square it is registered in (`nearby`).
     square: Option<ChunkPos>,
+    /// Its section at the last update (`TrackedEntity.lastSectionPos`).
+    section: Option<SectionPos>,
     /// Entity indices of the entities it sees.
     viewing: SlotSet,
     present: bool,
@@ -274,6 +276,7 @@ impl ChunkTracker {
                         pos: Vec3::ZERO,
                         view: *viewer,
                         square: None,
+                        section: None,
                         viewing: SlotSet::default(),
                         present: false,
                         queued: self.stamp.wrapping_sub(1),
@@ -301,8 +304,16 @@ impl ChunkTracker {
             };
             state.row = u32::try_from(row).unwrap_or(u32::MAX);
             state.pos = core.pos[row];
-            if state.square.is_none() || state.view != *viewer {
-                state.view = *viewer;
+            // `ChunkMap.tick`: a player that changed sections is checked against every entity
+            // again (so is one whose view changed); chunks sent to it alone pair nothing.
+            let section = core.section[row];
+            let recheck = state.square.is_none()
+                || state.section != Some(section)
+                || state.view.view_center != viewer.view_center
+                || state.view.view_distance != viewer.view_distance;
+            state.view = *viewer;
+            state.section = Some(section);
+            if recheck {
                 queue(&mut self.moved, state, slot, self.stamp);
             }
             state.present = true;
@@ -415,8 +426,8 @@ impl EntityTracker for ChunkTracker {
         self.moved.clear();
         self.forget_removed(store, out);
         self.sync_viewers(input);
-        // Chunks that reached a client make its entities pairable: check that viewer again.
-        for &(viewer, _) in input.chunks_sent {
+        // Viewers the server moved for their client: check them again.
+        for &viewer in input.moved_viewers {
             if let Some(slot) = viewer_of(&self.viewer_slot, &self.viewers, viewer)
                 && let Some(Some(state)) = self.viewers.get_mut(slot as usize)
             {

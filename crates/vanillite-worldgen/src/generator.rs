@@ -17,6 +17,7 @@ use std::sync::{Arc, OnceLock};
 use serde_json::Value;
 use vanillite_base::ChunkPos;
 use vanillite_base::random::RandomSource;
+use vanillite_base::scratch::ScratchPool;
 use vanillite_chunk::{BiomeId, Biomes, HeightmapKind, PalettedContainer, facts};
 use vanillite_data::block::{BlockId, BlockState};
 use vanillite_datapack::LoadedPacks;
@@ -229,6 +230,8 @@ pub struct TerrainGenerator {
     carvers: CarverRegistry,
     /// The carvers' ellipsoids per source chunk, shared by the chunks they carve.
     carver_plans: CarverPlans,
+    /// The buffers of the terrain jobs, reused from job to job ([`Self::release_scratch`]).
+    terrain_scratch: ScratchPool<TerrainScratch>,
     /// Carvers per biome id.
     biome_carvers: Vec<Vec<CarverId>>,
     /// Climates of the columns the carvers look up their biomes at.
@@ -625,6 +628,7 @@ impl TerrainGenerator {
             biome_source,
             carvers,
             carver_plans: CarverPlans::default(),
+            terrain_scratch: ScratchPool::default(),
             biome_carvers,
             carver_climates: ClimateCache::new(),
             uncarvable: BlockSet::from_tag(packs, "minecraft:uncarvable"),
@@ -1093,25 +1097,26 @@ impl TerrainGenerator {
     /// context is reused across the batch; it is reset per chunk, as Vanilla creates a fresh
     /// `NoiseChunk` per chunk.
     pub fn generate_terrain(&self, batch: &mut [TerrainJob]) {
-        thread_local! {
-            /// The terrain sampling context of this thread: reset per chunk, it keeps its
-            /// buffer pool warm across chunks.
-            static CONTEXT: RefCell<SamplerContext> = RefCell::new(SamplerContext::new(true));
-        }
         if let Some(flat) = &self.flat {
             for job in batch {
                 flat.build(&mut job.chunk);
             }
             return;
         }
-        CONTEXT.with_borrow_mut(|ctx| {
-            for job in batch {
-                ctx.reset();
-                self.bind_beardifier(ctx, job.chunk.pos(), &job.structures);
-                self.build_terrain(&mut job.chunk, &job.neighbours, ctx, None);
-            }
-            ctx.set_beardifier(None);
-        });
+        let mut scratch = self.terrain_scratch.take_or(TerrainScratch::default);
+        for job in batch {
+            scratch.ctx.reset();
+            self.bind_beardifier(&mut scratch.ctx, job.chunk.pos(), &job.structures);
+            self.build_terrain(&mut job.chunk, &job.neighbours, &mut scratch, None);
+        }
+        scratch.ctx.set_beardifier(None);
+        self.terrain_scratch.give(scratch);
+    }
+
+    /// Drops the reused job buffers (they are made again by the next job): for idle times.
+    pub fn release_scratch(&self) {
+        self.terrain_scratch.release();
+        self.material.release_scratch();
     }
 
     /// `ChunkGeneratorStructureState.ensureStructuresGenerated`: computes the ring positions of
@@ -1141,30 +1146,38 @@ impl TerrainGenerator {
         job: &mut TerrainJob,
         mut observe: impl FnMut(TerrainStep, &ProtoChunk),
     ) {
-        let mut ctx = SamplerContext::new(true);
-        self.bind_beardifier(&mut ctx, job.chunk.pos(), &job.structures);
+        let mut scratch = TerrainScratch::default();
+        self.bind_beardifier(&mut scratch.ctx, job.chunk.pos(), &job.structures);
         self.build_terrain(
             &mut job.chunk,
             &job.neighbours,
-            &mut ctx,
+            &mut scratch,
             Some(&mut observe),
         );
     }
 
-    /// `buildTerrain` for one chunk with a fresh caching context `ctx`; `observe` sees the
-    /// chunk after each step. The blocks are built in the chunk's dense buffer.
+    /// `buildTerrain` for one chunk with a fresh caching context (`scratch.ctx`, reset);
+    /// `observe` sees the chunk after each step. The blocks are built in the chunk's dense
+    /// buffer.
     fn build_terrain(
         &self,
         chunk: &mut ProtoChunk,
         neighbours: &NeighbourBiomes,
-        ctx: &mut SamplerContext,
+        scratch: &mut TerrainScratch,
         mut observe: Option<Observer<'_>>,
     ) {
-        let mut observe = |step: TerrainStep, chunk: &mut ProtoChunk| {
+        let TerrainScratch {
+            ctx,
+            bounds,
+            dense,
+            density,
+            states,
+        } = scratch;
+        let mut observe = |step: TerrainStep, chunk: &mut ProtoChunk, dense: &mut Vec<u16>| {
             if let Some(observe) = observe.as_mut() {
-                chunk.end_dense();
+                chunk.end_dense(dense);
                 observe(step, chunk);
-                chunk.begin_dense();
+                chunk.begin_dense(dense);
             }
         };
         // `NoiseSettings.clampToHeightAccessor`.
@@ -1186,9 +1199,9 @@ impl TerrainGenerator {
             ctx,
             Some(&self.surface_levels),
         );
-        chunk.begin_dense();
-        self.fill_from_noise(chunk, &volume, &mut aquifer, ctx);
-        observe(TerrainStep::Noise, chunk);
+        chunk.begin_dense(dense);
+        self.fill_from_noise(chunk, &volume, &mut aquifer, ctx, bounds, density, states);
+        observe(TerrainStep::Noise, chunk, dense);
 
         let biome_at = |x: i32, y: i32, z: i32| {
             self.biome_manager.get_biome(x, y, z, &mut |qx, qy, qz| {
@@ -1204,40 +1217,39 @@ impl TerrainGenerator {
             &biome_at,
             &neighbours.possible_biomes(),
         );
-        observe(TerrainStep::Surface, chunk);
+        observe(TerrainStep::Surface, chunk, dense);
         self.carve(chunk, &mut aquifer, ctx);
         chunk.finish_terrain();
-        chunk.end_dense();
-        observe(TerrainStep::Carvers, chunk);
-        chunk.end_dense();
+        chunk.end_dense(dense);
+        observe(TerrainStep::Carvers, chunk, dense);
+        chunk.end_dense(dense);
     }
 
     /// `doFill`: the final density over the chunk volume, turned into blocks by the aquifer.
+    /// `bounds` is the context the density bounds are computed in; `density` and `states` are
+    /// reused buffers.
+    #[allow(clippy::too_many_arguments)]
     fn fill_from_noise(
         &self,
         chunk: &mut ProtoChunk,
         volume: &DensityVolume,
         aquifer: &mut Aquifer,
         ctx: &mut SamplerContext,
+        bounds: &mut SamplerContext,
+        density: &mut Vec<f32>,
+        states: &mut Vec<BlockState>,
     ) {
-        thread_local! {
-            /// The context the density bounds are computed in.
-            static BOUNDS_CONTEXT: RefCell<SamplerContext> =
-                RefCell::new(SamplerContext::new(true));
-        }
         // From this Y up a block that is not solid is air, without asking the aquifer.
         let air_from_y = aquifer.air_from_y();
         // And from `top` up the density is proven not to be positive: it is only sampled
         // below, which gives the same values there.
-        let top = BOUNDS_CONTEXT.with_borrow_mut(|scratch| {
-            self.program.not_positive_from(
-                scratch,
-                self.final_density,
-                volume,
-                air_from_y,
-                ctx.has_beardifier(),
-            )
-        });
+        let top = self.program.not_positive_from(
+            bounds,
+            self.final_density,
+            volume,
+            air_from_y,
+            ctx.has_beardifier(),
+        );
         let whole = *volume;
         let volume = &if top > whole.min_y && top <= whole.max_y() {
             DensityVolume::new(
@@ -1251,11 +1263,19 @@ impl TerrainGenerator {
         } else {
             whole
         };
-        let mut density = vec![0.0_f32; volume.len()];
+        // Every value is written by the sampling (the buffer only grows, never cleared).
+        if density.len() < volume.len() {
+            density.resize(volume.len(), 0.0);
+        }
+        let density = &mut density[..volume.len()];
         self.program
-            .sample_volume(ctx, self.final_density, &mut density, volume);
+            .sample_volume(ctx, self.final_density, density, volume);
         let default_block = self.settings.default_block;
-        let mut states = vec![BlockState::AIR; volume.size_y as usize];
+        // Every row is written per column before the column is read.
+        if states.len() < volume.size_y as usize {
+            states.resize(volume.size_y as usize, BlockState::AIR);
+        }
+        let states = &mut states[..volume.size_y as usize];
         for z in 0..volume.size_z {
             let block_z = volume.block_z(z);
             for x in 0..volume.size_x {
@@ -1290,8 +1310,8 @@ impl TerrainGenerator {
                         state
                     };
                 }
-                if !chunk.write_empty_column(block_x, block_z, volume.min_y, &states) {
-                    self.write_column(chunk, block_x, block_z, volume.min_y, &states);
+                if !chunk.write_empty_column(block_x, block_z, volume.min_y, states) {
+                    self.write_column(chunk, block_x, block_z, volume.min_y, states);
                 }
             }
         }
@@ -1446,4 +1466,31 @@ impl NoiseColumn {
 fn writable_area(pos: ChunkPos, min_y: i32, height: i32) -> BoundingBox {
     let (x, z) = (pos.min_block_x(), pos.min_block_z());
     BoundingBox::new(x, min_y + 1, z, x + 15, min_y + height - 1, z + 15)
+}
+
+/// The reused buffers of one terrain job.
+#[derive(Debug)]
+struct TerrainScratch {
+    /// The caching sampler context, reset per chunk (Vanilla's fresh `NoiseChunk`).
+    ctx: SamplerContext,
+    /// The context the density bounds are computed in.
+    bounds: SamplerContext,
+    /// The dense block buffer of the chunk being built ([`ProtoChunk::begin_dense`]).
+    dense: Vec<u16>,
+    /// The final density of the chunk volume.
+    density: Vec<f32>,
+    /// The states of one column.
+    states: Vec<BlockState>,
+}
+
+impl Default for TerrainScratch {
+    fn default() -> Self {
+        Self {
+            ctx: SamplerContext::new(true),
+            bounds: SamplerContext::new(true),
+            dense: Vec::new(),
+            density: Vec::new(),
+            states: Vec::new(),
+        }
+    }
 }
