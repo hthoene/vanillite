@@ -1628,6 +1628,7 @@ mod tests {
                 difficulty: crate::survival::rules::Difficulty::Normal,
                 game_time,
                 min_y: level.min_y(),
+                logical_height: 384,
                 dimension: "minecraft:overworld",
                 raining_at: &raining,
                 border: None,

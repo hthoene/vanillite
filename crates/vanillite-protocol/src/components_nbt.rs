@@ -29,6 +29,18 @@ use crate::codec::{Error, Reader, Result, write_len, write_str, write_varint};
 use crate::components::{MAX_NESTING, Registries};
 use crate::types::MAX_STRING;
 
+/// `CustomData.COMPOUND_TAG_CODEC`: a compound, or an SNBT string of one
+/// (`TagParser.FLATTENED_CODEC`).
+fn snbt_or_compound(tag: &Tag) -> Result<Compound> {
+    match tag {
+        Tag::Compound(c) => Ok(c.clone()),
+        Tag::String(s) => {
+            vanillite_nbt::snbt::parse_compound(s).map_err(|_| Error::Invalid("bad SNBT compound"))
+        }
+        _ => Err(Error::Invalid("expected compound tag")),
+    }
+}
+
 /// Names of registry entries by id and back, for registries that are not static (the dynamic
 /// registries of the data packs, e.g. `minecraft:enchantment`). Static registries are looked up
 /// in [`vanillite_data::registry`] first.
@@ -120,6 +132,9 @@ enum S {
     Tag,
     /// One NBT compound on the wire; the same compound.
     Compound,
+    /// [`S::Compound`] whose persistent form may also be an SNBT string
+    /// (`CustomData.COMPOUND_TAG_CODEC`).
+    CustomData,
     /// 16 bytes; int array of 4 (`UUIDUtil.CODEC`).
     Uuid,
     /// Packed long; int array `[x, y, z]` (`BlockPos.CODEC`).
@@ -860,9 +875,8 @@ fn schema(name: &str) -> Option<S> {
         "axolotl/variant" => const { S::Enum(&AXOLOTL) },
         "sign_text_front" | "sign_text_back" => const { SIGN_TEXT },
         // No stream codec: the persistent tag itself goes on the wire.
-        "custom_data" | "bucket_entity_data" | "intangible_projectile" | "lock" => {
-            const { S::Compound }
-        }
+        "custom_data" | "bucket_entity_data" => const { S::CustomData },
+        "intangible_projectile" | "lock" => const { S::Compound },
         "map_decorations" | "debug_stick_state" | "recipes" | "container_loot" => const { S::Tag },
         _ => return None,
     })
@@ -1142,7 +1156,7 @@ impl Conv<'_> {
             }
             S::Str | S::Id => Tag::String(r.string(MAX_STRING)?.to_owned()),
             S::Tag => read_tag(r)?,
-            S::Compound => match read_tag(r)? {
+            S::Compound | S::CustomData => match read_tag(r)? {
                 tag @ Tag::Compound(_) => tag,
                 _ => return Err(Error::Invalid("expected compound tag")),
             },
@@ -1514,6 +1528,7 @@ impl Conv<'_> {
                 compound(tag)?;
                 write_tag(tag, out)?;
             }
+            S::CustomData => write_tag(&Tag::Compound(snbt_or_compound(tag)?), out)?,
             S::Uuid => out.extend_from_slice(&uuid_from_tag(tag)?.to_be_bytes()),
             S::BlockPos => {
                 let Tag::IntArray(a) = tag else {
@@ -1671,7 +1686,7 @@ impl Conv<'_> {
                 result?;
             }
             S::Typed(registry) => {
-                let c = compound(tag)?;
+                let c = &snbt_or_compound(tag)?;
                 let ty = string(c.get("id").ok_or(Error::Invalid("missing id"))?)?;
                 self.write_entry_id(registry, ty, out)?;
                 let mut data = c.clone();

@@ -997,7 +997,17 @@ impl ContainerView<'_> {
         for slot in 0..3 {
             let cost = costs[slot];
             if cost > 0 {
-                let list = enchantment_list(&d.enchanting, &item, seed, slot, cost, enchantable);
+                // `getEnchantmentList` reseeds the menu random (seed + slot) and advances it;
+                // the clue is the next draw of that same random.
+                let list = enchantment_list(
+                    &d.enchanting,
+                    &mut random,
+                    &item,
+                    seed,
+                    slot,
+                    cost,
+                    enchantable,
+                );
                 if !list.is_empty() {
                     let len = i32::try_from(list.len()).unwrap_or(1);
                     let pick = usize::try_from(random.next_int_bounded(len)).unwrap_or(0);
@@ -1045,6 +1055,7 @@ impl ContainerView<'_> {
         let enchantable = d.enchanting.enchantable(&item);
         let list = enchantment_list(
             &d.enchanting,
+            &mut vanillite_base::random::LegacyRandom::new(0),
             &item,
             self.enchantment_seed(),
             slot,
@@ -1135,21 +1146,24 @@ impl ContainerView<'_> {
 }
 
 /// `EnchantmentMenu.getEnchantmentList` with `EnchantmentHelper.selectEnchantment`.
+/// `random` is the menu's, reseeded with `seed + slot` (int arithmetic).
 fn enchantment_list(
     e: &Enchanting,
+    random: &mut vanillite_base::random::LegacyRandom,
     item: &ItemStack,
     seed: i32,
     slot: usize,
     cost: i32,
     enchantable: i32,
 ) -> Vec<(u32, i32)> {
-    let mut random = vanillite_base::random::LegacyRandom::new(
-        i64::from(seed) + i64::try_from(slot).unwrap_or(0),
+    vanillite_base::random::RandomSource::set_seed(
+        random,
+        i64::from(seed.wrapping_add(i32::try_from(slot).unwrap_or(0))),
     );
     if enchantable <= 0 {
         return Vec::new();
     }
-    let mut results = crate::enchant::select_enchantment(e, &mut random, item, cost, &e.table);
+    let mut results = crate::enchant::select_enchantment(e, random, item, cost, &e.table);
     let is_book = item::item_id(item) == items::BOOK;
     if is_book && results.len() > 1 {
         let len = i32::try_from(results.len()).unwrap_or(1);

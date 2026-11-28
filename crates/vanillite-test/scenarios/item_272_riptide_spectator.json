@@ -1,0 +1,61 @@
+{
+  "description": "Riptide spin (#272, I3-29): a player in the rain launches with a Riptide II trident through a spectator player; checkAutoSpinAttack's getEntities skips spectators, so the spin goes on.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false",
+    "advance_weather": "false"
+  },
+  "weather": "rain",
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      31,
+      -30,
+      15
+    ]
+  ],
+  "ticks": 40,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        2.5,
+        -60.0,
+        8.5
+      ],
+      "rot": [
+        -90,
+        -30
+      ]
+    },
+    {
+      "name": "alex",
+      "type": "minecraft:player",
+      "pos": [
+        3.5,
+        -60.0,
+        8.5
+      ],
+      "game_mode": "spectator"
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "use_item",
+      "entity": "steve",
+      "item": "minecraft:trident",
+      "components": "{\"minecraft:enchantments\": {\"minecraft:riptide\": 2}}"
+    },
+    {
+      "tick": 15,
+      "op": "release_item",
+      "entity": "steve"
+    }
+  ]
+}

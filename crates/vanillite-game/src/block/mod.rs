@@ -166,6 +166,17 @@ pub struct UseContext {
     pub respawn_here: Option<BlockPos>,
 }
 
+impl UseContext {
+    /// The equipment slot of the clicking hand.
+    pub fn hand_slot(&self) -> crate::item::EquipmentSlot {
+        if self.main_hand {
+            crate::item::EquipmentSlot::MainHand
+        } else {
+            crate::item::EquipmentSlot::OffHand
+        }
+    }
+}
+
 /// `InteractionResult` as far as block use goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Interaction {
@@ -479,13 +490,15 @@ pub fn sound_id(name: &str) -> u16 {
     vanillite_data::registry::SOUND_EVENT.id(full).unwrap_or(0)
 }
 
-/// `ItemStack.hurtAndBreak(amount, …)` of a held tool: `minecraft:unbreaking` skips each point
-/// with chance `level / (level + 1)`; the stack breaks at its maximum damage.
+/// `ItemStack.hurtAndBreak(amount, player, slot)` of a held tool: the `item_damage` effects
+/// (Unbreaking) from the level random, `ITEM_DURABILITY_CHANGED`, and when it breaks
+/// `ITEM_BROKEN` and the break event (`onEquippedItemBroken`).
 pub fn hurt_item(
     level: &mut Level,
     stack: &mut crate::item::ItemStack,
     amount: i32,
     player: EntityId,
+    slot: crate::item::EquipmentSlot,
 ) {
     use crate::item;
     // `hurtAndBreak`: players with infinite materials (creative) take no damage.
@@ -493,21 +506,7 @@ pub fn hurt_item(
         .entities
         .player(player)
         .is_some_and(|p| p.game_mode == vanillite_config::GameMode::Creative);
-    if !item::is_damageable(stack) || creative {
-        return;
-    }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(stack, "minecraft:unbreaking"));
-    let mut taken: i32 = 0;
-    for _ in 0..amount.max(0) {
-        #[allow(clippy::as_conversions)]
-        let chance = 1.0 / (unbreaking.max(0) as f32 + 1.0);
-        if unbreaking <= 0
-            || vanillite_base::random::RandomSource::next_float(level.random()) < chance
-        {
-            taken = taken.saturating_add(1);
-        }
-    }
+    let taken = crate::durability::change(stack, amount, creative, level.random());
     if taken == 0 {
         return;
     }
@@ -517,11 +516,14 @@ pub fn hurt_item(
         player,
         crate::advancements::trigger::Event::ItemDurabilityChanged(stack.clone(), damage),
     );
-    item::set_damage(stack, damage);
-    if damage >= item::max_damage(stack) {
-        let broken = crate::stats::Stat::of(crate::stats::StatType::Broken, stack.item);
-        stack.shrink(1);
-        level.award_stat(player, broken, 1);
+    let item = stack.item;
+    if crate::durability::apply(stack, damage) {
+        level.award_stat(
+            player,
+            crate::stats::Stat::of(crate::stats::StatType::Broken, item),
+            1,
+        );
+        crate::durability::broken_on_level(level, player, slot);
     }
 }
 

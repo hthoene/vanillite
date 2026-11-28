@@ -44,6 +44,10 @@ struct LevelWorld<'a> {
     spectators: &'a [EntityId],
     /// What the player looks at, found on first use.
     looking_at: OnceCell<Option<Snapshot>>,
+    global: &'a Global,
+    /// The random of the loot conditions (`random_chance`): the level random is not at hand
+    /// here; one seeded by the game time and the player stands in.
+    random: RefCell<vanillite_base::random::LegacyRandom>,
 }
 
 impl World for LevelWorld<'_> {
@@ -92,8 +96,49 @@ impl World for LevelWorld<'_> {
         self.level.max_local_raw_brightness(pos)
     }
 
+    fn block_components(&self, pos: BlockPos) -> Option<Vec<(u16, Box<[u8]>)>> {
+        self.level.chunks.block(pos)?;
+        let entity = self.level.block_entities.get(pos)?;
+        let kept = self.level.block_entities.kept_components(pos);
+        let types =
+            u16::try_from(vanillite_data::registry::DATA_COMPONENT_TYPE.len()).unwrap_or(u16::MAX);
+        Some(
+            (0..types)
+                .filter_map(|t| {
+                    vanillite_game::level::block_entity::collect_component_with(entity, kept, t)
+                        .map(|v| (t, v))
+                })
+                .collect(),
+        )
+    }
+
     fn can_see_sky(&self, pos: BlockPos) -> bool {
         vanillite_game::mob::can_see_sky(self.level, pos)
+    }
+
+    fn loot_condition(
+        &self,
+        condition: &serde_json::Value,
+        origin: Option<vanillite_base::Vec3>,
+    ) -> bool {
+        let at = origin
+            .or_else(|| self.level.entities.store.get(self.player).map(|e| e.pos()))
+            .unwrap_or(vanillite_base::Vec3::ZERO);
+        let weather = {
+            let w = self.global.level.weather();
+            (w.raining, w.thundering)
+        };
+        crate::commands::loot_cmd::test_predicate(
+            &self.level.entities,
+            Some(&self.level.chunks),
+            self.global,
+            None,
+            at,
+            weather,
+            &(None, Some(condition.clone())),
+            &mut *self.random.borrow_mut(),
+        )
+        .unwrap_or(false)
     }
 
     fn looking_at(&self) -> Option<&EntityView<'static>> {
@@ -130,6 +175,7 @@ fn player_view<'a>(
     v.crouching = e.pose() == Pose::Crouching;
     v.sprinting = flags.contains(EntityFlags::SPRINTING);
     v.swimming = flags.contains(EntityFlags::SWIMMING);
+    v.living = true;
     v.flying = survival.flying;
     v.fall_flying = flags.contains(EntityFlags::FALL_FLYING);
     v.in_water = survival.fluids.in_water();
@@ -378,6 +424,11 @@ fn check_player(
             player: id,
             spectators,
             looking_at: OnceCell::new(),
+            global,
+            #[allow(clippy::cast_possible_truncation)]
+            random: RefCell::new(vanillite_base::random::LegacyRandom::new(
+                global.level.game_time() ^ (entity.uuid() as i64),
+            )),
         };
         advancements.process(extra, &TriggerContext::new(&world, &view, inventory));
     }

@@ -1,0 +1,14 @@
+{
+  "description": "Wind charge hits (#286, I3-37): AbstractWindCharge.canHitEntity takes any pickable entity except wind charges and end crystals, so a wind charge thrown at a boat hits and bursts on it.",
+  "tier": "fast",
+  "rules": {"spawn_monsters": "false"},
+  "region": [[0, -61, 0], [15, -55, 15]],
+  "ticks": 30,
+  "entities": [
+    {"name": "steve", "type": "minecraft:player", "pos": [3.5, -60.0, 8.5], "rot": [-90, 10]}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "summon minecraft:oak_boat 8.5 -60 8.5"},
+    {"tick": 5, "op": "use_item", "entity": "steve", "item": "minecraft:wind_charge"}
+  ]
+}

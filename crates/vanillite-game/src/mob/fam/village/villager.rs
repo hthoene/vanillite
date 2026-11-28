@@ -339,6 +339,24 @@ pub fn remove_item_type(inv: &mut [ItemStack; 8], item: u16, count: i32) -> i32 
     count - left
 }
 
+/// `VILLAGER_FOOD` nutrition of a stack: its own (patched or removed) component, else the
+/// item's default.
+pub fn stack_villager_food(stack: &ItemStack) -> Option<i32> {
+    use vanillite_protocol::components::ids::VILLAGER_FOOD;
+    if stack.is_empty() {
+        return None;
+    }
+    if let Some(p) = stack.patch() {
+        if let Some(v) = p.get(VILLAGER_FOOD) {
+            return vanillite_protocol::codec::Reader::new(v).varint().ok();
+        }
+        if p.is_removed(VILLAGER_FOOD) {
+            return None;
+        }
+    }
+    villager_food(stack.item)
+}
+
 /// `VILLAGER_FOOD` nutrition of an item (bread 4, potato, carrot and beetroot 1).
 pub fn villager_food(item: u16) -> Option<i32> {
     match item {
@@ -358,11 +376,7 @@ pub fn food_points(m: &MobData) -> i32 {
         .merchant
         .inventory
         .iter()
-        .filter_map(|s| {
-            villager_food(s.item)
-                .filter(|_| !s.is_empty())
-                .map(|n| n * s.count)
-        })
+        .filter_map(|s| stack_villager_food(s).map(|n| n * s.count))
         .sum()
 }
 
@@ -396,7 +410,7 @@ pub fn eat_and_digest(m: &mut MobData) {
     if s.villager.food_level < 12 {
         'slots: for slot in 0..8 {
             let stack = &s.merchant.inventory[slot];
-            let Some(n) = villager_food(stack.item).filter(|_| !stack.is_empty()) else {
+            let Some(n) = stack_villager_food(stack) else {
                 continue;
             };
             let count = stack.count;
@@ -419,7 +433,7 @@ pub fn eat_and_digest(m: &mut MobData) {
 pub fn wants_to_pick_up(m: &MobData, stack: &ItemStack) -> bool {
     let item = stack.item;
     (item_in_tag(item, "minecraft:villager_picks_up")
-        || villager_food(item).is_some()
+        || stack_villager_food(stack).is_some()
         || requested_items(vs(m).profession).contains(&item))
         && can_add_item(&state(m).merchant.inventory, stack)
 }
@@ -1520,4 +1534,27 @@ pub fn cured(
     s.merchant.villager_xp = xp;
     rebuild_brain(m, None);
     crate::effect::living::add_to_mob(m, EffectInstance::new(MobEffect::NAUSEA, 200, 0));
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod villager_food_tests {
+    use super::*;
+
+    /// `itemStack.get(VILLAGER_FOOD)` (I6-35 of #272): the stack's own value counts.
+    #[test]
+    fn patched_villager_food() {
+        use vanillite_protocol::components::ids::VILLAGER_FOOD;
+        let mut bread = ItemStack::new(items::BREAD.0, 1);
+        assert_eq!(stack_villager_food(&bread), Some(4));
+        bread.patch_mut().set(VILLAGER_FOOD, vec![7u8].into());
+        assert_eq!(stack_villager_food(&bread), Some(7));
+        let mut potato = ItemStack::new(items::POTATO.0, 1);
+        potato.remove_component(VILLAGER_FOOD);
+        assert_eq!(stack_villager_food(&potato), None);
+        let mut stick = ItemStack::new(items::STICK.0, 1);
+        assert_eq!(stack_villager_food(&stick), None);
+        stick.patch_mut().set(VILLAGER_FOOD, vec![2u8].into());
+        assert_eq!(stack_villager_food(&stick), Some(2));
+    }
 }

@@ -57,12 +57,37 @@ impl Default for SignText {
 }
 
 impl SignText {
+    /// `hasEditableText`: every line is empty or plain text.
+    pub fn has_editable_text(&self) -> bool {
+        self.messages
+            .iter()
+            .all(|m| matches!(m.content, vanillite_protocol::text::Content::Text(_)))
+    }
+
+    /// The `sign_text_front`/`sign_text_back` component value of `stack` (`SignText.EMPTY`
+    /// without it).
+    pub fn of_component(stack: &ItemStack, id: u16) -> SignText {
+        stack
+            .component(id)
+            .and_then(|w| crate::item_nbt::component_to_nbt(id, w))
+            .and_then(|t| match t {
+                Tag::Compound(c) => Some(SignText::load(&c)),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// This side as a `sign_text_front`/`sign_text_back` component value.
+    pub fn component(&self, id: u16) -> Option<Box<[u8]>> {
+        crate::item_nbt::component_from_nbt(id, &Tag::Compound(self.save()))
+    }
+
     /// `hasMessage`: any non-empty line.
     fn has_message(&self) -> bool {
         self.messages.iter().any(|m| !m.plain().is_empty())
     }
 
-    fn save(&self) -> Compound {
+    pub(crate) fn save(&self) -> Compound {
         let mut c = Compound::new();
         let mut list = List::new();
         for m in &self.messages {
@@ -75,7 +100,7 @@ impl SignText {
         c
     }
 
-    fn load(c: &Compound) -> SignText {
+    pub(crate) fn load(c: &Compound) -> SignText {
         let mut text = SignText::default();
         if let Some(Tag::List(list)) = c.get("messages") {
             for (slot, tag) in text.messages.iter_mut().zip(&list.0) {
@@ -462,5 +487,42 @@ pub fn tick(level: &mut Level, pos: BlockPos, _state: BlockState) {
     });
     if !near && let Some(BlockEntity::Sign(sign)) = level.block_entity_mut(pos) {
         sign.editor = None;
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use vanillite_protocol::components::ids;
+
+    /// `sign_text_front`/`sign_text_back` round trip (`SignText.DIRECT_CODEC`) and
+    /// `SignText.hasEditableText` (#272, I6-32).
+    #[test]
+    fn sign_text_components() {
+        let mut text = SignText {
+            color: "red",
+            glowing: true,
+            ..SignText::default()
+        };
+        text.messages[1] = Component::text("hi");
+        let mut stack = ItemStack::new(
+            vanillite_data::registry::ITEM
+                .id("minecraft:oak_sign")
+                .unwrap(),
+            1,
+        );
+        stack.set_component(
+            ids::SIGN_TEXT_FRONT,
+            text.component(ids::SIGN_TEXT_FRONT).unwrap(),
+        );
+        assert_eq!(SignText::of_component(&stack, ids::SIGN_TEXT_FRONT), text);
+        assert_eq!(
+            SignText::of_component(&stack, ids::SIGN_TEXT_BACK),
+            SignText::default()
+        );
+        assert!(text.has_editable_text());
+        text.messages[2] = Component::translatable("block.minecraft.stone", Vec::new());
+        assert!(!text.has_editable_text());
     }
 }

@@ -445,6 +445,8 @@ fn dismount_to(
     }
     if let Some(mut e) = ents.store.get_mut(passenger) {
         e.set_pos(target);
+        // `snapTo` / the player's teleport: `setOldPosAndRot`.
+        e.set_old_pos();
         let old = e.as_ref().rot();
         if old.y_rot != rot.y_rot || old.x_rot != rot.x_rot {
             e.set_rot(rot);
@@ -831,10 +833,12 @@ pub fn position_riders_of(ents: &mut Entities, vehicle: EntityId) {
         if let Some(mut e) = ents.store.get_mut(p) {
             e.set_pos(target);
         }
-        if let Some(rot) = horse_body_rot
-            && let Some(m) = ents.mob_mut(p)
-        {
-            m.y_body_rot = rot;
+        if let Some(rot) = horse_body_rot {
+            if let Some(m) = ents.mob_mut(p) {
+                m.y_body_rot = rot;
+            } else if let Some(pl) = ents.player_mut(p) {
+                pl.survival.y_body_rot = rot;
+            }
         }
     }
 }
@@ -1075,6 +1079,9 @@ pub fn move_vehicle(
     if let Some(m) = ents.mob_mut(vehicle) {
         m.y_body_rot = y_rot;
     }
+    if let Some(p) = ents.player_mut(player) {
+        p.connection.movement.chunk_move = true;
+    }
     position_riders_of(ents, vehicle);
 }
 
@@ -1102,6 +1109,7 @@ pub fn boost(
     player: EntityId,
     stack: &mut crate::item::ItemStack,
     creative: bool,
+    hand: vanillite_protocol::packets::play::serverbound::Hand,
 ) -> bool {
     let Some(vehicle) = ents.vehicle_of(player) else {
         return false;
@@ -1128,16 +1136,9 @@ pub fn boost(
     if creative {
         return true;
     }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(stack, "minecraft:unbreaking"));
-    let mut n = 0;
-    for _ in 0..cost {
-        #[allow(clippy::cast_precision_loss)]
-        let level = unbreaking.max(0) as f32;
-        // `remove_binomial`: the draw removes the point below level / (level + 1).
-        if unbreaking <= 0 || env.random.next_float() >= level / (level + 1.0) {
-            n += 1;
-        }
+    let n = crate::durability::change(stack, cost, false, env.random);
+    if n == 0 {
+        return true;
     }
     let d = crate::item::damage(stack) + n;
     if n > 0
@@ -1156,6 +1157,16 @@ pub fn boost(
         }
     }
     if d >= crate::item::max_damage(stack) {
+        // `onEquippedItemBroken`.
+        let slot = match hand {
+            vanillite_protocol::packets::play::serverbound::Hand::MainHand => {
+                crate::item::EquipmentSlot::MainHand
+            }
+            vanillite_protocol::packets::play::serverbound::Hand::OffHand => {
+                crate::item::EquipmentSlot::OffHand
+            }
+        };
+        crate::durability::broken_in_env(ents, env, player, slot);
         // `hurtAndConvertOnBreak(cost, FISHING_ROD)`: the components stay, the damage resets.
         let mut rod = stack.clone();
         rod.item = vanillite_data::item::ids::FISHING_ROD.0;

@@ -99,6 +99,25 @@ pub struct ActiveEffects {
     events: Vec<EffectEvent>,
     /// Effects added while the effects tick (`addEffect` from inside an effect tick).
     deferred: Vec<EffectInstance>,
+    /// Structural changes of the effect map (`HashMap.modCount`): the effects tick stops
+    /// where Vanilla's iterator throws `ConcurrentModificationException`.
+    mods: ModCount,
+}
+
+/// A change counter that never makes two effect sets differ.
+#[derive(Clone, Copy, Debug, Default)]
+struct ModCount(u32);
+
+impl PartialEq for ModCount {
+    fn eq(&self, _: &ModCount) -> bool {
+        true
+    }
+}
+
+impl ModCount {
+    fn bump(&mut self) {
+        self.0 = self.0.wrapping_add(1);
+    }
 }
 
 impl ActiveEffects {
@@ -204,6 +223,7 @@ impl ActiveEffects {
             Err(i) => {
                 self.on_added(&new, source);
                 self.list.insert(i, new);
+                self.mods.bump();
                 (true, true)
             }
             Ok(i) => {
@@ -237,6 +257,7 @@ impl ActiveEffects {
             Err(i) => {
                 self.on_added(&new, None);
                 self.list.insert(i, new);
+                self.mods.bump();
             }
             Ok(i) => {
                 self.on_updated(&new, true, None);
@@ -253,6 +274,7 @@ impl ActiveEffects {
             Ok(i) => {
                 self.list.remove(i);
                 self.on_removed(effect);
+                self.mods.bump();
                 true
             }
             Err(_) => false,
@@ -267,6 +289,7 @@ impl ActiveEffects {
         for e in std::mem::take(&mut self.list) {
             self.on_removed(e.effect);
         }
+        self.mods.bump();
         true
     }
 
@@ -279,6 +302,9 @@ impl ActiveEffects {
             }
         }
         self.dirty = true;
+        if !self.list.is_empty() {
+            self.mods.bump();
+        }
         std::mem::take(&mut self.list)
     }
 
@@ -369,6 +395,8 @@ impl ActiveEffects {
     /// refilling on land.
     pub fn refills_air(&self) -> bool {
         !self.has(MobEffect::BREATH_OF_THE_NAUTILUS)
+            || self.has(MobEffect::WATER_BREATHING)
+            || self.has(MobEffect::CONDUIT_POWER)
     }
 
     /// `getJumpBoostPower`.
@@ -462,11 +490,27 @@ pub fn tick(host: &mut dyn EffectHost) {
             Some(d) => d,
             None => host.tick_count(),
         };
+        let fx = host.effects();
+        let (mods, deferred) = (fx.mods.0, fx.deferred.len());
         let keep =
             !effect.should_apply_tick(tick_count, amplifier) || apply_tick(effect, host, amplifier);
-        // The effect tick may have changed the list (death hooks): find the effect again.
+        // A new key or a removal from inside the tick (Bad Omen adding Raid Omen, a totem
+        // clearing the effects) makes the iterator throw at its next step: the current effect
+        // is not removed and the remaining effects skip this tick.
         let fx = host.effects();
+        let modified = fx.mods.0 != mods
+            || fx.deferred.get(deferred..).is_some_and(|added| {
+                added.iter().any(|d| {
+                    fx.list
+                        .binary_search_by_key(&d.effect, |e| e.effect)
+                        .is_err()
+                })
+            });
+        // The effect tick may have changed the list (death hooks): find the effect again.
         let Ok(i) = fx.list.binary_search_by_key(&effect, |e| e.effect) else {
+            if modified {
+                break;
+            }
             continue;
         };
         next = i;
@@ -474,6 +518,9 @@ pub fn tick(host: &mut dyn EffectHost) {
             break;
         };
         if !keep {
+            if modified {
+                break;
+            }
             fx.list.remove(i);
             fx.on_removed(effect);
             continue;
@@ -481,6 +528,9 @@ pub fn tick(host: &mut dyn EffectHost) {
         e.tick_down();
         let downgraded = e.downgrade_to_hidden();
         if !e.has_remaining_duration() {
+            if modified {
+                break;
+            }
             fx.list.remove(i);
             fx.on_removed(effect);
             continue;
@@ -490,6 +540,9 @@ pub fn tick(host: &mut dyn EffectHost) {
             fx.on_updated(&updated, true, None);
         } else if updated.duration % 600 == 0 {
             fx.on_updated(&updated, false, None);
+        }
+        if modified {
+            break;
         }
         next = i + 1;
     }
@@ -605,11 +658,19 @@ mod tests {
         undead: bool,
         ticks: i32,
         exhaustion: f32,
+        village: bool,
     }
 
     impl EffectHost for Host {
         fn effects(&mut self) -> &mut ActiveEffects {
             &mut self.fx
+        }
+        fn bad_omen_tick(&mut self, amplifier: i32) -> bool {
+            if self.village {
+                self.fx
+                    .add_deferred(EffectInstance::new(MobEffect::RAID_OMEN, 600, amplifier));
+            }
+            !self.village
         }
         fn health(&self) -> f32 {
             self.health
@@ -721,5 +782,49 @@ mod tests {
             tick(&mut host);
         }
         assert!((host.exhaustion - 0.3).abs() < 1e-5);
+    }
+
+    /// `MobEffectUtil.shouldEffectsRefillAirsupply`: Breath of the Nautilus stops the refill
+    /// unless Water Breathing or Conduit Power is active too (S-11 of #272).
+    #[test]
+    fn breath_of_the_nautilus_refill() {
+        let mut host = Host {
+            health: 20.0,
+            ..Host::default()
+        };
+        assert!(host.fx.refills_air());
+        add(
+            &mut host,
+            EffectInstance::new(MobEffect::BREATH_OF_THE_NAUTILUS, 100, 0),
+        );
+        assert!(!host.fx.refills_air());
+        add(
+            &mut host,
+            EffectInstance::new(MobEffect::CONDUIT_POWER, 100, 0),
+        );
+        assert!(host.fx.refills_air());
+    }
+
+    /// `tickEffects` and its `ConcurrentModificationException` (S-13 of #272): Bad Omen adding
+    /// Raid Omen stops the tick, so Bad Omen stays a tick longer and the later effects skip
+    /// it; the next tick removes Bad Omen and sets Raid Omen back to 600.
+    #[test]
+    fn effect_added_by_a_tick_stops_the_tick() {
+        let mut host = Host {
+            health: 20.0,
+            village: true,
+            ..Host::default()
+        };
+        add(&mut host, EffectInstance::new(MobEffect::BAD_OMEN, 100, 0));
+        add(&mut host, EffectInstance::new(MobEffect::INFESTED, 100, 0));
+        let duration = |h: &Host, e| h.fx.get(e).map(|i| i.duration);
+        tick(&mut host);
+        assert_eq!(duration(&host, MobEffect::BAD_OMEN), Some(100));
+        assert_eq!(duration(&host, MobEffect::INFESTED), Some(100));
+        assert_eq!(duration(&host, MobEffect::RAID_OMEN), Some(600));
+        tick(&mut host);
+        assert_eq!(duration(&host, MobEffect::BAD_OMEN), None);
+        assert_eq!(duration(&host, MobEffect::INFESTED), Some(99));
+        assert_eq!(duration(&host, MobEffect::RAID_OMEN), Some(600));
     }
 }

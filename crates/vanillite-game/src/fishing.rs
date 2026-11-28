@@ -86,7 +86,7 @@ pub fn use_rod(
             stack,
             hand,
         );
-        hurt_rod(ents, env, player, stack, damage);
+        hurt_rod(ents, env, player, stack, damage, hand);
         let pitch = 0.4 / (env.random.next_float() * 0.4 + 0.8);
         play_sound(
             env.out,
@@ -199,25 +199,12 @@ fn hurt_rod(
     player: EntityId,
     rod: &mut ItemStack,
     damage: i32,
+    hand: Hand,
 ) {
-    if damage <= 0
-        || !item::is_damageable(rod)
-        || ents
-            .player(player)
-            .is_some_and(|p| p.game_mode == GameMode::Creative)
-    {
-        return;
-    }
-    let unbreaking = crate::player::play::game_data()
-        .map_or(0, |d| d.enchantment_level(rod, "minecraft:unbreaking"));
-    #[allow(clippy::cast_precision_loss)]
-    let level = unbreaking.max(0) as f32;
-    let mut points = 0;
-    for _ in 0..damage {
-        if unbreaking <= 0 || env.random.next_float() >= level / (level + 1.0) {
-            points += 1;
-        }
-    }
+    let creative = ents
+        .player(player)
+        .is_some_and(|p| p.game_mode == GameMode::Creative);
+    let points = crate::durability::change(rod, damage, creative, env.random);
     if points == 0 {
         return;
     }
@@ -231,17 +218,12 @@ fn hurt_rod(
         ),
         None => crate::advancements::view::apply_damage(None, None, rod, d),
     };
-    if broke && let Some(pos) = ents.store.get(player).map(|e| e.pos()) {
-        play_sound(
-            env.out,
-            None,
-            pos,
-            "minecraft:entity.item.break",
-            SoundSource::Players,
-            0.8,
-            0.8 + env.random.next_float() * 0.4,
-            crate::survival::sound_seed(),
-        );
+    if broke {
+        let slot = match hand {
+            Hand::MainHand => item::EquipmentSlot::MainHand,
+            Hand::OffHand => item::EquipmentSlot::OffHand,
+        };
+        crate::durability::broken_in_env(ents, env, player, slot);
     }
 }
 

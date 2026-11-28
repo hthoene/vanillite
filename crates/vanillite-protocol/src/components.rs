@@ -149,8 +149,12 @@ pub mod ids {
     pub const LODESTONE_TRACKER: u16 = find("minecraft:lodestone_tracker");
     pub const EQUIPPABLE: u16 = find("minecraft:equippable");
     pub const BEES: u16 = find("minecraft:bees");
+    pub const SIGN_TEXT_FRONT: u16 = find("minecraft:sign_text_front");
+    pub const SIGN_TEXT_BACK: u16 = find("minecraft:sign_text_back");
+    pub const WAXED: u16 = find("minecraft:waxed");
     pub const CHARGED_PROJECTILES: u16 = find("minecraft:charged_projectiles");
     pub const INTANGIBLE_PROJECTILE: u16 = find("minecraft:intangible_projectile");
+    pub const ENCHANTMENT_GLINT_OVERRIDE: u16 = find("minecraft:enchantment_glint_override");
     pub const CUSTOM_DATA: u16 = find("minecraft:custom_data");
     pub const BUCKET_ENTITY_DATA: u16 = find("minecraft:bucket_entity_data");
     pub const WEAPON: u16 = find("minecraft:weapon");
@@ -161,6 +165,12 @@ pub mod ids {
     pub const GLIDER: u16 = find("minecraft:glider");
     pub const PROVIDES_TRIM_MATERIAL: u16 = find("minecraft:provides_trim_material");
     pub const BLOCK_TRANSFORMER: u16 = find("minecraft:block_transformer");
+    pub const COMPOSTABLE: u16 = find("minecraft:compostable");
+    pub const COOKING_FUEL: u16 = find("minecraft:cooking_fuel");
+    pub const BREWING_FUEL: u16 = find("minecraft:brewing_fuel");
+    pub const MOB_VISIBILITY: u16 = find("minecraft:mob_visibility");
+    pub const CUSHION_COLOR: u16 = find("minecraft:cushion/color");
+    pub const VILLAGER_FOOD: u16 = find("minecraft:villager_food");
 }
 
 /// Validates one component value: `data` must be exactly one value of the stream codec of

@@ -593,6 +593,10 @@ pub struct Chunks {
     /// Chunks parked on a neighbour.
     waiters: FxHashMap<ChunkPos, Vec<ChunkPos>>,
     in_flight: usize,
+    /// The last tick a job was in flight, and whether the slots' job buffers were trimmed
+    /// since ([`IDLE_TRIM_TICKS`]).
+    last_busy: u64,
+    trimmed: bool,
     done_tx: DoneSender,
     done_rx: Mutex<Receiver<Done>>,
     /// This world's inbox for store results.
@@ -754,6 +758,8 @@ impl Chunks {
             focus: Vec::new(),
             waiters: FxHashMap::default(),
             in_flight: 0,
+            last_busy: 0,
+            trimmed: true,
             done_tx: DoneSender { tx: done_tx, wake },
             done_rx: Mutex::new(done_rx),
             inbox_tx,
@@ -1317,7 +1323,8 @@ impl Chunks {
                 break true;
             }
             progress |= self.dispatch();
-            if progress {
+            // A blocked check may add a generation ticket: its level changes come first.
+            if progress || !self.level_changes.is_empty() {
                 continue;
             }
             if self.in_flight == 0 && self.check.is_empty() {
@@ -1388,8 +1395,22 @@ impl Chunks {
         self.start_relights();
         self.unload();
         self.check_visibility();
+        self.trim_when_idle();
         // `ServerChunkCache.tick` ends with `clearCache`.
         self.chunk_cache.clear();
+    }
+
+    /// Frees the job buffers of the generator and the light engine once no job has been in
+    /// flight for [`IDLE_TRIM_TICKS`] (#291): idle memory stays as low as without them.
+    fn trim_when_idle(&mut self) {
+        if self.in_flight > 0 {
+            self.last_busy = self.tick;
+            self.trimmed = false;
+        } else if !self.trimmed && self.tick - self.last_busy >= IDLE_TRIM_TICKS {
+            self.trimmed = true;
+            self.slots.generator.trim_idle();
+            self.slots.light.release_memory();
+        }
     }
 
     /// The visibility of a chunk (`ChunkMap.onFullChunkStatusChange`): hidden unless it is
@@ -2145,6 +2166,7 @@ impl Chunks {
                 self.slots.executor.spawn(
                     priority,
                     Box::new(move || {
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         light.light_chunks(&mut targets, &mut Neighbours::new(&mut neighbours));
@@ -2171,6 +2193,7 @@ impl Chunks {
                             });
                             return;
                         }
+                        ensure_fp_default();
                         let mut targets = vec![target];
                         let mut neighbours = neighbours;
                         generator.generate(
@@ -2713,6 +2736,7 @@ impl Chunks {
     /// ahead).
     pub fn release_memory(&mut self) {
         self.slots.generator.release_memory();
+        self.slots.light.release_memory();
         self.levels.shrink_to_fit();
         self.generation.shrink_to_fit();
         self.block_ticks.shrink_to_fit();
@@ -3313,6 +3337,23 @@ impl Chunks {
 /// work for the chunks after them.
 fn urgency(level: u8, reach: u8) -> u8 {
     level.saturating_sub(reach)
+}
+
+/// Ticks without a chunk job after which the slots' job buffers are freed (30 s).
+const IDLE_TRIM_TICKS: u64 = 30 * 20;
+
+/// Restores Java's floating point environment on the calling worker before a generation or
+/// light job, in case a native library changed it (#291): logged once.
+fn ensure_fp_default() {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if let Some(found) = vanillite_base::fpenv::ensure_default()
+        && !LOGGED.swap(true, Ordering::Relaxed)
+    {
+        log::warn!(
+            "A native library changed the floating point mode of a worker thread \
+             (control register {found:#x}); restored it so world generation stays exact"
+        );
+    }
 }
 
 /// The compute-pool priority of a chunk job: by urgency ([`urgency`]), then by level, then by

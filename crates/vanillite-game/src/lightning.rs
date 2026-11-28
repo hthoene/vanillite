@@ -257,7 +257,7 @@ fn living_alive(ents: &Entities, id: EntityId) -> bool {
 }
 
 /// `isAlive()` of the entities lightning can hit.
-fn alive(ents: &Entities, id: EntityId) -> bool {
+pub(crate) fn alive(ents: &Entities, id: EntityId) -> bool {
     if let Some(item) = ents.item(id) {
         return item.health > 0;
     }

@@ -736,6 +736,9 @@ impl World for WithProgress<'_> {
     fn block_entity_nbt(&self, pos: BlockPos) -> Option<vanillite_nbt::Compound> {
         self.world.block_entity_nbt(pos)
     }
+    fn block_components(&self, pos: BlockPos) -> Option<Vec<(u16, Box<[u8]>)>> {
+        self.world.block_components(pos)
+    }
     fn smokey(&self, pos: BlockPos) -> bool {
         self.world.smokey(pos)
     }
@@ -750,6 +753,13 @@ impl World for WithProgress<'_> {
     }
     fn looking_at(&self) -> Option<&EntityView<'static>> {
         self.world.looking_at()
+    }
+    fn loot_condition(
+        &self,
+        condition: &serde_json::Value,
+        origin: Option<vanillite_base::Vec3>,
+    ) -> bool {
+        self.world.loot_condition(condition, origin)
     }
 }
 

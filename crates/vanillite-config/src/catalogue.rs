@@ -257,10 +257,12 @@ rules! {
             /// the change first) instead of Vanilla's location-dependent hash order, so a
             /// circuit behaves the same in every rotation and place, but contraptions that
             /// depend on Vanilla's update order (some piston and observer builds) can behave
-            /// differently. Wires powered only by blocks update north first.
+            /// differently. Wires powered only by blocks update north first. Only the
+            /// `performance` profile uses it (Paper's own default is its vanilla wire); set
+            /// "vanilla" there if such a contraption breaks.
             implementation: RedstoneImplementation = "implementation", Performance,
                 restart = true, vanilla = RedstoneImplementation::Vanilla,
-                paper = RedstoneImplementation::AlternateCurrent;
+                performance = RedstoneImplementation::AlternateCurrent;
         }
         /// Development and test helpers. Never needed on a production server.
         debug: DebugRules = "debug" {
@@ -811,4 +813,25 @@ fn anti_xray_replacement_blocks() -> Vec<String> {
     ]
     .map(|id| format!("minecraft:{id}"))
     .to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Profile, RuleSet};
+
+    /// Only `performance` gives up the tick-exact redstone wire: `paper` and `spigot` follow
+    /// their servers' defaults, `technical` needs Vanilla's update order.
+    #[test]
+    fn redstone_wire_by_profile() {
+        for profile in Profile::ALL {
+            let expected = if profile == Profile::Performance {
+                RedstoneImplementation::AlternateCurrent
+            } else {
+                RedstoneImplementation::Vanilla
+            };
+            let rules = ServerRules::for_profile(profile);
+            assert_eq!(rules.redstone.implementation, expected, "{profile}");
+        }
+    }
 }

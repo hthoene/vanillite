@@ -45,6 +45,8 @@ pub struct CloudData {
     pub dragon_breath: bool,
     /// `victims`: entities and the tick they may be affected again.
     pub victims: Vec<(EntityId, i32)>,
+    /// The custom name (`CustomName`, from the potion's `custom_name`), encoded.
+    pub custom_name: Option<Box<[u8]>>,
 }
 
 impl Default for CloudData {
@@ -65,6 +67,7 @@ impl Default for CloudData {
             duration_scale: 1.0,
             dragon_breath: false,
             victims: Vec::new(),
+            custom_name: None,
         }
     }
 }
@@ -85,6 +88,13 @@ impl CloudData {
         out.insert("RadiusOnUse", Tag::Float(self.radius_on_use));
         out.insert("RadiusPerTick", Tag::Float(self.radius_per_tick));
         out.insert("Radius", Tag::Float(self.radius));
+        if let Some(tag) = self
+            .custom_name
+            .as_deref()
+            .and_then(crate::mob::nbt::component_tag)
+        {
+            out.insert("CustomName", tag);
+        }
         if self.dragon_breath {
             let mut p = Compound::new();
             p.insert("type", Tag::String("minecraft:dragon_breath".into()));
@@ -136,6 +146,9 @@ impl CloudData {
             waiting: false,
             owner: None,
             owner_uuid: crate::mob::nbt::uuid_from_tag(tag.get("Owner")),
+            custom_name: tag
+                .get("CustomName")
+                .and_then(crate::mob::nbt::tag_component),
             contents,
             duration_scale: float("potion_duration_scale", 1.0).max(0.0),
             dragon_breath,
@@ -395,9 +408,44 @@ pub fn spawn_lingering(
         owner,
         contents: PotionContents::of_stack(stack),
         duration_scale: potion::duration_scale(stack),
+        // `applyComponentsFromItemStack`: the name and the custom data of the potion.
+        custom_name: crate::item_nbt::effective_component(
+            stack,
+            vanillite_protocol::components::ids::CUSTOM_NAME,
+        )
+        .map(|v| v.into_owned().into_boxed_slice()),
         ..CloudData::default()
     };
-    spawn_cloud(ents, network_ids, pos, data)
+    let id = spawn_cloud(ents, network_ids, pos, data);
+    let custom_data = crate::item_nbt::effective_component(
+        stack,
+        vanillite_protocol::components::ids::CUSTOM_DATA,
+    )
+    .and_then(|v| {
+        crate::item_nbt::component_to_nbt(vanillite_protocol::components::ids::CUSTOM_DATA, &v)
+    })
+    .and_then(|t| match t {
+        Tag::Compound(c) => Some(c),
+        _ => None,
+    });
+    if custom_data.is_some() {
+        ents.set_custom_data(id, custom_data);
+    }
+    id
+}
+
+/// `getOwner()`: the owner, looked up again by its UUID once it is not known (after a reload,
+/// `EntityReference.getEntity`).
+pub fn owner(ents: &mut Entities, id: EntityId) -> Option<EntityId> {
+    let c = ents.cloud(id)?;
+    if let Some(o) = c.owner.filter(|&o| ents.store.contains(o)) {
+        return Some(o);
+    }
+    let found = c.owner_uuid.and_then(|u| ents.store.by_uuid(u));
+    if let Some(c) = ents.cloud_mut(id) {
+        c.owner = found;
+    }
+    found
 }
 
 /// Adds an area effect cloud.
@@ -470,7 +518,8 @@ pub fn tick(
         return;
     }
     let effects = c.contents.scaled_effects(c.duration_scale);
-    let (owner, delay) = (c.owner, c.reapplication_delay);
+    let delay = c.reapplication_delay;
+    let owner = owner(ents, id);
     let Some((pos, area)) = ents.store.get(id).map(|e| (e.pos(), e.aabb())) else {
         return;
     };
@@ -545,8 +594,9 @@ fn mark_dirty(ents: &mut Entities, id: EntityId) {
     }
 }
 
-/// `setRadius`: the synched radius and the box (`refreshDimensions`).
+/// `setRadius`: the synched radius, clamped to 0..=32, and the box (`refreshDimensions`).
 pub(crate) fn set_radius(ents: &mut Entities, id: EntityId, radius: f32) {
+    let radius = radius.clamp(0.0, 32.0);
     if let Some(c) = ents.cloud_mut(id) {
         c.radius = radius;
     }

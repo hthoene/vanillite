@@ -49,6 +49,46 @@ pub fn apply_use_cooldown(ents: &mut Entities, player: EntityId, before: &ItemSt
     }
 }
 
+/// `ItemStack.applyAfterUseComponentSideEffects` of an instant use or an item interaction:
+/// the `use_remainder` of `before` when the use shrank the stack in `hand` (it replaces an
+/// emptied stack, else goes to the inventory or is dropped), then its `use_cooldown`.
+pub fn after_use(
+    ents: &mut Entities,
+    env: &mut Env<'_>,
+    player: EntityId,
+    hand: Hand,
+    before: &ItemStack,
+) {
+    let creative = ents
+        .player(player)
+        .is_some_and(|p| p.game_mode == GameMode::Creative);
+    if !creative && let Some(remainder) = crate::consumable::use_remainder(before) {
+        let i = hand_index(ents, player, hand);
+        let mut extra = None;
+        if let Some(p) = ents.player_mut(player) {
+            if let Some(s) = p.inventory.get_mut(i)
+                && (s.is_empty() || s.count < before.count)
+            {
+                if s.is_empty() {
+                    *s = remainder;
+                } else {
+                    extra = Some(remainder);
+                }
+            }
+            // `handleExtraItemsCreatedOnUse`: `inventory.add`, else `drop(extra, false)`.
+            if let Some(rest) = &mut extra
+                && p.inventory.add(None, rest, false)
+            {
+                extra = None;
+            }
+        }
+        if let Some(rest) = extra.filter(|r| !r.is_empty()) {
+            crate::player::items::drop_from_player(ents, env, player, rest, false);
+        }
+    }
+    apply_use_cooldown(ents, player, before);
+}
+
 /// Whether the player's cooldowns hold the stack back (`isOnCooldown(stack)`).
 pub fn is_on_cooldown(ents: &Entities, player: EntityId, stack: &ItemStack) -> bool {
     ents.player(player)
@@ -90,7 +130,23 @@ pub fn use_item(
     }) {
         return;
     }
+    let before = ents
+        .player(player)
+        .map(|p| p.inventory.get(i).clone())
+        .unwrap_or_default();
+    let using_before = ents
+        .player(player)
+        .is_some_and(|p| p.survival.using_item.is_some());
     if crate::player::items::use_item(level, ents, env, network_ids, player, hand) {
+        // `ItemStack.use` of an instantly used item (books, knowledge book, empty map):
+        // `applyAfterUseComponentSideEffects` puts its `use_cooldown` group on cooldown.
+        let started = !using_before
+            && ents
+                .player(player)
+                .is_some_and(|p| p.survival.using_item.is_some());
+        if !started {
+            after_use(ents, env, player, hand, &before);
+        }
         return;
     }
     let held = ents
@@ -128,7 +184,7 @@ pub fn use_item(
     } else if name == "minecraft:carrot_on_a_stick" || name == "minecraft:warped_fungus_on_a_stick"
     {
         // `FoodOnAStickItem.use` counts the use only when nothing was boosted.
-        if !crate::riding::boost(ents, env, player, &mut stack, creative) {
+        if !crate::riding::boost(ents, env, player, &mut stack, creative, hand) {
             award_used(ents, player, item);
         }
         Used::Success
@@ -170,6 +226,7 @@ pub fn use_item(
             env,
             network_ids,
             player,
+            hand,
             &mut stack,
         )
     } else if name == "minecraft:firework_rocket" {
@@ -196,7 +253,7 @@ pub fn use_item(
     };
     put_back(ents, player, hand, stack);
     if used == Used::Success {
-        apply_use_cooldown(ents, player, &before);
+        after_use(ents, env, player, hand, &before);
     }
 }
 
@@ -237,6 +294,7 @@ pub fn use_item_on(
     pos: BlockPos,
     face: Direction,
     location: Vec3,
+    op: bool,
 ) {
     let mut stack = take_held(ents, player, hand);
     if is_on_cooldown(ents, player, &stack) {
@@ -258,6 +316,7 @@ pub fn use_item_on(
             face,
             &mut stack,
             creative,
+            player,
         )
     } else if item::item_id(&stack).name() == "minecraft:lead" {
         tame::use_lead_on_fence(level, ents, env, player, pos)
@@ -265,7 +324,7 @@ pub fn use_item_on(
         crate::firework::use_on(ents, env, network_ids, player, &mut stack, face, location)
     } else {
         let placed =
-            crate::minecart::use_item_on(level, ents, network_ids, pos, &mut stack, creative);
+            crate::minecart::use_item_on(level, ents, network_ids, pos, &mut stack, creative, op);
         if placed {
             // `gameEvent(ENTITY_PLACE, pos, Context.of(player, blockBelow))`.
             crate::survival::game_event(
@@ -281,16 +340,23 @@ pub fn use_item_on(
         }
         placed
     };
+    // `ANY_BLOCK_USE` gets the used stack object: what the use left of it.
+    let after = if stack.is_empty() {
+        ItemStack::EMPTY
+    } else {
+        stack.clone()
+    };
     put_back(ents, player, hand, stack);
     if used && !before.is_empty() {
-        // `ItemStack.useOn` of a successful item interaction, then `ITEM_USED_ON_BLOCK` and
-        // `ANY_BLOCK_USE`.
+        // `ItemStack.useOn` of a successful item interaction (with
+        // `applyAfterUseComponentSideEffects`), then `ITEM_USED_ON_BLOCK` and `ANY_BLOCK_USE`.
         award_used(ents, player, before.item);
+        after_use(ents, env, player, hand, &before);
         if let Some(p) = ents.player_mut(player) {
             use crate::advancements::trigger::Event;
             p.advancements
                 .trigger(Event::ItemUsedOnBlock(pos, before.clone()));
-            p.advancements.trigger(Event::AnyBlockUse(pos, before));
+            p.advancements.trigger(Event::AnyBlockUse(pos, after));
         }
     }
 }

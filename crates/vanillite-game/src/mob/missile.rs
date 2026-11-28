@@ -183,6 +183,12 @@ pub struct MissileData {
     pub bobber: Option<Box<crate::fishing::Bobber>>,
     /// `Projectile.lastDeflectedBy`.
     pub last_deflected: Option<EntityId>,
+    /// `AbstractArrow.shakeTime` of tridents: no pickup while above 0.
+    pub shake: u8,
+    /// `AbstractArrow.soundEvent` of tridents is `entity.arrow.hit` (after the first landing).
+    pub arrow_hit_sound: bool,
+    /// `ThrownTrident.ID_FOIL`: `hasFoil()` of the thrown item (never set again after a load).
+    pub foil: bool,
 }
 
 impl MissileData {
@@ -208,6 +214,9 @@ impl MissileData {
             pickup: 0,
             bobber: None,
             last_deflected: None,
+            shake: 0,
+            arrow_hit_sound: false,
+            foil: false,
         }
     }
 }
@@ -439,7 +448,12 @@ pub fn tick(
         let unshot = t
             .ents
             .missile(id)
-            .filter(|d| !d.has_been_shot && d.kind != MissileKind::EvokerFangs)
+            // Evoker fangs and eyes of ender are no projectile.
+            .filter(|d| {
+                !d.has_been_shot
+                    && d.kind != MissileKind::EvokerFangs
+                    && d.kind != MissileKind::EyeOfEnder
+            })
             .map(|d| d.owner);
         if let Some(owner) = unshot {
             if let Some(pos) = t.ents.store.get(id).map(|e| e.pos()) {
@@ -689,7 +703,8 @@ pub fn save(core: &EntityRef<'_>, d: &MissileData, owner: Option<u128>) -> Compo
     }
     out.insert("LeftOwner", d.left_owner);
     out.insert("HasBeenShot", d.has_been_shot);
-    if !d.item.is_empty() {
+    // Tridents keep theirs as `item` (`AbstractArrow`).
+    if !d.item.is_empty() && d.kind != MissileKind::Trident {
         out.insert("Item", crate::inventory::stack_to_nbt(&d.item));
     }
     super::fam::missile_save(d, &mut out);

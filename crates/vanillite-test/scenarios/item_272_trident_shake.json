@@ -1,0 +1,48 @@
+{
+  "description": "Trident pickup (#272, I3-25): a player throws a trident steeply at the ground next to itself; AbstractArrow.playerTouch picks it up only once shakeTime (7 after onHitBlock) ran out.",
+  "tier": "fast",
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -61,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 40,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        4.5,
+        -60.0,
+        8.5
+      ],
+      "rot": [
+        -90,
+        75
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 2,
+      "op": "use_item",
+      "entity": "steve",
+      "item": "minecraft:trident"
+    },
+    {
+      "tick": 15,
+      "op": "release_item",
+      "entity": "steve"
+    }
+  ]
+}
