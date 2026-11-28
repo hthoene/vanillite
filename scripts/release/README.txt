@@ -33,6 +33,8 @@ into plugins/bukkit/ and says every step in the log.
 
 Settings: server.properties as in Vanilla, plus vanillite.toml. Every key can also
 be set as an environment variable VANILLITE_<KEY>, e.g. VANILLITE_SERVER_PORT=25566.
+The default profile is paper (behaves like a default Paper server); set
+profile = "vanilla" in vanillite.toml for the most exact Vanilla behaviour.
 
 Windows:
 Windows SmartScreen may warn the first time: choose More info > Run anyway. A

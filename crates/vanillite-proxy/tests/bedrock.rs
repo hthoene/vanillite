@@ -29,7 +29,7 @@ fn bedrock_player_joins_through_the_proxy() {
     .unwrap();
     std::fs::write(
         dir.join("vanillite.toml"),
-        format!("[proxy]\nvelocity-secret = \"{SECRET}\"\n"),
+        format!("profile = \"vanilla\"\n[proxy]\nvelocity-secret = \"{SECRET}\"\n"),
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();

@@ -145,27 +145,63 @@ impl Config {
     /// Loads both files from `dir`, writing `server.properties` back with all keys and creating
     /// a commented `vanillite.toml` if it is missing.
     pub fn load(dir: &Path) -> Result<Config, ConfigError> {
-        let properties = load_properties(&dir.join(PROPERTIES_FILE))?;
+        Self::load_with(dir, true)
+    }
+
+    /// Loads both files from `dir` like [`Config::load`], but writes nothing (a look at the
+    /// configuration before the server starts).
+    pub fn peek(dir: &Path) -> Result<Config, ConfigError> {
+        Self::load_with(dir, false)
+    }
+
+    fn load_with(dir: &Path, write: bool) -> Result<Config, ConfigError> {
+        let properties = load_properties(&dir.join(PROPERTIES_FILE), write)?;
         let toml_path = dir.join(VANILLITE_FILE);
         let text = match fs::read_to_string(&toml_path) {
             Ok(text) => text,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let text = default_vanillite_toml();
-                fs::write(&toml_path, &text).map_err(|e| ConfigError::io(&toml_path, e))?;
+                if write {
+                    fs::write(&toml_path, &text).map_err(|e| ConfigError::io(&toml_path, e))?;
+                }
                 text
             }
             Err(e) => return Err(ConfigError::io(&toml_path, e)),
         };
-        let table: toml::Table = text.parse().map_err(|e: toml::de::Error| ConfigError {
+        let mut table: toml::Table = text.parse().map_err(|e: toml::de::Error| ConfigError {
             path: toml_path.clone(),
             message: e.to_string(),
         })?;
+        if !table.contains_key("profile") {
+            // Written before `paper` became the default (#319): the server keeps Vanilla.
+            table.insert(
+                "profile".to_owned(),
+                toml::Value::String("vanilla".to_owned()),
+            );
+            if write {
+                Self::pin_vanilla(&toml_path, &text);
+            }
+        }
         Self::from_parts(properties, table, &EnvOverrides::from_process()).map_err(|message| {
             ConfigError {
                 path: toml_path,
                 message,
             }
         })
+    }
+
+    /// Writes `profile = "vanilla"` into a `vanillite.toml` that sets no profile.
+    fn pin_vanilla(path: &Path, text: &str) {
+        match fs::write(path, with_vanilla_profile(text)) {
+            Ok(()) => log::info!(
+                "{VANILLITE_FILE} sets no profile: wrote profile = \"vanilla\" into it, so \
+                     this server keeps its Vanilla behaviour (new servers default to \"paper\")"
+            ),
+            Err(e) => log::warn!(
+                "{VANILLITE_FILE} sets no profile and cannot be written ({e}): using \
+                     \"vanilla\" for this run (new servers default to \"paper\")"
+            ),
+        }
     }
 
     /// Builds the configuration from parsed parts. Unknown keys are logged as warnings;
@@ -189,7 +225,7 @@ impl Config {
                     "unknown profile {name:?} (vanilla, technical, paper, spigot or performance)"
                 )
             })?,
-            None => Profile::Vanilla,
+            None => Profile::default(),
         };
         let extra_worlds = match table.remove("extra-worlds") {
             Some(toml::Value::Table(worlds)) => worlds
@@ -348,7 +384,7 @@ fn flatten(table: &toml::Table) -> Vec<(String, &toml::Value)> {
 }
 
 /// Loads `server.properties` and writes it back with every known key (Vanilla does the same).
-fn load_properties(path: &Path) -> Result<ServerProperties, ConfigError> {
+fn load_properties(path: &Path, write: bool) -> Result<ServerProperties, ConfigError> {
     let existing = match fs::read(path) {
         // Java reads `.properties` as ISO-8859-1 unless escaped; accept UTF-8 as well.
         Ok(bytes) => match String::from_utf8(bytes) {
@@ -365,7 +401,7 @@ fn load_properties(path: &Path) -> Result<ServerProperties, ConfigError> {
     let typed = ServerProperties::from_map(&map);
     typed.write_to_map(&mut map);
     let rendered = properties::render(&map);
-    if existing.as_deref() != Some(rendered.as_str()) {
+    if write && existing.as_deref() != Some(rendered.as_str()) {
         fs::write(path, rendered).map_err(|e| ConfigError::io(path, e))?;
     }
     // `VANILLITE_<KEY>` (e.g. `VANILLITE_SERVER_PORT`) overrides a key for this run only; the
@@ -386,9 +422,34 @@ fn load_properties(path: &Path) -> Result<ServerProperties, ConfigError> {
     })
 }
 
-/// The `vanillite.toml` written on first start: the profile and every rule, commented out with
-/// its documentation and its `vanilla` profile value.
+/// The comment above `profile` in `vanillite.toml`.
+const PROFILE_HINT: &str = "# \"vanilla\" reproduces Vanilla behaviour as exactly as possible; \
+                            \"paper\" (default) behaves like a default Paper server.\n";
+
+/// `text` with `profile = "vanilla"` after its leading comments (top-level keys must come
+/// before the first table).
+fn with_vanilla_profile(text: &str) -> String {
+    let mut head = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if !(trimmed.is_empty() || trimmed.starts_with('#')) {
+            break;
+        }
+        head += line.len();
+    }
+    let (comments, rest) = text.split_at(head);
+    let newline = if comments.is_empty() || comments.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    format!("{comments}{newline}{PROFILE_HINT}profile = \"vanilla\"\n{rest}")
+}
+
+/// The `vanillite.toml` written on first start: the default profile and every rule, commented
+/// out with its documentation and its value in that profile.
 pub fn default_vanillite_toml() -> String {
+    let profile = Profile::default();
     let mut out = String::from(
         "# Vanillite configuration. Vanilla's options are in server.properties.\n\
          #\n\
@@ -401,11 +462,11 @@ pub fn default_vanillite_toml() -> String {
          # \"the_end\", generator = \"normal\" | \"flat\" | \"void\" | \"amplified\" |\n\
          # \"large_biomes\" | a data pack dimension key, seed = \"\", generate-structures.\n\
          # Environment variables VANILLITE_<KEY> override the file, e.g.\n\
-         # VANILLITE_PERFORMANCE__TICK__PARALLEL_DIMENSIONS=false.\n\n\
-         profile = \"vanilla\"\n",
+         # VANILLITE_PERFORMANCE__TICK__PARALLEL_DIMENSIONS=false.\n\n",
     );
-    render_rules(&mut out, &ServerRules::for_profile(Profile::Vanilla));
-    render_rules(&mut out, &WorldRules::for_profile(Profile::Vanilla));
+    let _ = writeln!(out, "{PROFILE_HINT}profile = \"{profile}\"");
+    render_rules(&mut out, &ServerRules::for_profile(profile));
+    render_rules(&mut out, &WorldRules::for_profile(profile));
     out
 }
 

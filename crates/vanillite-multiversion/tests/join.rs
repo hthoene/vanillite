@@ -462,6 +462,7 @@ fn join_walk_see(dir: &str, release: &'static str) {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("server.properties"), "view-distance=2\n").unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");

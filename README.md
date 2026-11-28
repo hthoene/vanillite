@@ -35,8 +35,8 @@ through the built-in Bedrock frontend.
 - **Fast and lean.** Dimensions can tick in parallel, world generation, light and saving run
   on a shared worker pool, chunks are encoded once and sent to every viewer. Runs on a single
   core and respects container CPU and memory limits.
-- **Profiles instead of forks.** One switch between the Vanilla profile (`vanilla`, the default),
-  `technical`, `paper`, `spigot` and `performance`; every deviation from Vanilla is a single,
+- **Profiles instead of forks.** One switch between `paper` (the default), the Vanilla profile
+  `vanilla`, `technical`, `spigot` and `performance`; every deviation from Vanilla is a single,
   documented rule.
 - **Own world format.** New worlds are stored in a compact, crash-safe format; existing Anvil
   worlds keep working, and both convert into each other at any time.
@@ -73,6 +73,10 @@ Vanilla data) into `cache/` and creates `eula.txt`: accept the
 [Minecraft EULA](https://aka.ms/MinecraftEULA) there or with `VANILLITE_EULA=true`. Started
 from a terminal (or with a double click on Windows), the server asks instead: type `yes` and it
 saves `eula=true` and starts.
+
+New servers use the `paper` profile: they behave like a default Paper server. For the most
+exact Vanilla behaviour set `profile = "vanilla"` in `vanillite.toml` (or
+`VANILLITE_PROFILE=vanilla`); see [Configuration](#configuration).
 
 ### Release archive
 
@@ -189,11 +193,16 @@ it. See [docs/plugins.md](docs/plugins.md#paper-and-spigot-plugins).
 | `vanillite.toml` | The `profile` and every Vanillite rule, written on first start with documentation, commented out. Per-world overrides go into `[worlds."minecraft:the_nether"]` sections. |
 | `VANILLITE_<KEY>` | Environment variables override any key of both files for one run, e.g. `VANILLITE_MAX_PLAYERS=50`, `VANILLITE_PROFILE=performance`, `VANILLITE_PERFORMANCE__TICK__PARALLEL_DIMENSIONS=false` (`.` becomes `__`, `-` becomes `_`). |
 
+**The default profile is `paper`: it behaves like a default Paper server. Set
+`profile = "vanilla"` in `vanillite.toml` for the most exact Vanilla behaviour.** A
+`vanillite.toml` without `profile` (written before `paper` became the default) gets
+`profile = "vanilla"` written into it once, so existing servers keep their behaviour.
+
 | Profile | |
 |---|---|
-| `vanilla` | Aims to be exactly like Vanilla, tick for tick (the default). Deviates only to close security holes. |
+| `vanilla` | Aims to be exactly like Vanilla, tick for tick. Deviates only to close security holes. |
 | `technical` | Vanilla plus what technical players need. |
-| `paper` | Paper's defaults (exploit fixes, parallel dimensions). |
+| `paper` | Paper's defaults (exploit fixes, parallel dimensions); the default. |
 | `spigot` | Spigot's defaults, including Spigot's world folder layout. |
 | `performance` | The strongest optimisations that change Vanilla behaviour only a little. |
 

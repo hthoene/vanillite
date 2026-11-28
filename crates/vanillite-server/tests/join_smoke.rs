@@ -289,6 +289,7 @@ fn two_players_join_see_each_other_and_rejoin() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     // A data pack with two advancement tabs: one only commands grant, one for being in the
     // overworld (the `location` trigger).
     let pack = dir.join("world/datapacks/test");
@@ -644,6 +645,7 @@ fn data_packs_are_listed_enabled_disabled_and_created() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");
@@ -782,6 +784,7 @@ fn players_travel_to_the_end_and_back_through_the_credits() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("server.properties"), "view-distance=2\n").unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");
@@ -830,6 +833,7 @@ fn vanilla_player_data_round_trips() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("server.properties"), "view-distance=2\n").unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let original = dir.join("original.dat");
     std::fs::write(&original, include_bytes!("data/vanilla_player.dat")).unwrap();
     let uuid = Uuid::offline("bot00000");
@@ -964,6 +968,7 @@ fn resting_arrows_send_no_updates() {
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();
+    std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     let server = builder.start().expect("server starts");

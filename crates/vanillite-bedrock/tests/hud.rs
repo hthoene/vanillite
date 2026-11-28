@@ -77,7 +77,7 @@ fn java_only_features_reach_bedrock() {
     .unwrap();
     std::fs::write(
         dir.join("vanillite.toml"),
-        "[bedrock]\nenabled = true\nonline-mode = false\n",
+        "profile = \"vanilla\"\n[bedrock]\nenabled = true\nonline-mode = false\n",
     )
     .unwrap();
     std::fs::write(dir.join("eula.txt"), "eula=true\n").unwrap();

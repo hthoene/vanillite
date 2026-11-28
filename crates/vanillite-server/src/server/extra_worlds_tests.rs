@@ -21,7 +21,11 @@ fn start(name: &str, toml: &str) -> (PathBuf, Server) {
         "view-distance=2\nsimulation-distance=2\n",
     )
     .unwrap();
-    fs::write(dir.join(VANILLITE_FILE), toml).unwrap();
+    fs::write(
+        dir.join(VANILLITE_FILE),
+        format!("profile = \"vanilla\"\n{toml}"),
+    )
+    .unwrap();
     let mut builder = ServerBuilder::new(&dir);
     builder.vanilla_pack(VanillaPack::None).network(false);
     builder.harness = true;

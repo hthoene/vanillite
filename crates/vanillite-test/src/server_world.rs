@@ -292,6 +292,8 @@ impl ServerWorld {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let io = |e: std::io::Error| e.to_string();
         std::fs::write(dir.join("eula.txt"), "eula=true\n").map_err(io)?;
+        // Scenarios run the `vanilla` profile, not the default.
+        std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n").map_err(io)?;
         std::fs::write(
             dir.join("server.properties"),
             format!(

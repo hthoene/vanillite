@@ -301,6 +301,9 @@ fn command_server() -> &'static vanillite_server::Global {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scenario server directory");
         std::fs::write(dir.join("eula.txt"), "eula=true\n").expect("scenario server eula");
+        // Scenarios run the `vanilla` profile, not the default.
+        std::fs::write(dir.join("vanillite.toml"), "profile = \"vanilla\"\n")
+            .expect("scenario server profile");
         let cache = std::env::var_os("VANILLITE_CACHE").map_or_else(
             || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/vanilla-cache"),
             PathBuf::from,
