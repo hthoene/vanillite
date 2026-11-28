@@ -107,10 +107,6 @@ EXPOSE 25565/tcp
 # The default profile is paper; VANILLITE_PROFILE=vanilla gives the most exact Vanilla behaviour.
 # Pterodactyl: the egg deploy/pterodactyl/egg-vanillite.json (STARTUP, /home/container).
 ENV VANILLITE_LOG=info
-# mimalloc (the musl build's allocator): commit arena memory on use and return freed pages at
-# once. Measured (#164): ~15 MiB less idle RSS, 50-100 MiB less under load and while chunks
-# generate, and a faster start, at the same tick time as the default.
-ENV MIMALLOC_ARENA_EAGER_COMMIT=0 MIMALLOC_PURGE_DELAY=0
 # The first start downloads the Vanilla jar and generates the spawn area.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5m --retries=3 \
     CMD ["/vanillite", "health", "--dir", "/data"]
