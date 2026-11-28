@@ -47,7 +47,8 @@
 # instances, the monitor and the forwarding secret), plus hardening: a firewall that allows only
 # SSH and TCP/UDP 30000-30999, SSH with keys only, unattended security upgrades, no other
 # services. Nothing runs there outside a benchmark. vanillite-bench-auto (timer, #232) runs the
-# benchmark series of the newest green dev by itself whenever the bench is free (see below).
+# benchmark series of the newest green dev by itself at night (22:00-06:59 Europe/Berlin, #312)
+# whenever the bench is free (see below).
 set -euo pipefail
 role=${VANILLITE_TESTSERVER_ROLE:-test}
 case $role in
@@ -1710,6 +1711,14 @@ OnCalendar=*:0/10
 AccuracySec=10s
 [Install]
 WantedBy=timers.target
+EOF
+install -d /etc/systemd/system/vanillite-bench-auto.timer.d
+write_if_changed /etc/systemd/system/vanillite-bench-auto.timer.d/night-only.conf <<'EOF'
+# User 28.11: full benchmark suite only at night (22:00-06:59 Europe/Berlin); daytime is for short developer runs.
+[Timer]
+OnBootSec=
+OnCalendar=
+OnCalendar=*-*-* 22..23,00..06:00/10:00 Europe/Berlin
 EOF
     systemctl daemon-reload
     systemctl enable --quiet --now vanillite-bench-auto.timer

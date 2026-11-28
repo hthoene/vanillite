@@ -1,0 +1,128 @@
+{
+  "description": "Data pack enchantments with post_attack and hit_block world effects (#305, I4-11): a player hits a zombie with a Blast sword, which explodes at the zombie (explode with a damage type, an offset, immune glass, a knockback multiplier, its own particles and sound, breaking blocks) and summons a snowball there (summon_entity: the type and the yaw drawn from the level random); then the player shoots a Shatter bow at a glass wall and the arrow turns the glass it hits red (hit_block with match_block and replace_block).",
+  "tier": "fast",
+  "dimensions": true,
+  "datapack": "enchant_effects",
+  "level_rng": true,
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -62,
+      0
+    ],
+    [
+      23,
+      -54,
+      15
+    ]
+  ],
+  "ticks": 80,
+  "setup": [
+    {
+      "op": "fill",
+      "from": [
+        12,
+        -61,
+        2
+      ],
+      "to": [
+        12,
+        -60,
+        4
+      ],
+      "block": "minecraft:glass"
+    },
+    {
+      "op": "fill",
+      "from": [
+        18,
+        -60,
+        6
+      ],
+      "to": [
+        18,
+        -56,
+        12
+      ],
+      "block": "minecraft:glass"
+    }
+  ],
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        8.5,
+        -60.0,
+        3.5
+      ],
+      "rot": [
+        -90,
+        0
+      ]
+    },
+    {
+      "name": "zombie",
+      "type": "minecraft:zombie",
+      "pos": [
+        11.0,
+        -60.0,
+        3.5
+      ],
+      "rot": [
+        90,
+        0
+      ],
+      "seed": 3
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "data merge entity @e[type=minecraft:zombie,limit=1] {NoAI:1b,PersistenceRequired:1b}"
+    },
+    {
+      "tick": 2,
+      "op": "command",
+      "command": "item replace entity steve weapon.mainhand with minecraft:iron_sword[minecraft:enchantments={\"vanillite_test:blast\":1}]"
+    },
+    {
+      "tick": 3,
+      "op": "attack_entity",
+      "entity": "steve",
+      "target": "zombie"
+    },
+    {
+      "tick": 10,
+      "op": "command",
+      "command": "tp steve 6.5 -60 9.5 -90 0"
+    },
+    {
+      "tick": 11,
+      "op": "command",
+      "command": "item replace entity steve weapon.mainhand with minecraft:bow[minecraft:enchantments={\"vanillite_test:shatter\":1}]"
+    },
+    {
+      "tick": 12,
+      "op": "use_item",
+      "entity": "steve",
+      "inventory": [
+        {
+          "slot": 5,
+          "item": "minecraft:arrow",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "tick": 37,
+      "op": "release_item",
+      "entity": "steve"
+    }
+  ]
+}

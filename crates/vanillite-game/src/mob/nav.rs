@@ -1065,6 +1065,10 @@ fn set_speed(m: &mut super::MobData, speed: f32) {
 }
 
 pub fn tick_move_control(t: &mut Tick<'_, '_>) {
+    // `PandaMoveControl.tick`: only when the panda can perform an action.
+    if t.mob_ref().kind == super::Kind::Panda && !super::fam::companion::panda::can_perform(t) {
+        return;
+    }
     match t.mob_ref().move_ctl.kind {
         MoveKind::Custom => {
             if super::fam::move_control(t) {

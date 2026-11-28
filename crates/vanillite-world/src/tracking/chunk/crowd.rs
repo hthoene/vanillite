@@ -75,7 +75,6 @@ pub(super) struct Crowd {
     joining: Vec<EntityId>,
     /// Far viewers that follow the far stream.
     stream: Vec<EntityId>,
-    distances: Vec<f64>,
 }
 
 impl Crowd {
@@ -92,7 +91,6 @@ impl Crowd {
             promoted: Vec::new(),
             joining: Vec::new(),
             stream: Vec::new(),
-            distances: Vec::new(),
         })
     }
 
@@ -115,11 +113,10 @@ impl Crowd {
     #[inline]
     pub(super) fn sees(&self, slot: u32, viewer: Vec3, kind: EntityTypeId, pos: Vec3) -> bool {
         self.cap.is_none()
-            || kind != ids::PLAYER
             || self
                 .caps
                 .get(slot as usize)
-                .is_none_or(|cap| horizontal_sqr(viewer, pos) <= cap.range_sqr)
+                .is_none_or(|cap| within(cap.range_sqr, viewer, kind, pos))
     }
 
     /// The pair of the entity with index `i` and the viewer in `slot` started (`added`) or
@@ -165,36 +162,39 @@ impl Crowd {
         }
     }
 
-    /// Fits the radius of the viewer in `slot` to the distance of its cap-th nearest player
-    /// among `candidates` (entity indices of this update's tracked entities).
-    pub(super) fn fit(
-        &mut self,
-        slot: u32,
+    /// The squared radius of the viewer's cap: the distance of its cap-th nearest player among
+    /// `candidates` (entity indices of this update's tracked entities); `None` without a cap.
+    /// Reads only, so the viewers' checks can run in parallel; [`Crowd::set_range`] applies it.
+    pub(super) fn fit_range(
+        &self,
         viewer: &ViewerState,
         candidates: &[u32],
         tracked: &[Option<Tracked>],
         core: &CoreColumns,
         stamp: u32,
-    ) {
-        let Some(cap) = self.cap else {
-            return;
-        };
-        self.distances.clear();
+        distances: &mut Vec<f64>,
+    ) -> Option<f64> {
+        let cap = self.cap?;
+        distances.clear();
         for &i in candidates {
             let Some(Some(entry)) = tracked.get(i as usize) else {
                 continue;
             };
             if entry.stamp == stamp && entry.kind == ids::PLAYER && entry.id != viewer.entity {
                 let pos = core.pos[entry.row as usize];
-                self.distances.push(horizontal_sqr(viewer.pos, pos));
+                distances.push(horizontal_sqr(viewer.pos, pos));
             }
         }
         let nth = cap as usize - 1;
-        let range_sqr = if self.distances.len() > nth + 1 {
-            *self.distances.select_nth_unstable_by(nth, f64::total_cmp).1
+        Some(if distances.len() > nth + 1 {
+            *distances.select_nth_unstable_by(nth, f64::total_cmp).1
         } else {
             f64::INFINITY
-        };
+        })
+    }
+
+    /// Sets the squared cap radius of the viewer in `slot` (from [`Crowd::fit_range`]).
+    pub(super) fn set_range(&mut self, slot: u32, range_sqr: f64) {
         if let Some(state) = self.caps.get_mut(slot as usize) {
             state.range_sqr = range_sqr;
         }
@@ -384,6 +384,13 @@ impl Crowd {
 /// How far the count of visible players may leave the cap before the radius is fitted again.
 fn slack(cap: u32) -> u32 {
     (cap / 8).max(1)
+}
+
+/// Whether a cap radius of `range_sqr` lets a viewer at `viewer` see an entity of `kind` at
+/// `pos` (the cap counts players only).
+#[inline]
+pub(super) fn within(range_sqr: f64, viewer: Vec3, kind: EntityTypeId, pos: Vec3) -> bool {
+    kind != ids::PLAYER || horizontal_sqr(viewer, pos) <= range_sqr
 }
 
 /// The squared horizontal distance, as the tracker measures ranges.

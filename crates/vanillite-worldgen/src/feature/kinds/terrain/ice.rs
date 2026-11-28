@@ -14,7 +14,7 @@ use super::{Climates, is, state_field};
 use crate::Error;
 use crate::feature::region::{WorldGenRegion, flags};
 use crate::feature::{BlockPredicate, FeatureContext, FeatureParser, FeatureType, field};
-use crate::mth::clamp_f;
+use crate::mth::{clamp_f, sin_cos_ulp_sensitive};
 
 /// `blue_ice`: a cluster of blue ice next to packed ice below sea level.
 #[derive(Debug)]
@@ -399,7 +399,9 @@ fn signed_distance_ellipse(
     angle: f64,
 ) -> f64 {
     let (dx, dz) = (f64::from(xo - origin.0), f64::from(zo - origin.1));
-    let (sin, cos) = (angle.sin(), angle.cos());
+    // Known limit (#300): `Math.sin/cos` can differ from ours by 1 ulp, and with `a == c` the
+    // lattice points on the circle sit on that ulp, so now and then a block flips.
+    let (sin, cos) = sin_cos_ulp_sensitive(angle);
     let u = (dx * cos - dz * sin) / f64::from(a);
     let v = (dx * sin + dz * cos) / f64::from(c);
     u * u + v * v - 1.0

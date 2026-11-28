@@ -66,7 +66,9 @@ import net.minecraft.world.ticks.ScheduledTick;
  * Positions in chunks that are not accessible are recorded as {@link #UNLOADED}.
  *
  * <p>The action {@code command} runs a command line as the server at the origin of the
- * overworld.
+ * overworld. With {@code "feedback": true} the source collects its messages (what the server
+ * logs as {@code System chat: <text>}) as their plain text, and each frame holds those of its
+ * tick.
  *
  * <p>The actions {@code force} and {@code unforce} add or remove forced tickets of chunks and then
  * run the chunk system and the entity manager without a game tick until every chunk around the
@@ -451,6 +453,7 @@ public final class ScenarioRecorder {
       trace.clientView = clientView;
       trace.blockEntities =
           scenario.has("block_entities") && scenario.get("block_entities").getAsBoolean();
+      boolean feedback = scenario.has("feedback") && scenario.get("feedback").getAsBoolean();
       entities.clientAttributes =
           scenario.has("client_attributes") && scenario.get("client_attributes").getAsBoolean();
       trace.frame(level, 0, true);
@@ -511,11 +514,14 @@ public final class ScenarioRecorder {
                 entities.effect(action);
               } else if (op.equals("command")) {
                 // As the server, at the origin of the overworld.
+                net.minecraft.commands.CommandSourceStack source =
+                    server.createCommandSourceStack().withPosition(Vec3.ZERO);
+                if (feedback) {
+                  source = source.withSource(trace.feedbackSource(server));
+                }
                 server
                     .getCommands()
-                    .performPrefixedCommand(
-                        server.createCommandSourceStack().withPosition(Vec3.ZERO),
-                        action.get("command").getAsString());
+                    .performPrefixedCommand(source, action.get("command").getAsString());
               } else if (op.equals("throw_potion")) {
                 entities.throwPotion(action);
               } else if (op.equals("use") || op.equals("attack")) {
@@ -924,6 +930,34 @@ public final class ScenarioRecorder {
     boolean clientView;
     /** Frames hold the block entities of the region ({@code "block_entities"}, #244). */
     boolean blockEntities;
+    /** The command feedback of the tick ({@code "feedback"}), as plain text. */
+    private final List<String> feedback = new ArrayList<>();
+
+    /** The server as command source, collecting its messages into the next frame. */
+    net.minecraft.commands.CommandSource feedbackSource(
+        net.minecraft.server.MinecraftServer server) {
+      return new net.minecraft.commands.CommandSource() {
+        @Override
+        public void sendSystemMessage(net.minecraft.network.chat.Component message) {
+          feedback.add(message.getString());
+        }
+
+        @Override
+        public boolean acceptsSuccess() {
+          return server.acceptsSuccess();
+        }
+
+        @Override
+        public boolean acceptsFailure() {
+          return server.acceptsFailure();
+        }
+
+        @Override
+        public boolean shouldInformAdmins() {
+          return server.shouldInformAdmins();
+        }
+      };
+    }
 
     Trace(
         BlockPos min,
@@ -1052,6 +1086,14 @@ public final class ScenarioRecorder {
       }
       if (clientView) {
         sb.append(names.packets());
+      }
+      if (!feedback.isEmpty()) {
+        sb.append(",\"feedback\":[");
+        for (int j = 0; j < feedback.size(); j++) {
+          sb.append(j == 0 ? "" : ",").append(new com.google.gson.JsonPrimitive(feedback.get(j)));
+        }
+        sb.append(']');
+        feedback.clear();
       }
       if (stream != null) {
         stream.println(sb.append('}'));

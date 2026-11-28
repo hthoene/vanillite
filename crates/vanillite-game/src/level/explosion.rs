@@ -61,6 +61,29 @@ pub enum BlockResistance {
     WindCharge,
     /// `RespawnAnchorBlock.explode` in water: the anchor's position resists like water.
     WaterAt(BlockPos),
+    /// `SimpleExplosionDamageCalculator` with `immune_blocks` (an enchantment's `explode`):
+    /// only the blocks of [`CustomExplosion::immune`] resist.
+    Immune,
+}
+
+/// The parts of an enchantment's `explode` effect beyond [`ExplosionStyle`]: the immune
+/// blocks and what the clients show.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomExplosion {
+    /// `immune_blocks` as sorted block ids (with [`BlockResistance::Immune`]).
+    pub immune: Vec<u16>,
+    pub look: std::sync::Arc<ExplosionLook>,
+}
+
+/// The particles and sound of `ClientboundExplodePacket`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExplosionLook {
+    /// `smallParticle` (small explosions) and `largeParticle`.
+    pub small: super::particles::Particle,
+    pub large: super::particles::Particle,
+    /// `blockParticles`: particle, scaling, speed and weight.
+    pub block_particles: Vec<(super::particles::Particle, f32, f32, i32)>,
+    pub sound: String,
 }
 
 /// The block phase of an explosion that waits for the damage of the entities it hit
@@ -92,6 +115,8 @@ pub struct ExplosionEvent {
     /// The burst sound of a wind charge (gust particles, no block particles); `None` for
     /// normal explosions.
     pub wind_sound: Option<&'static str>,
+    /// The particles and sound of an enchantment's explosion; `None` for the default ones.
+    pub look: Option<std::sync::Arc<ExplosionLook>>,
 }
 
 /// How an explosion treats entities (`ExplosionDamageCalculator`) and how clients show it.
@@ -109,6 +134,9 @@ pub struct ExplosionStyle {
     pub fire: bool,
     /// The damage is `badRespawnPointExplosion` (beds and respawn anchors).
     pub bad_respawn_point: bool,
+    /// The damage type of an enchantment's explosion and whether the damage is caused by the
+    /// exploding entity (`attribute_to_user`) instead of coming from the centre.
+    pub damage: Option<(crate::survival::damage::DamageKind, bool)>,
 }
 
 impl Default for ExplosionStyle {
@@ -120,6 +148,7 @@ impl Default for ExplosionStyle {
             resistance: BlockResistance::Default,
             fire: false,
             bad_respawn_point: false,
+            damage: None,
         }
     }
 }
@@ -146,6 +175,8 @@ pub struct ExplosionHurt {
     pub wind: bool,
     /// `badRespawnPointExplosion` instead of `explosion`.
     pub bad_respawn_point: bool,
+    /// The damage type of an enchantment's explosion, see [`ExplosionStyle::damage`].
+    pub damage: Option<(crate::survival::damage::DamageKind, bool)>,
     /// The dragon part hit (`EnderDragonPart.hurtServer`), when `target` is a dragon hit
     /// through one of its parts.
     pub part: Option<usize>,
@@ -206,6 +237,24 @@ impl Level {
         style: ExplosionStyle,
     ) -> usize {
         self.explode_full(source, indirect, center, radius, interaction, style, None)
+    }
+
+    /// [`Self::explode_with`] of an enchantment's `explode` effect with its immune blocks,
+    /// particles and sound.
+    #[allow(clippy::too_many_arguments)]
+    pub fn explode_custom(
+        &mut self,
+        source: Option<EntityId>,
+        center: Vec3,
+        radius: f32,
+        interaction: BlockInteraction,
+        style: ExplosionStyle,
+        custom: CustomExplosion,
+    ) -> usize {
+        self.custom_explosion = Some(custom);
+        let count = self.explode_full(source, None, center, radius, interaction, style, None);
+        self.custom_explosion = None;
+        count
     }
 
     /// [`Self::explode_with`] of a block without a source entity (a bed or respawn anchor):
@@ -280,6 +329,7 @@ impl Level {
             small: radius < 2.0 || interaction == BlockInteraction::Keep,
             hit_players,
             wind_sound: style.wind_sound,
+            look: self.custom_explosion.as_ref().map(|c| c.look.clone()),
         });
         self.pending_blast = Some(PendingBlast {
             targets,
@@ -520,7 +570,12 @@ impl Level {
         let rail_protected = override_resistance == BlockResistance::TntMinecart
             && (crate::block::is_rail(state.block())
                 || crate::block::is_rail(self.block(pos.offset(0, 1, 0)).block()));
-        let loss = if override_resistance == BlockResistance::WindCharge {
+        let loss = if override_resistance == BlockResistance::Immune {
+            self.custom_explosion
+                .as_ref()
+                .is_some_and(|c| c.immune.binary_search(&state.block().0).is_ok())
+                .then_some((3_600_000.0 + 0.3) * 0.3)
+        } else if override_resistance == BlockResistance::WindCharge {
             // `SimpleExplosionDamageCalculator` with immune blocks: only those resist,
             // everything else lets the ray through.
             crate::block::block_tags()
@@ -740,6 +795,7 @@ impl Level {
                     blocklike: destroys && !wind,
                     wind,
                     bad_respawn_point: style.bad_respawn_point,
+                    damage: style.damage,
                     part: None,
                 });
             }
@@ -827,6 +883,7 @@ impl Level {
                 blocklike: destroys && !wind,
                 wind,
                 bad_respawn_point: style.bad_respawn_point,
+                damage: style.damage,
                 part: Some(i),
             });
         }

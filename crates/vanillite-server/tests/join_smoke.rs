@@ -107,6 +107,10 @@ struct Player {
     walk_added: bool,
     /// An advancement was announced in chat.
     announced: bool,
+    /// While set, it sends this position every tick like a real client: the server pairs
+    /// entities in chunks sent since with it only at a move it takes (`ChunkMap.move`).
+    idle: Option<(f64, f64, f64)>,
+    last_idle: Instant,
 }
 
 impl Player {
@@ -121,6 +125,17 @@ impl Player {
         loop {
             assert!(Instant::now() < deadline, "timed out waiting for {what}");
             let packet = self.recv();
+            if let Some((x, y, z)) = self.idle
+                && self.last_idle.elapsed() >= Duration::from_millis(50)
+            {
+                self.last_idle = Instant::now();
+                let flags = MoveFlags {
+                    on_ground: true,
+                    horizontal_collision: false,
+                };
+                self.send(&MovePlayerPos { x, y, z, flags });
+                self.send(&ClientTickEnd);
+            }
             match &packet {
                 ClientboundPlay::ChunkBatchFinished(_) => self
                     .client
@@ -174,6 +189,8 @@ fn connect(opener: &VirtualOpener, name: &str) -> Player {
         commands: Vec::new(),
         walk_added: false,
         announced: false,
+        idle: None,
+        last_idle: Instant::now(),
     }
 }
 
@@ -321,10 +338,11 @@ fn two_players_join_see_each_other_and_rejoin() {
         _ => None,
     });
     let mut b = connect(&opener, "Bob");
-    join(&mut b);
+    b.idle = Some(join(&mut b));
 
     // Both see each other with a skin entry in the tab list.
     let alice_id = sees_spawn(&mut b, a.uuid);
+    b.idle = None;
     a.until("Bob in the tab list", |p| match p {
         ClientboundPlay::PlayerInfoUpdate(u) => u
             .entries

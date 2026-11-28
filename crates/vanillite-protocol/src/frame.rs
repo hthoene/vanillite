@@ -407,6 +407,23 @@ impl FrameEncoder {
         })
     }
 
+    /// [`FrameEncoder::batch`] for an owned batch: into an empty `out` a batch for this
+    /// connection's threshold is taken over and encrypted in place instead of copied (a
+    /// crowd's tick sends one large batch per connection).
+    pub fn batch_owned(
+        &mut self,
+        frames: Vec<u8>,
+        threshold: Option<usize>,
+        out: &mut Vec<u8>,
+    ) -> Result<()> {
+        if out.is_empty() && threshold == self.threshold {
+            *out = frames;
+            self.encrypt_from(out, 0);
+            return Ok(());
+        }
+        self.batch(&frames, threshold, out)
+    }
+
     fn encrypt_from(&mut self, out: &mut [u8], start: usize) {
         if let (Some(cipher), Some(tail)) = (self.cipher.as_mut(), out.get_mut(start..)) {
             cipher.encrypt(tail);

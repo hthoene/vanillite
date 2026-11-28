@@ -1,0 +1,100 @@
+{
+  "anvil_cost": 4,
+  "description": "Stomp",
+  "max_cost": {
+    "base": 25,
+    "per_level_above_first": 10
+  },
+  "max_level": 2,
+  "min_cost": {
+    "base": 10,
+    "per_level_above_first": 10
+  },
+  "slots": [
+    "feet"
+  ],
+  "supported_items": "#minecraft:enchantable/foot_armor",
+  "weight": 2,
+  "effects": {
+    "minecraft:location_changed": [
+      {
+        "effect": {
+          "type": "minecraft:replace_disk",
+          "radius": {
+            "type": "minecraft:linear",
+            "base": 1.5,
+            "per_level_above_first": 1.0
+          },
+          "height": 1.0,
+          "offset": [
+            0,
+            -1,
+            0
+          ],
+          "predicate": {
+            "type": "minecraft:all_of",
+            "predicates": [
+              {
+                "type": "minecraft:matching_blocks",
+                "blocks": "minecraft:grass_block"
+              },
+              {
+                "type": "minecraft:matching_block_tag",
+                "offset": [
+                  0,
+                  1,
+                  0
+                ],
+                "tag": "minecraft:air"
+              }
+            ]
+          },
+          "block_state": {
+            "type": "minecraft:weighted",
+            "entries": [
+              {
+                "data": {
+                  "id": "minecraft:coarse_dirt"
+                },
+                "weight": 3
+              },
+              {
+                "data": {
+                  "id": "minecraft:podzol",
+                  "properties": {
+                    "snowy": "false"
+                  }
+                },
+                "weight": 1
+              }
+            ]
+          },
+          "trigger_game_event": "minecraft:block_change"
+        },
+        "requirements": {
+          "type": "minecraft:entity_properties",
+          "entity": "this",
+          "predicate": {
+            "minecraft:flags": {
+              "is_on_ground": true
+            }
+          }
+        }
+      },
+      {
+        "effect": {
+          "type": "minecraft:set_block_properties",
+          "offset": [
+            0,
+            -1,
+            2
+          ],
+          "properties": {
+            "snowy": "true"
+          },
+          "trigger_game_event": "minecraft:block_change"
+        }
+      }
+    ]
+  }
+}

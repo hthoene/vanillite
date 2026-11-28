@@ -282,6 +282,10 @@ pub trait ChunkStore: Send + Sync {
     fn backlog(&self) -> usize {
         0
     }
+
+    /// Gives back what the store keeps for speed (open files, records read ahead); nobody
+    /// plays in the dimension for a while. Default: nothing.
+    fn release_memory(&self) {}
 }
 
 /// A pinned read view of a committed round.

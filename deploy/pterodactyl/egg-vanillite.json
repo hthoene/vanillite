@@ -653,7 +653,7 @@
     },
     {
       "name": "Performance: Threads › Network",
-      "description": "I/O threads of the network (connections, encryption, compression of outgoing packets). 0 = 2, or 1 with less than two cores, so the tick keeps the only core. Range: 0 to 64. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.threads.network.",
+      "description": "I/O threads of the network (connections, encryption, compression of outgoing packets). 0 = one per two cores, at least 2; 1 with less than two cores, so the tick keeps the only core. Range: 0 to 64. Empty: the profile's value (vanilla profile: 0). vanillite.toml: performance.threads.network.",
       "env_variable": "VANILLITE_PERFORMANCE__THREADS__NETWORK",
       "default_value": "",
       "user_viewable": true,

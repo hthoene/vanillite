@@ -22,6 +22,13 @@
 //! same request and send the same reply; what it lacks today is its own copy of the chunks
 //! and entities it reads (the jobs read the shared `&Level`).
 //!
+//! **Scheduling.** Which tiles share a job and in which order the jobs start is decided per
+//! phase from the tiles' measured cost ([`TileCosts`], a moving average of their job times):
+//! hot tiles run alone and start first, adjacent cold tiles of the same colour (tile x and z
+//! parity) are batched into one job. Planning never changes what a tile computes or the order
+//! its reply is applied in, so the result stays independent of timing; no data moves between
+//! tiles.
+//!
 //! A phase falls back to the serial Vanilla order for a tick when the work lies in one tile,
 //! when it is too small to be worth the fork, or when a synchronous chunk load's `unknown`
 //! ticket exists (reads would touch the chunk cache, see [`Chunks::reads_are_pure`]).
@@ -29,6 +36,7 @@
 //! [`Chunks::reads_are_pure`]: vanillite_world::chunks::Chunks::reads_are_pure
 
 use std::sync::{Mutex, PoisonError};
+use std::time::Instant;
 
 use vanillite_base::hash::FxHashMap;
 use vanillite_base::random::{LegacyRandom, RandomSource};
@@ -55,6 +63,10 @@ pub struct TileRun<'a> {
     pub min_chunks: usize,
     /// Where the tiles' proposals run.
     pub fork: &'a Fork<'a>,
+    /// Threads [`TileRun::fork`] runs jobs on (the calling one included).
+    pub threads: usize,
+    /// The tiles' measured costs; without them every busy tile costs the same.
+    pub costs: Option<&'a TileCosts>,
 }
 
 impl std::fmt::Debug for TileRun<'_> {
@@ -62,9 +74,20 @@ impl std::fmt::Debug for TileRun<'_> {
         f.debug_struct("TileRun")
             .field("size", &self.size)
             .field("min_chunks", &self.min_chunks)
+            .field("threads", &self.threads)
             .finish_non_exhaustive()
     }
 }
+
+/// Jobs per thread the planner aims for: enough that uneven jobs balance out, few enough that
+/// cold tiles share a job.
+const JOBS_PER_THREAD: u64 = 4;
+
+/// The measured cost of every busy tile per phase: an exponentially weighted moving average
+/// (weight 1/4) of how long its job took, in nanoseconds. Kept by the world across ticks; a
+/// tile that is not busy in a round of its phase is dropped, so it holds only busy tiles.
+#[derive(Debug, Default)]
+pub struct TileCosts(Mutex<FxHashMap<(Phase, TilePos), u64>>);
 
 /// Who works a tile out. Every tile belongs to this process today ([`OwnerId::LOCAL`]);
 /// later ids name other servers that own tiles of the world.
@@ -179,14 +202,28 @@ impl TilePos {
 }
 
 /// The phases with their own random stream per tile.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Phase {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Phase {
+    /// Random ticks and precipitation.
     RandomTicks = 1,
+    /// Natural spawning.
     Spawning = 2,
+    /// The seeds of the mobs natural spawning adds.
     SpawnSeeds = 3,
 }
 
-impl TileRun<'_> {
+impl<'a> TileRun<'a> {
+    /// A run on `fork` with one thread and no measured costs.
+    pub fn new(size: i32, min_chunks: usize, fork: &'a Fork<'a>) -> Self {
+        TileRun {
+            size,
+            min_chunks,
+            fork,
+            threads: 1,
+            costs: None,
+        }
+    }
+
     /// Whether a phase over `chunks` runs tiled this tick: the work spans several tiles, is
     /// large enough and reads of the level are pure.
     pub(crate) fn applies(&self, level: &Level, chunks: &[ChunkPos]) -> bool {
@@ -226,33 +263,141 @@ impl TileRun<'_> {
     }
 
     /// Hands every tile with its input to its owner and returns the replies in the order of
-    /// `tiles`. Local owners run `job` on the workers.
+    /// `tiles`. Local owners run `job` on the workers, in the jobs [`plan`] forms from the
+    /// tiles' costs in `phase`; each tile's time updates its cost.
     pub(crate) fn map<T: Send, R: Send>(
         &self,
+        phase: Phase,
         tiles: Vec<(TilePos, T)>,
         job: impl Fn(TilePos, T) -> R + Sync,
     ) -> Vec<TileReply<R>> {
         type Slot<V> = Mutex<Option<V>>;
-        let take =
-            |slot: &Slot<(TilePos, T)>| slot.lock().unwrap_or_else(PoisonError::into_inner).take();
-        let input: Vec<Slot<(TilePos, T)>> =
-            tiles.into_iter().map(|t| Mutex::new(Some(t))).collect();
-        let output: Vec<Slot<TileReply<R>>> = input.iter().map(|_| Mutex::new(None)).collect();
-        (self.fork)(input.len(), &|i| {
-            if let Some((tile, item)) = take(&input[i]) {
-                let reply = TileReply {
-                    tile,
-                    owner: self.owner(tile),
-                    changes: job(tile, item),
-                };
-                *output[i].lock().unwrap_or_else(PoisonError::into_inner) = Some(reply);
+        let lock = |costs: &'a TileCosts| costs.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let positions: Vec<TilePos> = tiles.iter().map(|t| t.0).collect();
+        let cost: Vec<u64> = match self.costs {
+            Some(costs) => {
+                let map = lock(costs);
+                let known: Vec<Option<u64>> = positions
+                    .iter()
+                    .map(|&tile| map.get(&(phase, tile)).copied())
+                    .collect();
+                // A tile without a measurement costs what the measured ones cost on average.
+                let (sum, count) = known
+                    .iter()
+                    .flatten()
+                    .fold((0u64, 0u64), |(s, c), &v| (s.saturating_add(v), c + 1));
+                let unknown = sum.checked_div(count).map_or(1, |v| v.max(1));
+                known.into_iter().map(|v| v.unwrap_or(unknown)).collect()
+            }
+            None => vec![1; positions.len()],
+        };
+        let jobs = plan(&positions, &cost, self.threads);
+        let input: Vec<Slot<T>> = tiles.into_iter().map(|t| Mutex::new(Some(t.1))).collect();
+        let output: Vec<Slot<(R, u64)>> = input.iter().map(|_| Mutex::new(None)).collect();
+        (self.fork)(jobs.len(), &|j| {
+            for &i in &jobs[j] {
+                let item = input[i]
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take();
+                if let Some(item) = item {
+                    let start = Instant::now();
+                    let changes = job(positions[i], item);
+                    let nanos = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    *output[i].lock().unwrap_or_else(PoisonError::into_inner) =
+                        Some((changes, nanos));
+                }
             }
         });
-        output
+        let replies: Vec<(TilePos, Option<(R, u64)>)> = positions
             .into_iter()
-            .filter_map(|slot| slot.into_inner().unwrap_or_else(PoisonError::into_inner))
+            .zip(output)
+            .map(|(tile, slot)| {
+                (
+                    tile,
+                    slot.into_inner().unwrap_or_else(PoisonError::into_inner),
+                )
+            })
+            .collect();
+        if let Some(costs) = self.costs {
+            let mut map = lock(costs);
+            let averaged: Vec<((Phase, TilePos), u64)> = replies
+                .iter()
+                .filter_map(|(tile, reply)| {
+                    let nanos = reply.as_ref()?.1;
+                    let cost = match map.get(&(phase, *tile)) {
+                        Some(&old) => old - old / 4 + nanos / 4,
+                        None => nanos,
+                    };
+                    Some(((phase, *tile), cost))
+                })
+                .collect();
+            map.retain(|key, _| key.0 != phase);
+            map.extend(averaged);
+        }
+        replies
+            .into_iter()
+            .filter_map(|(tile, reply)| {
+                let (changes, _) = reply?;
+                Some(TileReply {
+                    tile,
+                    owner: self.owner(tile),
+                    changes,
+                })
+            })
             .collect()
     }
+}
+
+/// Forms the jobs of a round from the busy tiles and their costs: the indices of each job's
+/// tiles in tile order, the jobs longest first. A tile costing at least a job's share of the
+/// round (the total over [`JOBS_PER_THREAD`] jobs per thread) is hot and runs alone; cold tiles
+/// of the same colour join a job while it stays under that share and the tile is adjacent to
+/// one of the job's tiles. One thread gets one job.
+fn plan(tiles: &[TilePos], cost: &[u64], threads: usize) -> Vec<Vec<usize>> {
+    let mut order: Vec<usize> = (0..tiles.len()).collect();
+    order.sort_unstable_by_key(|&i| tiles[i]);
+    if threads <= 1 || tiles.len() <= 1 {
+        return if order.is_empty() {
+            Vec::new()
+        } else {
+            vec![order]
+        };
+    }
+    let total = cost.iter().fold(0u64, |s, &c| s.saturating_add(c));
+    #[allow(clippy::cast_possible_truncation)]
+    let share = (total / (threads as u64).saturating_mul(JOBS_PER_THREAD)).max(1);
+    let colour = |t: TilePos| (t.x & 1, t.z & 1);
+    // Neighbours of one colour lie two tiles apart.
+    let adjacent = |a: TilePos, b: TilePos| (a.x - b.x).abs() <= 2 && (a.z - b.z).abs() <= 2;
+    let mut jobs: Vec<(u64, Vec<usize>)> = order
+        .iter()
+        .filter(|&&i| cost[i] >= share)
+        .map(|&i| (cost[i], vec![i]))
+        .collect();
+    for c in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        let mut batch: (u64, Vec<usize>) = (0, Vec::new());
+        for &i in &order {
+            if cost[i] >= share || colour(tiles[i]) != c {
+                continue;
+            }
+            let joins =
+                batch.0 + cost[i] <= share && batch.1.iter().any(|&j| adjacent(tiles[j], tiles[i]));
+            if !joins && !batch.1.is_empty() {
+                jobs.push(std::mem::take(&mut batch));
+            }
+            batch.0 += cost[i];
+            batch.1.push(i);
+        }
+        if !batch.1.is_empty() {
+            jobs.push(batch);
+        }
+    }
+    jobs.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then_with(|| tiles[a.1[0]].cmp(&tiles[b.1[0]]))
+    });
+    jobs.into_iter().map(|(_, job)| job).collect()
 }
 
 /// Sorts a tile's chunks by x and z: the order its job works in.
@@ -312,7 +457,7 @@ impl Level {
         }
         let tiles = run.group(scratch);
         let level: &Level = self;
-        let replies = run.map(tiles, |tile, mut chunks| {
+        let replies = run.map(Phase::RandomTicks, tiles, |tile, mut chunks| {
             let mut random = LegacyRandom::new(tile_seed(
                 level.seed,
                 level.game_time,
@@ -399,11 +544,10 @@ mod tests {
     }
 
     fn run<'a>(fork: &'a Fork<'a>) -> TileRun<'a> {
+        // The flat test world ticks the chunks around the origin: four tiles of 2 × 2.
         TileRun {
-            // The flat test world ticks the chunks around the origin: four tiles of 2 × 2.
-            size: 2,
-            min_chunks: 0,
-            fork,
+            threads: 4,
+            ..TileRun::new(2, 0, fork)
         }
     }
 
@@ -422,11 +566,7 @@ mod tests {
     #[test]
     fn tiles_group_chunks_and_seeds_differ() {
         let fork: &Fork<'_> = &inline_fork;
-        let run = TileRun {
-            size: 16,
-            min_chunks: 0,
-            fork,
-        };
+        let run = TileRun::new(16, 0, fork);
         let chunks = vec![
             ChunkPos::new(17, 0),
             ChunkPos::new(-1, -1),
@@ -583,11 +723,7 @@ mod tests {
             (surface(&level), level.random().next_int())
         };
         // Too few chunks.
-        let small = TileRun {
-            size: 2,
-            min_chunks: 1_000_000,
-            fork,
-        };
+        let small = TileRun::new(2, 1_000_000, fork);
         assert_eq!(with(small, false), serial);
         // One tile holds everything.
         let level = flat_level();

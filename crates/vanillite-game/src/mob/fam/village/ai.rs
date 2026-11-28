@@ -2847,14 +2847,11 @@ fn acquire_poi(t: &mut Tick<'_, '_>, which: Acquire, next_start: &mut i64, now: 
     };
     let center = t.block_pos();
     let records = t.ents.poi.in_range(pred, center, 48, Occupancy::HasSpace);
-    let mut ordered: Vec<(PoiType, BlockPos)> = records.iter().map(|r| (r.ty, r.pos)).collect();
-    ordered.sort_by(|a, b| a.1.dist_sqr(center).total_cmp(&b.1.dist_sqr(center)));
-    // The cache test runs lazily over the sorted stream until five pass.
+    // `findAllClosestFirstWithType(...).limit(5)`: the cache test runs on every record in
+    // range in stream order (`sorted` takes the whole stream), then the closest five stay.
     let mut picked: Vec<(PoiType, BlockPos)> = Vec::new();
-    for (ty, pos) in ordered {
-        if picked.len() >= 5 {
-            break;
-        }
+    for r in &records {
+        let (ty, pos) = (r.ty, r.pos);
         let pass = {
             let mut r =
                 std::mem::replace(t.env.random, vanillite_base::random::LegacyRandom::new(0));
@@ -2877,6 +2874,8 @@ fn acquire_poi(t: &mut Tick<'_, '_>, which: Acquire, next_start: &mut i64, now: 
             picked.push((ty, pos));
         }
     }
+    picked.sort_by(|a, b| a.1.dist_sqr(center).total_cmp(&b.1.dist_sqr(center)));
+    picked.truncate(5);
     if which == Acquire::Home {
         picked.retain(|&(_, pos)| {
             let s = t.level.block(pos);

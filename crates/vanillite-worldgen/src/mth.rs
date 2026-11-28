@@ -3,6 +3,8 @@
 //!
 //! Keep Vanilla's operation order, never use `mul_add`, and convert with the helpers below.
 
+use std::cell::{Cell, RefCell};
+
 /// Java `Math.min(float, float)`: NaN if either is NaN, and `-0.0 < 0.0`.
 #[inline]
 pub fn min_f(a: f32, b: f32) -> f32 {
@@ -131,4 +133,85 @@ pub fn round_f(x: f32) -> i32 {
 #[inline]
 pub fn round_toward(input: i32, multiple: i32) -> i32 {
     vanillite_base::math::floor_div(input.wrapping_neg(), multiple).wrapping_neg() * multiple
+}
+
+/// A 1-ulp probe for the known sin/cos limit (#300): [`math_sin`] and [`math_cos`] add `sin`
+/// and `cos` ulps (away from zero for positive values) to their results for exactly `input`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrigShift {
+    pub input: f64,
+    pub sin: i8,
+    pub cos: i8,
+}
+
+thread_local! {
+    /// The probe of this thread; `None` except in the world generation sweep (#300).
+    static TRIG_SHIFT: Cell<Option<TrigShift>> = const { Cell::new(None) };
+    /// Whether [`sin_cos_ulp_sensitive`] records its inputs on this thread.
+    static TRIG_RECORDING: Cell<bool> = const { Cell::new(false) };
+    static TRIG_RECORDED: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Java `Math.sin(double)`.
+///
+/// Known limit (#300): HotSpot computes `Math.sin`/`Math.cos` with an intrinsic based on Intel's
+/// LIBM, Vanillite with the platform libm (glibc). For about 0.23 % of the angles the two
+/// results differ by 1 ulp. Where a world generation decision sits exactly on that ulp (seen:
+/// iceberg ellipses, see [`sin_cos_ulp_sensitive`]) a feature comes out differently. HotSpot's
+/// code is GPLv2 with Classpath Exception, so it is not ported; the sweep reports such areas as
+/// a known limit when they match Vanilla with one result shifted by 1 ulp ([`TrigShift`]).
+#[inline]
+pub fn math_sin(x: f64) -> f64 {
+    match TRIG_SHIFT.get() {
+        Some(s) if s.input.to_bits() == x.to_bits() => shift_ulps(x.sin(), s.sin),
+        _ => x.sin(),
+    }
+}
+
+/// Java `Math.cos(double)`; see [`math_sin`] for the known 1-ulp limit (#300).
+#[inline]
+pub fn math_cos(x: f64) -> f64 {
+    match TRIG_SHIFT.get() {
+        Some(s) if s.input.to_bits() == x.to_bits() => shift_ulps(x.cos(), s.cos),
+        _ => x.cos(),
+    }
+}
+
+/// `(Math.sin(x), Math.cos(x))` for a call site whose decisions are known to sit on the
+/// 1-ulp limit (#300) now and then; records `x` for the sweep's probe while recording is on.
+#[inline]
+pub fn sin_cos_ulp_sensitive(x: f64) -> (f64, f64) {
+    if TRIG_RECORDING.get() {
+        TRIG_RECORDED.with_borrow_mut(|r| {
+            if r.last().is_none_or(|l| l.to_bits() != x.to_bits()) {
+                r.push(x);
+            }
+        });
+    }
+    (math_sin(x), math_cos(x))
+}
+
+/// The 1-ulp probe of this thread (#300).
+pub fn trig_shift() -> Option<TrigShift> {
+    TRIG_SHIFT.get()
+}
+
+/// Sets the 1-ulp probe of this thread; only for the world generation sweep (#300).
+pub fn set_trig_shift(shift: Option<TrigShift>) {
+    TRIG_SHIFT.set(shift);
+}
+
+/// Starts (`true`) or stops recording the inputs of [`sin_cos_ulp_sensitive`] on this thread
+/// and returns those recorded so far; only for the world generation sweep (#300).
+pub fn record_ulp_sensitive_inputs(on: bool) -> Vec<f64> {
+    TRIG_RECORDING.set(on);
+    TRIG_RECORDED.take()
+}
+
+#[inline]
+fn shift_ulps(value: f64, ulps: i8) -> f64 {
+    if ulps == 0 || value == 0.0 || !value.is_finite() {
+        return value;
+    }
+    f64::from_bits(value.to_bits().wrapping_add_signed(i64::from(ulps)))
 }

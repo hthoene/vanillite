@@ -102,6 +102,13 @@ pub struct EntityFacts {
     pub in_water: bool,
     /// A player's game mode (wire id) and food level.
     pub player: Option<(i32, i32)>,
+    /// `tickCount` (`periodic_tick`).
+    pub tick_count: i32,
+    /// `getKnownMovement()` in blocks per tick (`movement`).
+    pub movement: vanillite_base::Vec3,
+    /// The block below that affects the movement (`movement_affected_by`), where the level is
+    /// known.
+    pub movement_block: Option<vanillite_data::block::BlockState>,
 }
 
 /// `EntityPredicate`: the parts the game evaluates (`type`, `flags`); other parts are
@@ -130,8 +137,13 @@ pub struct EntityPredicate {
     pub villager_variants: Option<Vec<u16>>,
     /// `flags.is_flying`.
     pub flying: Option<bool>,
-    /// `movement.fall_distance.min`.
-    pub min_fall_distance: Option<f64>,
+    /// `movement`: the bounds of x, y, z, speed, horizontal speed, vertical speed (per
+    /// second) and fall distance.
+    pub movement: Option<Box<MovementBounds>>,
+    /// `periodic_tick`.
+    pub periodic_tick: Option<i32>,
+    /// `movement_affected_by` with a `block.blocks` holder set entry (`"ns:id"`, `"#tag"`).
+    pub movement_affected_by: Option<Vec<String>>,
     /// `location.can_see_sky`.
     pub can_see_sky: Option<bool>,
     /// `type_specific/fishing_hook`: a hook, with `in_open_water` if given.
@@ -273,14 +285,37 @@ impl EntityPredicate {
                     p.unsupported |= !known;
                 }
                 "movement" => {
-                    // Only a lower bound of `fall_distance` (Wind Burst).
-                    let fall = v.get("fall_distance");
-                    let only = v.as_object().is_some_and(|m| m.len() == 1)
-                        && fall.is_some_and(|f| {
-                            f.as_object().is_some_and(|f| f.keys().all(|k| k == "min"))
-                        });
-                    p.min_fall_distance = fall.and_then(|f| f.get("min")).and_then(Value::as_f64);
-                    p.unsupported |= !only || p.min_fall_distance.is_none();
+                    p.movement = movement_bounds(v).map(Box::new);
+                    p.unsupported |= p.movement.is_none();
+                }
+                "periodic_tick" => {
+                    p.periodic_tick = v
+                        .as_i64()
+                        .and_then(|n| i32::try_from(n).ok())
+                        .filter(|&n| n > 0);
+                    p.unsupported |= p.periodic_tick.is_none();
+                }
+                "movement_affected_by" => {
+                    // Only a block set (Soul Speed).
+                    let block = v.get("block").filter(|_| {
+                        v.as_object()
+                            .is_some_and(|l| l.keys().all(|k| k == "block"))
+                    });
+                    let blocks = block
+                        .filter(|b| {
+                            b.as_object()
+                                .is_some_and(|b| b.keys().all(|k| k == "blocks"))
+                        })
+                        .and_then(|b| b.get("blocks"));
+                    p.movement_affected_by = match blocks {
+                        Some(Value::String(s)) => Some(vec![s.clone()]),
+                        Some(Value::Array(a)) => a
+                            .iter()
+                            .map(|e| e.as_str().map(str::to_owned))
+                            .collect::<Option<Vec<_>>>(),
+                        _ => None,
+                    };
+                    p.unsupported |= p.movement_affected_by.is_none();
                 }
                 "location" => {
                     // Only `can_see_sky` (Channeling).
@@ -384,7 +419,23 @@ impl EntityPredicate {
             && self
                 .mooshroom_variant
                 .is_none_or(|v| e.mooshroom_variant == Some(v))
-            && self.min_fall_distance.is_none_or(|m| e.fall_distance >= m)
+            && self
+                .movement
+                .as_ref()
+                .is_none_or(|b| movement_matches(b, e))
+            && self
+                .periodic_tick
+                .is_none_or(|n| e.tick_count.checked_rem(n) == Some(0))
+            && self.movement_affected_by.as_ref().is_none_or(|blocks| {
+                e.movement_block.is_some_and(|state| {
+                    crate::player::play::game_data().is_some_and(|d| {
+                        blocks.iter().any(|entry| {
+                            d.holder_set("minecraft:block", entry)
+                                .contains(&u32::from(state.block().0))
+                        })
+                    })
+                })
+            })
             && self.fishing_hook.is_none_or(|want| {
                 e.fishing_hook
                     .is_some_and(|open| want.is_none_or(|w| w == open))
@@ -448,6 +499,71 @@ impl PlayerPredicate {
 }
 
 /// `MinMaxBounds.Ints`: an exact number or `{min, max}`.
+/// The bounds of a `MovementPredicate`: `x`, `y`, `z`, `speed`, `horizontal_speed`,
+/// `vertical_speed` and `fall_distance` (`MinMaxBounds.Doubles`).
+pub type MovementBounds = [(Option<f64>, Option<f64>); 7];
+
+/// Parses a `MovementPredicate`.
+fn movement_bounds(v: &Value) -> Option<MovementBounds> {
+    const KEYS: [&str; 7] = [
+        "x",
+        "y",
+        "z",
+        "speed",
+        "horizontal_speed",
+        "vertical_speed",
+        "fall_distance",
+    ];
+    let o = v.as_object()?;
+    if !o.keys().all(|k| KEYS.contains(&k.as_str())) {
+        return None;
+    }
+    let mut out = [(None, None); 7];
+    for (slot, key) in out.iter_mut().zip(KEYS) {
+        *slot = match o.get(key) {
+            None => (None, None),
+            Some(Value::Object(b)) => {
+                if !b.keys().all(|k| k == "min" || k == "max") {
+                    return None;
+                }
+                let bound = |k: &str| match b.get(k) {
+                    None => Some(None),
+                    Some(n) => n.as_f64().map(Some),
+                };
+                (bound("min")?, bound("max")?)
+            }
+            Some(n) => {
+                let n = n.as_f64()?;
+                (Some(n), Some(n))
+            }
+        };
+    }
+    Some(out)
+}
+
+/// `MovementPredicate.matches` with `getKnownMovement().scale(20)`; the speeds compare their
+/// squares (`matchesSqr`).
+fn movement_matches(b: &MovementBounds, e: &EntityFacts) -> bool {
+    let plain = |(min, max): (Option<f64>, Option<f64>), v: f64| {
+        min.is_none_or(|m| m <= v) && max.is_none_or(|m| v <= m)
+    };
+    let sqr = |(min, max): (Option<f64>, Option<f64>), v: f64| {
+        min.is_none_or(|m| m * m <= v) && max.is_none_or(|m| v <= m * m)
+    };
+    let (x, y, z) = (
+        e.movement.x * 20.0,
+        e.movement.y * 20.0,
+        e.movement.z * 20.0,
+    );
+    plain(b[0], x)
+        && plain(b[1], y)
+        && plain(b[2], z)
+        && sqr(b[3], x * x + y * y + z * z)
+        && sqr(b[4], x * x + z * z)
+        && plain(b[5], y.abs())
+        && plain(b[6], e.fall_distance)
+}
+
 fn int_bounds(v: &Value) -> Option<(Option<i32>, Option<i32>)> {
     let int = |v: &Value| v.as_i64().and_then(|n| i32::try_from(n).ok());
     match v {

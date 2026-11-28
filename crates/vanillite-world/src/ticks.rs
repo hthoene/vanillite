@@ -65,13 +65,68 @@ impl ScheduledTick {
     }
 }
 
-/// A tick in a container's queue, ordered by `DRAIN_ORDER`.
+/// A tick in a container's queue, ordered by `DRAIN_ORDER`: [`ScheduledTick`] with its
+/// position relative to the container's chunk (24 instead of 40 bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Queued(ScheduledTick);
+struct Queued {
+    trigger: i64,
+    sub_tick: i64,
+    kind: u16,
+    y: i16,
+    x: i8,
+    z: i8,
+    priority: TickPriority,
+}
+
+impl Queued {
+    /// `tick` in the container of the chunk at block `origin`; `None` if its position is too
+    /// far from the chunk to pack (only possible for corrupt saved ticks).
+    fn pack(tick: &ScheduledTick, origin: (i32, i32)) -> Option<Queued> {
+        Some(Queued {
+            trigger: tick.trigger,
+            sub_tick: tick.sub_tick,
+            kind: tick.kind,
+            y: i16::try_from(tick.pos.y).ok()?,
+            x: i8::try_from(tick.pos.x.wrapping_sub(origin.0)).ok()?,
+            z: i8::try_from(tick.pos.z.wrapping_sub(origin.1)).ok()?,
+            priority: tick.priority,
+        })
+    }
+
+    fn unpack(&self, origin: (i32, i32)) -> ScheduledTick {
+        ScheduledTick {
+            kind: self.kind,
+            pos: BlockPos::new(
+                origin.0.wrapping_add(i32::from(self.x)),
+                i32::from(self.y),
+                origin.1.wrapping_add(i32::from(self.z)),
+            ),
+            trigger: self.trigger,
+            priority: self.priority,
+            sub_tick: self.sub_tick,
+        }
+    }
+
+    /// The key of the container's set of scheduled types and positions.
+    fn unique(&self) -> u64 {
+        unique_key(self.kind, self.y, self.x, self.z)
+    }
+}
+
+fn unique_key(kind: u16, y: i16, x: i8, z: i8) -> u64 {
+    (u64::from(kind) << 32)
+        | (u64::from(y as u16) << 16)
+        | (u64::from(x as u8) << 8)
+        | u64::from(z as u8)
+}
 
 impl Ord for Queued {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.drain_key().cmp(&other.0.drain_key())
+        (self.trigger, self.priority, self.sub_tick).cmp(&(
+            other.trigger,
+            other.priority,
+            other.sub_tick,
+        ))
     }
 }
 
@@ -82,32 +137,66 @@ impl PartialOrd for Queued {
 }
 
 /// The ticks of one chunk (`LevelChunkTicks`).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ChunkTicks {
+    /// Block coordinates of the chunk's corner.
+    origin: (i32, i32),
     queue: BinaryHeap<Reverse<Queued>>,
-    unique: FxHashSet<(u16, BlockPos)>,
+    unique: FxHashSet<u64>,
 }
 
 impl ChunkTicks {
+    fn new(chunk: ChunkPos) -> Self {
+        ChunkTicks {
+            origin: (chunk.x.wrapping_shl(4), chunk.z.wrapping_shl(4)),
+            queue: BinaryHeap::new(),
+            unique: FxHashSet::default(),
+        }
+    }
+
     /// The next tick.
-    fn peek(&self) -> Option<&ScheduledTick> {
-        self.queue.peek().map(|Reverse(Queued(tick))| tick)
+    fn peek(&self) -> Option<ScheduledTick> {
+        self.queue
+            .peek()
+            .map(|Reverse(queued)| queued.unpack(self.origin))
     }
 
     fn poll(&mut self) -> Option<ScheduledTick> {
-        let Reverse(Queued(tick)) = self.queue.pop()?;
-        self.unique.remove(&(tick.kind, tick.pos));
-        Some(tick)
+        let Reverse(queued) = self.queue.pop()?;
+        self.unique.remove(&queued.unique());
+        Some(queued.unpack(self.origin))
     }
 
     /// Adds a tick unless one of the same type is scheduled at its position.
     fn schedule(&mut self, tick: ScheduledTick) -> bool {
-        if self.unique.insert((tick.kind, tick.pos)) {
-            self.queue.push(Reverse(Queued(tick)));
+        let Some(queued) = Queued::pack(&tick, self.origin) else {
+            return false;
+        };
+        if self.unique.insert(queued.unique()) {
+            self.queue.push(Reverse(queued));
             true
         } else {
             false
         }
+    }
+
+    /// Whether a tick of `kind` is scheduled at `pos`.
+    fn contains(&self, pos: BlockPos, kind: u16) -> bool {
+        let (Ok(y), Ok(x), Ok(z)) = (
+            i16::try_from(pos.y),
+            i8::try_from(pos.x.wrapping_sub(self.origin.0)),
+            i8::try_from(pos.z.wrapping_sub(self.origin.1)),
+        ) else {
+            return false;
+        };
+        self.unique.contains(&unique_key(kind, y, x, z))
+    }
+
+    /// The ticks, unordered.
+    fn iter(&self) -> impl Iterator<Item = ScheduledTick> + '_ {
+        self.queue
+            .iter()
+            .map(|Reverse(queued)| queued.unpack(self.origin))
     }
 
     /// Number of ticks.
@@ -122,8 +211,7 @@ impl ChunkTicks {
 
     /// `pack(gameTime)`: the ticks in sub-tick order with delays relative to `game_time`.
     fn pack(&self, game_time: i64) -> Vec<SavedTick> {
-        let mut ticks: Vec<&ScheduledTick> =
-            self.queue.iter().map(|Reverse(Queued(t))| t).collect();
+        let mut ticks: Vec<ScheduledTick> = self.iter().collect();
         ticks.sort_unstable_by_key(|t| t.sub_tick);
         ticks
             .into_iter()
@@ -182,7 +270,7 @@ impl LevelTicks {
     /// (`LevelChunkTicks.unpack`: stored ticks get sub-tick values below every new tick, in
     /// stored order). `sub_tick` is the level's counter.
     pub fn add_container(&mut self, chunk: ChunkPos, saved: &[SavedTick], game_time: i64) {
-        let mut container = ChunkTicks::default();
+        let mut container = ChunkTicks::new(chunk);
         let first = -i64::try_from(saved.len()).unwrap_or(i64::MAX);
         for (sub_tick, tick) in (first..).zip(saved) {
             container.schedule(ScheduledTick {
@@ -228,7 +316,7 @@ impl LevelTicks {
             return false;
         }
         // `chunkScheduleUpdater`: the new tick is the container's next one.
-        if container.peek() == Some(&tick) {
+        if container.peek() == Some(tick) {
             self.next_tick.put(chunk.as_long(), tick.trigger);
         }
         true
@@ -238,7 +326,7 @@ impl LevelTicks {
     pub fn has_scheduled(&self, pos: BlockPos, kind: u16) -> bool {
         self.containers
             .get(&pos.chunk())
-            .is_some_and(|c| c.unique.contains(&(kind, pos)))
+            .is_some_and(|c| c.contains(pos, kind))
     }
 
     /// `willTickThisTick(pos, type)`: the tick is collected and has not run yet.
@@ -266,15 +354,16 @@ impl LevelTicks {
                     continue;
                 };
                 let before = container.queue.len();
+                let origin = container.origin;
                 let kept: Vec<Reverse<Queued>> = std::mem::take(&mut container.queue)
                     .into_iter()
-                    .filter(|Reverse(Queued(t))| !inside(t.pos))
+                    .filter(|Reverse(queued)| !inside(queued.unpack(origin).pos))
                     .collect();
+                container.unique = kept.iter().map(|Reverse(queued)| queued.unique()).collect();
                 container.queue = kept.into_iter().collect();
                 if container.queue.len() == before {
                     continue;
                 }
-                container.unique.retain(|(_, p)| !inside(*p));
                 changed.push(chunk);
                 match container.peek() {
                     Some(next) => {
@@ -292,11 +381,11 @@ impl LevelTicks {
     }
 
     /// The ticks scheduled in a chunk, unordered (observation, e.g. parity traces).
-    pub fn ticks_in(&self, chunk: ChunkPos) -> impl Iterator<Item = &ScheduledTick> {
+    pub fn ticks_in(&self, chunk: ChunkPos) -> impl Iterator<Item = ScheduledTick> + '_ {
         self.containers
             .get(&chunk)
             .into_iter()
-            .flat_map(|c| c.queue.iter().map(|Reverse(Queued(t))| t))
+            .flat_map(ChunkTicks::iter)
     }
 
     /// `DRAIN_ORDER` key of a tick (trigger time, priority, sub-tick).

@@ -6,7 +6,7 @@ use vanillite_command::nbt_path::NbtPath;
 use vanillite_command::{Arg as ErrArg, ArgValue, Args};
 use vanillite_game::commands::{DataOp, ModifyOp, ModifySource, TagOp};
 use vanillite_nbt::{Compound, List, Tag};
-use vanillite_protocol::text::{Arg, Color, Component, NamedColor};
+use vanillite_protocol::text::{Arg, Color, Component, NamedColor, java_double, java_float};
 
 use super::data::{self, DataTarget};
 use super::exec::format_list;
@@ -512,33 +512,6 @@ pub(crate) fn run_tag(
 }
 
 // --- NBT as text ------------------------------------------------------------------------------
-
-/// `Double.toString` / `Float.toString`: plain decimals in `[1e-3, 1e7)`, otherwise Java's
-/// scientific form (`1.0E7`).
-fn java_decimal(abs: f64, plain: String, scientific: &str) -> String {
-    if plain == "NaN" {
-        return plain;
-    }
-    if plain.ends_with("inf") {
-        return plain.replace("inf", "Infinity");
-    }
-    if abs == 0.0 || (1.0e-3..1.0e7).contains(&abs) {
-        return plain;
-    }
-    match scientific.split_once('e') {
-        Some((mantissa, exponent)) if mantissa.contains('.') => format!("{mantissa}E{exponent}"),
-        Some((mantissa, exponent)) => format!("{mantissa}.0E{exponent}"),
-        None => plain,
-    }
-}
-
-fn java_double(v: f64) -> String {
-    java_decimal(v.abs(), format!("{v:?}"), &format!("{v:e}"))
-}
-
-fn java_float(v: f32) -> String {
-    java_decimal(f64::from(v).abs(), format!("{v:?}"), &format!("{v:e}"))
-}
 
 /// `StringTag.quoteAndEscape`.
 fn quote_and_escape(input: &str) -> String {

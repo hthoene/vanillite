@@ -988,7 +988,7 @@ pub fn tick_tiled(
     let caps = &state.local;
     let categories = &categories;
     let no_flags = SpawnFlags::default();
-    let replies = run.map(jobs, |tile, (mut spawning, mut own)| {
+    let replies = run.map(Phase::Spawning, jobs, |tile, (mut spawning, mut own)| {
         let mut random = LegacyRandom::new(tile_seed(seed, time, tile, Phase::Spawning));
         // `collectSpawningChunks` of the tile, shuffled with its random.
         spawning.retain(|&c| shared.is_block_ticking(c) && nearby.any_close_for_spawning(c));
@@ -2694,11 +2694,7 @@ mod tests {
 
     fn tiles<'a>(fork: &'a Fork<'a>) -> TileRun<'a> {
         // The test world ticks the chunks around the origin: tiles of 2 × 2 chunks.
-        TileRun {
-            size: 2,
-            min_chunks: 0,
-            fork,
-        }
+        TileRun::new(2, 0, fork)
     }
 
     /// The round on the world itself draws from the level's random in Vanilla's order: the
@@ -2770,11 +2766,7 @@ mod tests {
     #[test]
     fn a_tiled_round_that_does_not_apply_is_the_world_round() {
         let fork: &Fork<'_> = &inline_fork;
-        let small = TileRun {
-            size: 2,
-            min_chunks: 1_000_000,
-            fork,
-        };
+        let small = TileRun::new(2, 1_000_000, fork);
         assert_eq!(spawned(60, Some(&small)), spawned(60, None));
     }
 }

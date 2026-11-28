@@ -1623,6 +1623,8 @@ fn with_damage_context<R>(
         raining: false,
         thundering: false,
         location: None,
+        enchantment_active: None,
+        block_state: None,
     };
     Some(f(&data.enchants, &equipment, &cx, env.random))
 }
@@ -2346,6 +2348,10 @@ pub fn do_tick_ai(
     }
     let before_travel = entity.as_ref().aabb();
     player.survival.server_step = Vec3::ZERO;
+    // `Player.tick`: a passenger is never on the ground.
+    if entity.as_ref().flags().contains(EntityFlags::PASSENGER) {
+        entity.set_flags(EntityFlags::ON_GROUND, false);
+    }
     if result == TickResult::Alive {
         if player.survival.simulate_movement {
             if entity.as_ref().flags().contains(EntityFlags::PASSENGER) {
@@ -4038,7 +4044,8 @@ fn simulate_move(
                 let drag = 1.0 + portion * (f64::from(0.98_f32) - 1.0);
                 (portion * gravity - current.y) * drag * restitution
             } else {
-                -current.y * 0.0
+                // `(0.0 - y) * 1.0 * 0.0`: a resting `+0.0` stays `+0.0`.
+                (0.0 - current.y) * 0.0
             };
             if restitution > 0.0 {
                 if effect_state

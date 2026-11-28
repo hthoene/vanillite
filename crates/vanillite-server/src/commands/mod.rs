@@ -218,7 +218,10 @@ pub(crate) fn load_game_systems(global: &Global, packs: &[vanillite_datapack::Op
     global
         .systems
         .load(&global.level.data, &|key| global.level.legacy(key));
-    global.systems.set_advancements(load_advancements(packs));
+    // Read when the first player logs in.
+    global
+        .systems
+        .set_advancement_roots(packs.iter().flat_map(|p| p.layers.clone()).collect());
 }
 
 /// The advancements of the packs (`ServerAdvancementManager.apply`).
@@ -226,7 +229,14 @@ pub(crate) fn load_advancements(
     packs: &[vanillite_datapack::OpenedPack],
 ) -> vanillite_game::advancements::Advancements {
     let roots: Vec<std::path::PathBuf> = packs.iter().flat_map(|p| p.layers.clone()).collect();
-    let files = functions::list(&roots, "advancement", ".json")
+    load_advancements_from(&roots)
+}
+
+/// The advancements of the pack directories `roots`, in load order.
+pub(crate) fn load_advancements_from(
+    roots: &[std::path::PathBuf],
+) -> vanillite_game::advancements::Advancements {
+    let files = functions::list(roots, "advancement", ".json")
         .into_iter()
         .filter_map(|(id, file)| match std::fs::read_to_string(&file) {
             Ok(text) => Some((id, text)),
@@ -617,16 +627,19 @@ fn collect_signed_arguments(
 /// A console command, run on the overworld.
 /// Runs a command line as the server (permission level 4) at `pos` in the overworld on
 /// `level`, outside a running server (parity scenarios): the execution is the console's;
-/// a line that does not parse is an error.
+/// a line that does not parse is an error. Returns the plain text of the console's messages
+/// (what the console would log as `System chat: <text>`).
 pub fn run_command_on_level(
     global: &Global,
     level: &mut vanillite_game::level::Level,
     pos: vanillite_base::Vec3,
     line: &str,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
     let arc = global.arc().ok_or("the server is gone")?;
     let world = WorldId(0);
-    let source = CommandSource::new(arc, SourceKind::Console, 4, world, pos, (0.0, 0.0), None);
+    let mut source = CommandSource::new(arc, SourceKind::Console, 4, world, pos, (0.0, 0.0), None);
+    let feedback = Arc::new(std::sync::Mutex::new(Vec::new()));
+    source.feedback = Some(Arc::clone(&feedback));
     let parsed = global
         .commands()
         .parse_command(line.trim().trim_start_matches('/'), &source)
@@ -645,7 +658,11 @@ pub fn run_command_on_level(
         },
         source,
     );
-    Ok(())
+    Ok(std::mem::take(
+        &mut feedback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    ))
 }
 
 /// Installs the overworld's command block dispatcher on `level`, outside a running server
@@ -656,8 +673,16 @@ pub fn install_command_runner(global: &Global, level: &mut vanillite_game::level
     }
 }
 
-pub(crate) fn run_console_command(world: &mut ServerWorld, global: &Global, line: &str) {
-    run_server_command(world, global, line, SourceKind::Console);
+/// A console command on the overworld; `execute in` continues at once in the `others` at
+/// hand (`MinecraftServer.handleConsoleInputs` runs between the ticks with every level).
+pub(crate) fn run_console_command(
+    world: &mut ServerWorld,
+    others: OtherLevels<'_>,
+    global: &Global,
+    line: &str,
+) {
+    let pos = global.systems.spawn();
+    run_server_command_at(world, others, global, line, SourceKind::Console, pos, None);
 }
 
 /// An RCON command (`DedicatedServer.runCommand`), run on the overworld: its feedback.
@@ -759,6 +784,56 @@ impl vanillite_game::block::technical::command_block::CommandRunner for BlockCom
             last_message: output.take(),
         }
     }
+
+    fn run_function(
+        &self,
+        level: &mut vanillite_game::level::Level,
+        id: &str,
+        entity: vanillite_world::entity::EntityId,
+        pos: vanillite_base::Vec3,
+        rot: (f32, f32),
+    ) -> bool {
+        let Some(global) = self.global.upgrade() else {
+            return false;
+        };
+        let Some(function) = global.systems.functions().get(id).cloned() else {
+            log::error!("Enchantment run_function effect failed for non-existent function {id}");
+            return false;
+        };
+        // `createCommandSourceStack().withPermission(GAMEMASTER).withSuppressedOutput()
+        // .withEntity(entity).withLevel(level).withPosition(pos).withRotation(rot)`.
+        let entity = select::local(&level.entities, self.world, entity).map(|t| t.source_entity());
+        let mut source = CommandSource::new(
+            Arc::clone(&global),
+            SourceKind::Server,
+            vanillite_game::commands::level::GAMEMASTERS,
+            self.world,
+            pos,
+            rot,
+            entity,
+        );
+        source.silent = true;
+        let lent = self.lent.hold();
+        let mut env = Env {
+            level,
+            global: &global,
+            world: self.world,
+            others: lent
+                .iter()
+                .flat_map(|slot| slot.iter())
+                .map(|l| {
+                    // SAFETY: as in `run`: the slot holds a level only inside
+                    // `LentLevels::with`, which has the exclusive borrow of it and empties the
+                    // slot under the lock before it returns; `env` is dropped before `lent`.
+                    l.as_ref().map(|l| unsafe { &mut *l.0.as_ptr() })
+                })
+                .collect(),
+        };
+        functions::run_function(&function, &source, &mut env);
+        drop(env);
+        drop(lent);
+        true
+    }
 }
 
 /// A command of the console or RCON with the owner permission level.
@@ -776,7 +851,7 @@ pub(crate) fn run_collected(
 
 fn run_server_command(world: &mut ServerWorld, global: &Global, line: &str, kind: SourceKind) {
     let pos = global.systems.spawn();
-    run_server_command_at(world, global, line, kind, pos);
+    run_server_command_at(world, Vec::new(), global, line, kind, pos, None);
 }
 
 /// A server command as the console at `pos` of the world (parity scenarios run theirs at the
@@ -784,19 +859,31 @@ fn run_server_command(world: &mut ServerWorld, global: &Global, line: &str, kind
 #[cfg(feature = "test-support")]
 pub(crate) fn run_console_command_at(
     world: &mut ServerWorld,
+    others: OtherLevels<'_>,
     global: &Global,
     line: &str,
     pos: vanillite_base::Vec3,
+    feedback: Arc<std::sync::Mutex<Vec<String>>>,
 ) {
-    run_server_command_at(world, global, line, SourceKind::Console, pos);
+    run_server_command_at(
+        world,
+        others,
+        global,
+        line,
+        SourceKind::Console,
+        pos,
+        Some(feedback),
+    );
 }
 
 fn run_server_command_at(
     world: &mut ServerWorld,
+    others: OtherLevels<'_>,
     global: &Global,
     line: &str,
     kind: SourceKind,
     pos: vanillite_base::Vec3,
+    feedback: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 ) {
     let command = line.trim().trim_start_matches('/');
     if command.is_empty() {
@@ -805,13 +892,14 @@ fn run_server_command_at(
     let Some(arc) = global.arc() else {
         return;
     };
-    let source = CommandSource::new(arc, kind, 4, world.id(), pos, (0.0, 0.0), None);
+    let mut source = CommandSource::new(arc, kind, 4, world.id(), pos, (0.0, 0.0), None);
+    source.feedback = feedback;
     let id = world.id();
     let mut env = Env {
         level: world.level_mut(),
         global,
         world: id,
-        others: Vec::new(),
+        others,
     };
     match global.commands().parse_command(command, &source) {
         Ok(parsed) => {

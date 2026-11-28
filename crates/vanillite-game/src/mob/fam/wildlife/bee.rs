@@ -678,6 +678,8 @@ pub(super) fn start(t: &mut Tick<'_, '_>, g: &mut Goal) {
             let s = st_mut(t.mob());
             s.pollinating = true;
             s.ticks_without_nectar = 0;
+            // The bee's navigation does not tick while it pollinates.
+            t.mob().nav.paused = true;
         }
         Goal::BeeGoToKnownFlower { travelling } => *travelling = 0,
         Goal::BeeWander => {
@@ -728,6 +730,7 @@ pub(super) fn stop(t: &mut Tick<'_, '_>, g: &mut Goal) {
             let s = st_mut(t.mob());
             s.pollinating = false;
             s.cooldown_flower = 200;
+            t.mob().nav.paused = false;
             t.nav().stop();
         }
         Goal::BeeGoToKnownFlower { travelling } => {
@@ -763,6 +766,7 @@ pub(super) fn tick(t: &mut Tick<'_, '_>, g: &mut Goal) {
                 let s = st_mut(t.mob());
                 s.pollinating = false;
                 s.cooldown_flower = 200;
+                t.mob().nav.paused = false;
                 return;
             }
             let flower = randompos::bottom_center(f) + Vec3::new(0.0, f64::from(0.6_f32), 0.0);

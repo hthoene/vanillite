@@ -229,6 +229,10 @@ pub struct ServerWorld {
     /// What the scenario players' clients receive (`"client_view"`), by name.
     captures: Vec<(String, Arc<Capture>)>,
     clients: crate::client_view::ClientViews,
+    /// The block clicks of this tick by player: the recorder calls `gameMode.useItemOn`
+    /// directly, so the two `block_update`s `handleUseItemOn` answers the packet with (the
+    /// clicked block and its neighbour on the face) are not in its client view.
+    use_echoes: Vec<(String, [vanillite_base::BlockPos; 2])>,
     /// The packet-level players (`"client": true`) by name, and whether their client
     /// reported the world loaded.
     client_players: Vec<(String, bool)>,
@@ -349,6 +353,7 @@ impl ServerWorld {
             selected_player: WorldId(0),
             captures: Vec::new(),
             clients: crate::client_view::ClientViews::with_attributes(spec.client_attributes),
+            use_echoes: Vec::new(),
             client_players: Vec::new(),
         };
         // The recorder's rules (`ScenarioRecorder.rules`).
@@ -891,14 +896,31 @@ impl ScenarioWorld for ServerWorld {
     /// (`chunk_batch_received`, like `ScenarioEntities.packets`), so chunks keep coming.
     fn client_view(&mut self) -> Result<Vec<String>, String> {
         use vanillite_protocol::Packet;
-        use vanillite_protocol::packets::play::clientbound::ChunkBatchFinished;
+        use vanillite_protocol::packets::play::clientbound::{BlockUpdate, ChunkBatchFinished};
         use vanillite_protocol::packets::play::serverbound::ChunkBatchReceived;
         use vanillite_protocol::sets::ServerboundPlay;
-        let packets: Vec<(String, Vec<Vec<u8>>)> = self
+        let mut packets: Vec<(String, Vec<Vec<u8>>)> = self
             .captures
             .iter()
             .map(|(name, capture)| (name.clone(), capture.take()))
             .collect();
+        for (name, echo) in std::mem::take(&mut self.use_echoes) {
+            let Some((_, bodies)) = packets.iter_mut().find(|(n, _)| *n == name) else {
+                continue;
+            };
+            for pos in echo {
+                let found = bodies.iter().position(|b| {
+                    let mut r = vanillite_protocol::codec::Reader::new(b);
+                    r.varint().is_ok_and(|id| id == BlockUpdate::ID)
+                        && vanillite_protocol::codec::Decode::decode(&mut r).is_ok_and(
+                            |p: BlockUpdate| (p.pos.x, p.pos.y, p.pos.z) == (pos.x, pos.y, pos.z),
+                        )
+                });
+                if let Some(i) = found {
+                    bodies.remove(i);
+                }
+            }
+        }
         for (name, bodies) in &packets {
             let finished = bodies.iter().any(|b| {
                 vanillite_protocol::codec::Reader::new(b)
@@ -922,9 +944,8 @@ impl ScenarioWorld for ServerWorld {
     }
 
     /// As the server at the origin of the overworld, before the tick.
-    fn command(&mut self, line: &str) -> Result<(), String> {
-        self.server.command_at(line, vanillite_base::Vec3::ZERO);
-        Ok(())
+    fn command(&mut self, line: &str) -> Result<Vec<String>, String> {
+        Ok(self.server.command_at(line, vanillite_base::Vec3::ZERO))
     }
 
     /// The packet a client sends for the action: `use_item` (or `interact` on `target`,
@@ -1089,6 +1110,19 @@ impl ScenarioWorld for ServerWorld {
                 sequence: 0,
             })
         };
+        if !click.attack && self.spec.client_view {
+            let off = match face {
+                0 => (0, -1, 0),
+                1 => (0, 1, 0),
+                2 => (0, 0, -1),
+                3 => (0, 0, 1),
+                4 => (-1, 0, 0),
+                _ => (1, 0, 0),
+            };
+            let p = click.pos;
+            let next = vanillite_base::BlockPos::new(p.x + off.0, p.y + off.1, p.z + off.2);
+            self.use_echoes.push((click.entity.clone(), [p, next]));
+        }
         self.send(&click.entity, packet)
     }
 

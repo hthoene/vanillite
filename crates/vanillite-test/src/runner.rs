@@ -49,7 +49,7 @@ pub fn stream(
 ) -> Result<Trace, String> {
     let mut world = factory(&scenario.world, execution);
     for op in &scenario.setup {
-        apply_in(world.as_mut(), scenario, op, false)?;
+        apply_in(world.as_mut(), scenario, op, false, &mut Vec::new())?;
     }
     world.settle_light();
     world.add_entities(&scenario.entities, scenario.entity_seed)?;
@@ -71,8 +71,9 @@ pub fn stream(
         }
         world.client_begin()?;
         let mut acted = false;
+        let mut feedback = Vec::new();
         for op in scenario.actions.iter().filter(|a| a.tick == tick) {
-            apply_in(world.as_mut(), scenario, op, true)?;
+            apply_in(world.as_mut(), scenario, op, true, &mut feedback)?;
             acted = true;
         }
         if acted {
@@ -81,6 +82,9 @@ pub fn stream(
         world.client_end()?;
         world.step();
         let mut frame = observe(world.as_mut(), scenario, &mut trace, &mut cache, tick)?;
+        if scenario.world.feedback {
+            frame.feedback = feedback;
+        }
         if frame.blocks == last {
             frame.blocks = std::sync::Arc::clone(&last);
         } else {
@@ -94,22 +98,23 @@ pub fn stream(
 }
 
 /// [`apply`] in the op's dimension (default the overworld); the region's dimension stays
-/// selected.
+/// selected. The messages of commands go to `feedback`.
 fn apply_in(
     world: &mut dyn ScenarioWorld,
     scenario: &Scenario,
     op: &crate::scenario::Op,
     action: bool,
+    feedback: &mut Vec<String>,
 ) -> Result<(), String> {
     let dimension = op
         .dimension
         .as_deref()
         .unwrap_or(crate::scenario::OVERWORLD);
     if dimension == scenario.world.dimension {
-        return apply(world, op, action);
+        return apply(world, op, action, feedback);
     }
     world.select_dimension(dimension)?;
-    let applied = apply(world, op, action);
+    let applied = apply(world, op, action, feedback);
     world.select_dimension(&scenario.world.dimension)?;
     applied
 }
@@ -118,6 +123,7 @@ fn apply(
     world: &mut dyn ScenarioWorld,
     op: &crate::scenario::Op,
     action: bool,
+    feedback: &mut Vec<String>,
 ) -> Result<(), String> {
     if let Some(hurt) = &op.hurt {
         return world.hurt(hurt);
@@ -129,7 +135,8 @@ fn apply(
         return world.use_item(use_item);
     }
     if let Some(command) = &op.command {
-        return world.command(command);
+        feedback.extend(world.command(command)?);
+        return Ok(());
     }
     if let Some(potion) = &op.throw_potion {
         return world.throw_potion(potion);
@@ -437,6 +444,11 @@ fn check_where(tier: Tier, factory: WorldFactory, skip: &[&str]) -> Vec<String> 
         .filter(|(i, _)| i % parts == part - 1)
         .map(|(_, s)| s)
         .collect();
+    // Scenarios with a data pack change the installed game data (`install_game_data`, e.g.
+    // enchantment registry ids) that every server of the process reads: they run alone,
+    // after the others.
+    let (alone, todo): (Vec<&Scenario>, Vec<&Scenario>) =
+        todo.into_iter().partition(|s| s.world.datapack.is_some());
     // Scenarios are independent: run them on all cores, report in name order.
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -462,6 +474,11 @@ fn check_where(tier: Tier, factory: WorldFactory, skip: &[&str]) -> Vec<String> 
             .flat_map(|w| w.join().unwrap_or_else(|p| std::panic::resume_unwind(p)))
             .collect()
     });
+    for (i, s) in alone.iter().enumerate() {
+        if let Err(e) = check(s, factory) {
+            results.push((todo.len().saturating_add(i), format!("{}: {e}", s.name)));
+        }
+    }
     results.sort_by_key(|r| r.0);
     results.into_iter().map(|r| r.1).collect()
 }

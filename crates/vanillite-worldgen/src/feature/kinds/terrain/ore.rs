@@ -163,7 +163,10 @@ impl FeatureType for OreFeature {
         let dir = ctx.random.next_float() * std::f32::consts::PI;
         let spread_xy = size as f32 / 8.0;
         let max_radius = ceil_f((size as f32 / 16.0 * 2.0 + 1.0) / 2.0);
-        let (sin_dir, cos_dir) = (f64::from(dir).sin(), f64::from(dir).cos());
+        let (sin_dir, cos_dir) = (
+            crate::mth::math_sin(f64::from(dir)),
+            crate::mth::math_cos(f64::from(dir)),
+        );
         let spread = f64::from(spread_xy);
         let x0 = f64::from(origin.x) + sin_dir * spread;
         let x1 = f64::from(origin.x) - sin_dir * spread;

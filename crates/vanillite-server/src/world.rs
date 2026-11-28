@@ -92,8 +92,9 @@ pub struct ServerWorld {
     /// Overload protection of the tracker.
     overload: Overload,
     viewers: Vec<Viewer>,
-    /// Chunks sent to players this tick, for the tracker.
-    chunks_sent: Vec<(EntityId, ChunkPos)>,
+    /// Players the server moved for their client this tick (`ChunkMap.move`), for the
+    /// tracker.
+    moved_viewers: Vec<EntityId>,
     pub(crate) players: WorldPlayers,
     packets: ChunkPackets,
     /// Sounds and crack progress of the player handlers.
@@ -113,6 +114,8 @@ pub struct ServerWorld {
     /// Where the moving players' views head ([`Chunks::set_focus`]); reused per tick.
     focus: Vec<ChunkPos>,
     scratch: Vec<ChunkPos>,
+    /// `performance.region-threading`: the busy tiles' measured costs (empty while it is off).
+    tile_costs: vanillite_game::level::tiles::TileCosts,
     /// Weather, lightning and the players' survival.
     pub(crate) survival: crate::survival::WorldSurvival,
     /// Mobs: their tick, the players' attacks and spawning.
@@ -249,7 +252,7 @@ impl ServerWorld {
             fan_out: FanOut::default(),
             overload: Overload::default(),
             viewers: Vec::new(),
-            chunks_sent: Vec::new(),
+            moved_viewers: Vec::new(),
             players,
             packets,
             updates: WorldUpdates::default(),
@@ -260,6 +263,7 @@ impl ServerWorld {
             effects: LevelEffects::default(),
             reported: RuleCounters::default(),
             scratch: Vec::new(),
+            tile_costs: Default::default(),
             survival,
             mobs,
             player_scratch: Vec::new(),
@@ -336,9 +340,11 @@ impl ServerWorld {
                 }
                 continue;
             }
+            // `ChunkMap.move`: the tickets stay where the player entered the world or the
+            // server took its last client move (`updatePlayerStatus`, `move`).
             let center = player.chunk_view.center;
             let old = self.player_tickets.get(&id).copied();
-            if old == Some(center) {
+            if old == Some(center) || old.is_some() && !player.connection.movement.chunk_move {
                 continue;
             }
             self.player_tickets.insert(id, center);
@@ -771,6 +777,8 @@ impl ServerWorld {
                 size: i32::from(region.tile_size),
                 min_chunks: vanillite_game::level::tiles::MIN_CHUNKS,
                 fork: &fork,
+                threads: compute.phase_threads(),
+                costs: Some(&self.tile_costs),
             });
             // `performance.threads.tick-phases`: the read-only parts of both in parallel.
             let phases = Phases {
@@ -843,7 +851,7 @@ impl ServerWorld {
         }
         self.updates.broadcast(&mut self.level, ctx.global, self.id);
         lap!(self, Chunks);
-        self.track_entities();
+        self.track_entities(ctx.compute);
         WorldPlayers::send_entity_updates(
             &self.level.entities,
             &self.entity_updates,
@@ -1163,11 +1171,10 @@ impl ServerWorld {
     }
 
     /// Runs the entity tracker over this tick's state and resets the per-tick sync state.
-    fn track_entities(&mut self) {
+    fn track_entities(&mut self, compute: &Compute) {
         self.viewers.clear();
         self.entity_updates.clear();
-        self.chunks_sent.clear();
-        let mut sent = Vec::new();
+        self.moved_viewers.clear();
         for (entity, player) in self.level.entities.players.iter_mut() {
             let view_center = player.chunk_view.center;
             self.viewers.push(Viewer {
@@ -1176,17 +1183,19 @@ impl ServerWorld {
                 view_distance: player.chunk_view.view_distance,
                 sent_radius: player.connection.chunks.sent_radius(view_center),
             });
-            player.connection.chunks.take_sent(&mut sent);
-            self.chunks_sent
-                .extend(sent.drain(..).map(|pos| (entity, pos)));
+            if std::mem::take(&mut player.connection.movement.chunk_move) {
+                self.moved_viewers.push(entity);
+            }
         }
         let entities = &self.level.entities;
         let input = TrackerInput {
             entities: &entities.store,
             viewers: &self.viewers,
             chunk_pending: &|player, chunk| WorldPlayers::chunk_pending(entities, player, chunk),
-            chunks_sent: &self.chunks_sent,
+            moved_viewers: &self.moved_viewers,
             update_scale: self.overload.scale,
+            threads: compute.phase_threads(),
+            fork: &|n, job| compute.for_each(n, job),
         };
         self.tracker.update(&input, &mut self.entity_updates);
         self.level.entities.store.clear_removed();
@@ -1198,9 +1207,17 @@ impl ServerWorld {
         self.level.chunks.release_memory();
         self.packets.release_memory();
         let entities = &mut self.level.entities;
+        entities.store.shrink_to_fit();
         entities.mobs.shrink_to_fit();
         entities.items.shrink_to_fit();
         entities.players.shrink_to_fit();
+        entities.falling_blocks.shrink_to_fit();
+        entities.arrows.shrink_to_fit();
+        entities.primed_tnts.shrink_to_fit();
+        entities.by_network_id.shrink_to_fit();
+        entities.stuck_arrows.shrink_to_fit();
+        self.tracker.release_memory();
+        self.entity_updates.release_memory();
         self.memory_released = true;
     }
 

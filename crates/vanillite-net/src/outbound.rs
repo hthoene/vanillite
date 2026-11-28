@@ -50,7 +50,7 @@ impl Out {
     fn queued(&self) -> usize {
         match self {
             Out::Body(body) | Out::Untapped(body) => body.len(),
-            Out::Shared(packet) => packet.body().len(),
+            Out::Shared(packet) => packet.len(),
             Out::Batch(frames, ..) => frames.len(),
             _ => 0,
         }
@@ -190,7 +190,7 @@ impl Outbound {
 
     /// Queues a shared packet.
     pub fn send_shared(&self, packet: &Arc<SharedPacket>) -> bool {
-        self.push(Out::Shared(Arc::clone(packet)), packet.body().len())
+        self.push(Out::Shared(Arc::clone(packet)), packet.len())
     }
 
     pub(crate) fn control(&self, msg: Out) -> bool {
@@ -236,17 +236,24 @@ impl OutReceiver {
     }
 
     /// The next message to write: at once until the first [`Outbound::flush`], then after
-    /// a flush (or [`FLUSH_FALLBACK`]). `None`: every sender is gone.
-    async fn next_write(&mut self) -> Option<Out> {
+    /// a flush (or [`FLUSH_FALLBACK`]). `None`: every sender is gone. With `idle`, returns
+    /// [`Next::Idle`] once nothing came for [`IDLE_RELEASE`] (the writer then releases its
+    /// buffers).
+    async fn next_write(&mut self, idle: bool) -> Next {
+        let mut waited = Duration::ZERO;
         loop {
             if !self.flushes.deferred.load(Ordering::Relaxed) {
-                return self.rx.recv().await;
+                return self.rx.recv().await.map_or(Next::Gone, Next::Msg);
             }
             let _ = tokio::time::timeout(FLUSH_FALLBACK, self.flushes.notify.notified()).await;
             match self.rx.try_recv() {
-                Ok(msg) => return Some(msg),
+                Ok(msg) => return Next::Msg(msg),
                 Err(mpsc::error::TryRecvError::Empty) => {}
-                Err(mpsc::error::TryRecvError::Disconnected) => return None,
+                Err(mpsc::error::TryRecvError::Disconnected) => return Next::Gone,
+            }
+            waited = waited.saturating_add(FLUSH_FALLBACK);
+            if idle && waited >= IDLE_RELEASE {
+                return Next::Idle;
             }
         }
     }
@@ -264,6 +271,17 @@ impl Drop for OutReceiver {
 
 /// Capacity of a writer's buffers kept after a write; larger ones are released.
 const IDLE_BUFFER_MAX: usize = 64 * 1024;
+/// A writer that wrote nothing for this long releases its buffers entirely.
+const IDLE_RELEASE: Duration = Duration::from_secs(1);
+
+/// What [`OutReceiver::next_write`] got.
+enum Next {
+    Msg(Out),
+    /// Every sender is gone.
+    Gone,
+    /// Nothing to write for [`IDLE_RELEASE`].
+    Idle,
+}
 
 /// A writer's side of the packet tap: listeners see a connection's packets in the order they
 /// are written, before any translation for other client versions.
@@ -448,7 +466,7 @@ impl Wire {
                     Ok(true)
                 })
                 .is_ok(),
-                None => encoder.batch(&frames, threshold, buf).is_ok(),
+                None => encoder.batch_owned(frames, threshold, buf).is_ok(),
             },
             Out::Compression(t) => {
                 encoder.set_compression(t);
@@ -488,12 +506,24 @@ pub(crate) async fn tcp_writer(
     let mut open = true;
     // A full buffer was written with messages left in the queue.
     let mut more = false;
+    // The buffers hold memory from a write since the last release.
+    let mut holds = true;
     while open {
         let first = if more {
             rx.try_recv().ok()
         } else {
-            rx.next_write().await
+            match rx.next_write(holds).await {
+                Next::Msg(msg) => Some(msg),
+                Next::Gone => None,
+                Next::Idle => {
+                    wire.buf = Vec::new();
+                    wire.encoder.trim(0);
+                    holds = false;
+                    continue;
+                }
+            }
         };
+        holds = true;
         let Some(first) = first else {
             if more {
                 more = false;
@@ -635,7 +665,7 @@ pub(crate) async fn virtual_writer(
 fn record(sent: &SentLog, ms: u64, msg: &Out) {
     match msg {
         Out::Body(body) | Out::Untapped(body) => sent.body(ms, body),
-        Out::Shared(p) => sent.body(ms, p.body()),
+        Out::Shared(p) => sent.shared(ms, p.id(), p.len()),
         Out::Batch(frames, threshold, _) => sent.frames(ms, frames, threshold.is_some()),
         _ => {}
     }

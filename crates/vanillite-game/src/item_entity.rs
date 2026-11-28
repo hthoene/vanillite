@@ -47,6 +47,9 @@ pub struct ItemData {
     pub last_movement: Option<crate::survival::inside::Movement>,
     /// `fallDistance` (not saved).
     pub fall_distance: f64,
+    /// `noPhysics`: the item was inside a block at its last tick and moves without
+    /// collisions, also when a piston pushes it (not saved).
+    pub no_physics: bool,
 }
 
 impl ItemData {
@@ -73,6 +76,7 @@ impl ItemData {
             stuck: Vec3::ZERO,
             last_movement: None,
             fall_distance: 0.0,
+            no_physics: false,
         }
     }
 
@@ -924,6 +928,7 @@ pub fn tick(
             data.next_float()
         });
     }
+    data.no_physics = no_physics;
     let horizontal = v.x * v.x + v.z * v.z;
     let skip_move = input.on_ground
         && horizontal <= f64::from(1.0e-5_f32)

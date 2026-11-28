@@ -2214,6 +2214,7 @@ dependencies = [
  "vanillite-data",
  "vanillite-nbt",
  "vanillite-storage",
+ "vanillite-world",
 ]
 
 [[package]]

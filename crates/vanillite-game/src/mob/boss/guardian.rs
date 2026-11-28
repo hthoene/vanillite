@@ -418,7 +418,7 @@ fn attack_tick(t: &mut Tick<'_, '_>, attack_time: &mut i32) {
 fn find_target(t: &mut Tick<'_, '_>) -> Option<EntityId> {
     let range = t.mob_ref().attrs.follow_range;
     let area = t.aabb().inflate(range, range, range);
-    crate::mob::common::find_nearest(t, is_prey, range, true, false, area)
+    crate::mob::common::find_nearest(t, is_prey, None, range, true, false, area)
 }
 
 /// `GuardianAttackSelector.test`.

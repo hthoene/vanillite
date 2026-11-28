@@ -329,6 +329,7 @@ impl NetState {
         language: Arc<std::collections::HashMap<String, String>>,
         tap: Arc<vanillite_protocol::tap::PacketTap>,
         io_threads: usize,
+        on_idle: Option<vanillite_net::IdleHook>,
     ) -> Result<NetState, StartError> {
         let p = &config.properties;
         let ip: std::net::IpAddr = if p.server_ip.is_empty() {
@@ -374,6 +375,7 @@ impl NetState {
                 std::collections::BTreeMap::new()
             },
             tap,
+            on_idle,
             ..NetConfig::default()
         };
         let status = StatusInfo {

@@ -19,7 +19,7 @@ const VALID: u64 = 1 << 63;
 const MS_MASK: u64 = 0x7F_FFFF;
 const SIZE_MASK: u64 = 0xFF_FFFF;
 /// Frames recorded per batch.
-const BATCH_FRAMES: usize = 32;
+const BATCH_FRAMES: usize = 8;
 /// Packet id that is unknown (compressed inside a batch) or above 254.
 const UNKNOWN_ID: u8 = 0xFF;
 
@@ -84,6 +84,11 @@ impl SentLog {
     /// Records a packet body (`id` + fields).
     pub(crate) fn body(&self, ms: u64, body: &[u8]) {
         self.record(ms, Reader::new(body).varint().ok(), body.len());
+    }
+
+    /// Records a shared packet by its id and body length.
+    pub(crate) fn shared(&self, ms: u64, id: Option<i32>, len: usize) {
+        self.record(ms, id, len);
     }
 
     /// Records the first [`BATCH_FRAMES`] frames of a batch built for `compressed` or

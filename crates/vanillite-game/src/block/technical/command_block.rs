@@ -230,6 +230,22 @@ pub struct CommandOutcome {
 pub trait CommandRunner: Send + Sync {
     /// Runs `run` on `level` (a new execution) and reports its results.
     fn run(&self, level: &mut Level, run: &CommandRun<'_>) -> CommandOutcome;
+
+    /// `ServerFunctionManager.execute` of the function `id` as the enchantment effect
+    /// `run_function` runs it: the server at game master level with suppressed output, as
+    /// `entity` at `pos` with the rotation `rot` (yaw, pitch). Returns `false` for an unknown
+    /// function.
+    fn run_function(
+        &self,
+        level: &mut Level,
+        id: &str,
+        entity: vanillite_world::entity::EntityId,
+        pos: Vec3,
+        rot: (f32, f32),
+    ) -> bool {
+        let _ = (level, id, entity, pos, rot);
+        false
+    }
 }
 
 /// The owner of a `BaseCommandBlock`.

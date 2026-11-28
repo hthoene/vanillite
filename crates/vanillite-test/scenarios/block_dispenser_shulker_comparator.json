@@ -1,0 +1,14 @@
+{
+  "description": "A dispenser places a filled shulker box next to a comparator (#289): BlockItem.updateBlockEntityComponents calls setChanged after the contents are applied, so the comparator reads the box at once (the neighbour update of the placement saw it still empty).",
+  "tier": "fast",
+  "region": [[0, -61, 0], [6, -58, 4]],
+  "ticks": 10,
+  "setup": [
+    {"op": "set", "pos": [3, -60, 2], "block": "minecraft:comparator[facing=west]"},
+    {"op": "set", "pos": [4, -60, 2], "block": "minecraft:redstone_wire"}
+  ],
+  "actions": [
+    {"tick": 1, "op": "command", "command": "setblock 1 -60 2 minecraft:dispenser[facing=east]{Items:[{Slot:0b,id:\"minecraft:shulker_box\",count:1,components:{\"minecraft:container\":[{slot:0,item:{id:\"minecraft:stone\",count:64}}]}}]}"},
+    {"tick": 3, "op": "place", "pos": [0, -60, 2], "block": "minecraft:redstone_block"}
+  ]
+}

@@ -10,6 +10,8 @@
 
 mod crowd;
 
+use std::sync::{Mutex, PoisonError};
+
 use rustc_hash::FxHashMap;
 use vanillite_base::math::{java_round, pack_degrees};
 use vanillite_base::slot_map::SlotKey;
@@ -106,6 +108,8 @@ struct ViewerState {
     view: Viewer,
     /// Centre of the square it is registered in (`nearby`).
     square: Option<ChunkPos>,
+    /// Its section at the last update (`TrackedEntity.lastSectionPos`).
+    section: Option<SectionPos>,
     /// Entity indices of the entities it sees.
     viewing: SlotSet,
     present: bool,
@@ -207,10 +211,15 @@ pub struct ChunkTracker {
     // Scratch buffers, kept for their capacity.
     moved: Vec<u32>,
     candidates: Vec<u32>,
-    near_set: SlotSet,
     added: Vec<EntityId>,
     gone: Vec<EntityId>,
     gone_slots: Vec<u32>,
+    /// Rows of the entities that changed section (or are new) this update.
+    changed: Vec<u32>,
+    /// Pairs whose visibility changes through the section changes: (row, viewer slot).
+    changes: Vec<(u32, u32)>,
+    /// What the re-checks of the moved viewers change.
+    rechecks: Vec<Recheck>,
 }
 
 impl ChunkTracker {
@@ -231,10 +240,12 @@ impl ChunkTracker {
             crowd,
             moved: Vec::new(),
             candidates: Vec::new(),
-            near_set: SlotSet::default(),
             added: Vec::new(),
             gone: Vec::new(),
             gone_slots: Vec::new(),
+            changed: Vec::new(),
+            changes: Vec::new(),
+            rechecks: Vec::new(),
         }
     }
 
@@ -282,6 +293,7 @@ impl ChunkTracker {
                         pos: Vec3::ZERO,
                         view: *viewer,
                         square: None,
+                        section: None,
                         viewing: SlotSet::default(),
                         present: false,
                         queued: self.stamp.wrapping_sub(1),
@@ -312,10 +324,16 @@ impl ChunkTracker {
             };
             state.row = u32::try_from(row).unwrap_or(u32::MAX);
             state.pos = core.pos[row];
-            let changed = state.square.is_none()
-                || sees_more(&state.view, viewer, &self.by_chunk, self.radius);
+            // `ChunkMap.tick`: a player that changed sections is checked against every entity
+            // again (so is one whose view changed); chunks sent to it alone pair nothing.
+            let section = core.section[row];
+            let recheck = state.square.is_none()
+                || state.section != Some(section)
+                || state.view.view_center != viewer.view_center
+                || state.view.view_distance != viewer.view_distance;
             state.view = *viewer;
-            if changed {
+            state.section = Some(section);
+            if recheck {
                 queue(&mut self.moved, state, slot, self.stamp);
             }
             state.present = true;
@@ -360,29 +378,6 @@ impl ChunkTracker {
     }
 }
 
-/// Whether a viewer's new view can change what it sees: another centre or distance, or a
-/// changed `sent_radius` whose rings in between hold tracked entities. Rings beyond `radius`
-/// (the largest tracking range in chunks plus a margin) hold none the viewer could see.
-fn sees_more(old: &Viewer, new: &Viewer, by_chunk: &FxHashMap<i64, Vec<u32>>, radius: i32) -> bool {
-    if old.entity != new.entity
-        || old.view_center != new.view_center
-        || old.view_distance != new.view_distance
-    {
-        return true;
-    }
-    if old.sent_radius == new.sent_radius {
-        return false;
-    }
-    let from = old.sent_radius.min(new.sent_radius).max(0);
-    let to = old.sent_radius.max(new.sent_radius).min(radius);
-    (from..=to).any(|ring| {
-        let c = new.view_center;
-        let has =
-            |x: i32, z: i32| by_chunk.contains_key(&ChunkPos::new(c.x + x, c.z + z).as_long());
-        (-ring..=ring).any(|d| has(d, -ring) || has(d, ring) || has(-ring, d) || has(ring, d))
-    })
-}
-
 /// Queues a viewer in `moved` once per update.
 #[inline]
 fn queue(moved: &mut Vec<u32>, state: &mut ViewerState, slot: u32, stamp: u32) {
@@ -420,6 +415,28 @@ fn forget(
 }
 
 impl EntityTracker for ChunkTracker {
+    fn release_memory(&mut self) {
+        while matches!(self.tracked.last(), Some(None)) {
+            self.tracked.pop();
+        }
+        self.tracked.shrink_to_fit();
+        while self.viewer_slot.last() == Some(&NONE) {
+            self.viewer_slot.pop();
+        }
+        self.viewer_slot.shrink_to_fit();
+        self.viewers.shrink_to_fit();
+        self.free_viewers.shrink_to_fit();
+        self.by_chunk.shrink_to_fit();
+        self.nearby.shrink_to_fit();
+        self.moved = Vec::new();
+        self.candidates = Vec::new();
+        self.added = Vec::new();
+        self.gone = Vec::new();
+        self.gone_slots = Vec::new();
+        self.changed = Vec::new();
+        self.changes = Vec::new();
+    }
+
     fn seen_by(&self, entity: EntityId) -> &[EntityId] {
         self.tracked
             .get(index(entity) as usize)
@@ -435,8 +452,8 @@ impl EntityTracker for ChunkTracker {
         self.moved.clear();
         self.forget_removed(store, out);
         self.sync_viewers(input);
-        // Chunks that reached a client make its entities pairable: check that viewer again.
-        for &(viewer, _) in input.chunks_sent {
+        // Viewers the server moved for their client: check them again.
+        for &viewer in input.moved_viewers {
             if let Some(slot) = viewer_of(&self.viewer_slot, &self.viewers, viewer)
                 && let Some(Some(state)) = self.viewers.get_mut(slot as usize)
             {
@@ -456,13 +473,59 @@ impl EntityTracker for ChunkTracker {
             crowd,
             moved,
             candidates,
-            near_set,
             added,
             gone,
+            changed,
+            changes,
+            rechecks,
             ..
         } = self;
         let radius = *radius;
         let stamp = *stamp;
+
+        // The visibility checks of the section changes read only the last update's pairs and
+        // this update's positions, so they run first, in parallel; the loop below applies the
+        // pairs that change in Vanilla's order.
+        changed.clear();
+        changed.extend((0..core.id.len()).filter_map(|row| {
+            let id = core.id[row];
+            let same = tracked
+                .get(index(id) as usize)
+                .and_then(Option::as_ref)
+                .is_some_and(|t| t.id == id && t.section == Some(core.section[row]));
+            (!same).then(|| u32::try_from(row).unwrap_or(u32::MAX))
+        }));
+        changes.clear();
+        {
+            let (tracked, viewers, nearby, crowd) =
+                (&*tracked, &*viewers, &*nearby, crowd.as_deref());
+            map_parts(
+                input,
+                changed.len() * viewers.len(),
+                changed,
+                changes,
+                |rows, out| {
+                    let mut near_set = SlotSet::default();
+                    let mut candidates = Vec::new();
+                    for &row in rows {
+                        section_changes(
+                            input,
+                            settings,
+                            tracked,
+                            viewers,
+                            nearby,
+                            crowd,
+                            row as usize,
+                            &mut near_set,
+                            &mut candidates,
+                            out,
+                        );
+                    }
+                },
+            );
+        }
+        let mut next_change = 0;
+
         let mut pairing = Pairing {
             input,
             settings,
@@ -518,25 +581,16 @@ impl EntityTracker for ChunkTracker {
                 }
                 entry.section = Some(section);
                 candidates.clear();
-                if let Some(list) = nearby.get(&cell_of(chunk)) {
-                    candidates.extend_from_slice(list);
+                let row32 = u32::try_from(row).unwrap_or(u32::MAX);
+                while let Some(&(r, slot)) = changes.get(next_change)
+                    && r == row32
+                {
+                    candidates.push(slot);
+                    next_change += 1;
                 }
-                // Viewers that see it but are no longer registered near its chunk.
-                let near = candidates.len();
-                for &slot in candidates.iter() {
-                    near_set.insert(slot);
+                if !candidates.is_empty() {
+                    pairing.update(entry, row, candidates, out);
                 }
-                for (index, &seen) in (0u32..).zip(&entry.seen_slots.0) {
-                    let mut bits = seen & !near_set.word(index as usize);
-                    while bits != 0 {
-                        candidates.push(index * 64 + bits.trailing_zeros());
-                        bits &= bits - 1;
-                    }
-                }
-                for &slot in &candidates[..near] {
-                    near_set.remove(slot);
-                }
-                pairing.update(entry, row, candidates, out);
                 if let Some(slot) = own_slot
                     && let Some(Some(state)) = pairing.viewers.get_mut(slot as usize)
                 {
@@ -569,40 +623,230 @@ impl EntityTracker for ChunkTracker {
             });
         }
 
-        // Viewers that moved to another section (or joined) re-check what they can see.
-        for &viewer in moved.iter() {
-            let Some(Some(state)) = pairing.viewers.get(viewer as usize) else {
-                continue;
-            };
-            let Some(square) = state.square else {
-                continue;
-            };
-            candidates.clear();
-            for_square(square, radius, |chunk| {
-                if let Some(list) = by_chunk.get(&chunk.as_long()) {
-                    candidates.extend_from_slice(list);
+        // Viewers that moved to another section (or joined) re-check what they can see: the
+        // checks in parallel (each reads its own viewer's pairs), the changes in their order.
+        rechecks.clear();
+        {
+            let (tracked, viewers, by_chunk) = (&*tracked, &*pairing.viewers, &*by_chunk);
+            let crowd = pairing.crowd.as_deref();
+            let entities = core.id.len();
+            map_parts(
+                input,
+                moved.len() * entities,
+                moved,
+                rechecks,
+                |slots, out| {
+                    let mut candidates = Vec::new();
+                    let mut distances = Vec::new();
+                    for &slot in slots {
+                        if let Some(Some(state)) = viewers.get(slot as usize) {
+                            viewer_changes(
+                                input,
+                                settings,
+                                tracked,
+                                by_chunk,
+                                crowd,
+                                radius,
+                                stamp,
+                                state,
+                                slot,
+                                &mut candidates,
+                                &mut distances,
+                                out,
+                            );
+                        }
+                    }
+                },
+            );
+        }
+        for &recheck in rechecks.iter() {
+            match recheck {
+                Recheck::Range(viewer, range_sqr) => {
+                    if let Some(crowd) = pairing.crowd.as_deref_mut() {
+                        crowd.set_range(viewer, range_sqr);
+                    }
                 }
-            });
-            candidates.extend(state.viewing.iter().filter(|&i| {
-                tracked
-                    .get(i as usize)
-                    .and_then(Option::as_ref)
-                    .and_then(|t| t.chunk)
-                    .is_none_or(|chunk| !in_square(square, radius, chunk))
-            }));
-            if let Some(crowd) = pairing.crowd.as_deref_mut() {
-                crowd.fit(viewer, state, candidates, tracked, core, stamp);
-            }
-            for &i in candidates.iter() {
-                let Some(Some(entry)) = tracked.get_mut(i as usize) else {
-                    continue;
-                };
-                if entry.stamp != stamp {
-                    continue;
+                Recheck::Pair(viewer, i) => {
+                    let Some(Some(entry)) = tracked.get_mut(i as usize) else {
+                        continue;
+                    };
+                    let row = entry.row as usize;
+                    pairing.update_one(entry, row, viewer, out);
                 }
-                let row = entry.row as usize;
-                pairing.update_one(entry, row, viewer, out);
             }
+        }
+    }
+}
+
+/// Pairs per part below which a parallel visibility check is not worth a thread.
+const PAIRS_PER_PART: usize = if cfg!(test) { 1 } else { 16 * 1024 };
+
+/// Runs `job` over contiguous parts of `items` (about `work` pair checks in all) on
+/// [`TrackerInput::fork`] and appends what the parts produced to `out` in the order of
+/// `items`; inline when the work is small or there is one thread.
+fn map_parts<T: Sync, R: Send>(
+    input: &TrackerInput<'_>,
+    work: usize,
+    items: &[T],
+    out: &mut Vec<R>,
+    job: impl Fn(&[T], &mut Vec<R>) + Sync,
+) {
+    // More parts than threads, so uneven parts balance out.
+    let parts = if input.threads > 1 {
+        (input.threads * 2)
+            .min(work / PAIRS_PER_PART)
+            .min(items.len())
+            .max(1)
+    } else {
+        1
+    };
+    if parts == 1 {
+        job(items, out);
+        return;
+    }
+    let per = items.len().div_ceil(parts);
+    let slots: Vec<Mutex<Vec<R>>> = (0..parts).map(|_| Mutex::new(Vec::new())).collect();
+    (input.fork)(parts, &|p| {
+        let part = items
+            .get(p * per..((p + 1) * per).min(items.len()))
+            .unwrap_or(&[]);
+        let mut local = Vec::new();
+        job(part, &mut local);
+        if let Some(slot) = slots.get(p) {
+            *slot.lock().unwrap_or_else(PoisonError::into_inner) = local;
+        }
+    });
+    for slot in slots {
+        out.append(&mut slot.into_inner().unwrap_or_else(PoisonError::into_inner));
+    }
+}
+
+/// The viewers whose pairing with the entity in `row` changes because it changed section
+/// (or is new): those registered near its chunk and those that see it. Appends
+/// `(row, slot)` in Vanilla's candidate order. Reads only.
+#[allow(clippy::too_many_arguments)]
+fn section_changes(
+    input: &TrackerInput<'_>,
+    settings: &TrackerSettings,
+    tracked: &[Option<Tracked>],
+    viewers: &[Option<ViewerState>],
+    nearby: &FxHashMap<i64, Vec<u32>>,
+    crowd: Option<&Crowd>,
+    row: usize,
+    near_set: &mut SlotSet,
+    candidates: &mut Vec<u32>,
+    out: &mut Vec<(u32, u32)>,
+) {
+    let core = input.entities.columns();
+    let id = core.id[row];
+    let chunk = core.section[row].chunk();
+    let seen = tracked
+        .get(index(id) as usize)
+        .and_then(Option::as_ref)
+        .filter(|t| t.id == id)
+        .map(|t| &t.seen_slots);
+    candidates.clear();
+    if let Some(list) = nearby.get(&cell_of(chunk)) {
+        candidates.extend_from_slice(list);
+    }
+    // Viewers that see it but are no longer registered near its chunk.
+    if let Some(seen) = seen {
+        let near = candidates.len();
+        for &slot in candidates.iter() {
+            near_set.insert(slot);
+        }
+        for (index, &word) in (0u32..).zip(&seen.0) {
+            let mut bits = word & !near_set.word(index as usize);
+            while bits != 0 {
+                candidates.push(index * 64 + bits.trailing_zeros());
+                bits &= bits - 1;
+            }
+        }
+        for &slot in &candidates[..near] {
+            near_set.remove(slot);
+        }
+    }
+    let target = Target::new(input, settings, row);
+    let row = u32::try_from(row).unwrap_or(u32::MAX);
+    for &slot in candidates.iter() {
+        let Some(Some(state)) = viewers.get(slot as usize) else {
+            continue;
+        };
+        if state.entity == id {
+            continue;
+        }
+        let was = seen.is_some_and(|s| s.contains(slot));
+        let visible = crowd
+            .is_none_or(|crowd| crowd.sees(slot, state.pos, target.kind, target.pos))
+            && is_visible(input, &target, state);
+        if visible != was {
+            out.push((row, slot));
+        }
+    }
+}
+
+/// What the re-check of a moved viewer changes.
+#[derive(Clone, Copy, Debug)]
+enum Recheck {
+    /// The viewer in this slot gets this squared cap radius (crowd mode).
+    Range(u32, f64),
+    /// The pair of the viewer in this slot and the entity with this index changes.
+    Pair(u32, u32),
+}
+
+/// The entities whose pairing with the viewer in `slot` changes because it moved: those in
+/// its square and those it sees. Appends the viewer's new cap radius (crowd mode), then its
+/// changing pairs in Vanilla's candidate order. Reads only.
+#[allow(clippy::too_many_arguments)]
+fn viewer_changes(
+    input: &TrackerInput<'_>,
+    settings: &TrackerSettings,
+    tracked: &[Option<Tracked>],
+    by_chunk: &FxHashMap<i64, Vec<u32>>,
+    crowd: Option<&Crowd>,
+    radius: i32,
+    stamp: u32,
+    state: &ViewerState,
+    slot: u32,
+    candidates: &mut Vec<u32>,
+    distances: &mut Vec<f64>,
+    out: &mut Vec<Recheck>,
+) {
+    let Some(square) = state.square else {
+        return;
+    };
+    candidates.clear();
+    for_square(square, radius, |chunk| {
+        if let Some(list) = by_chunk.get(&chunk.as_long()) {
+            candidates.extend_from_slice(list);
+        }
+    });
+    candidates.extend(state.viewing.iter().filter(|&i| {
+        tracked
+            .get(i as usize)
+            .and_then(Option::as_ref)
+            .and_then(|t| t.chunk)
+            .is_none_or(|chunk| !in_square(square, radius, chunk))
+    }));
+    let core = input.entities.columns();
+    let range_sqr =
+        crowd.and_then(|c| c.fit_range(state, candidates, tracked, core, stamp, distances));
+    if let Some(range_sqr) = range_sqr {
+        out.push(Recheck::Range(slot, range_sqr));
+    }
+    for &i in candidates.iter() {
+        let Some(Some(entry)) = tracked.get(i as usize) else {
+            continue;
+        };
+        if entry.stamp != stamp || state.entity == entry.id {
+            continue;
+        }
+        let target = Target::new(input, settings, entry.row as usize);
+        let visible = range_sqr
+            .is_none_or(|r| crowd::within(r, state.pos, target.kind, target.pos))
+            && is_visible(input, &target, state);
+        if visible != state.viewing.contains(i) {
+            out.push(Recheck::Pair(slot, i));
         }
     }
 }
@@ -1064,5 +1308,110 @@ fn remove_from(map: &mut FxHashMap<i64, Vec<u32>>, key: i64, id: u32) {
 fn remove_unordered<T: PartialEq>(list: &mut Vec<T>, id: T) {
     if let Some(index) = list.iter().position(|e| *e == id) {
         list.swap_remove(index);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::NewEntity;
+    use crate::tracking::{Fork, inline_fork};
+    use vanillite_config::{Profile, RuleSet, WorldRules};
+    use vanillite_data::entity::ids;
+
+    /// Runs the jobs of a fork in reverse order, as threads might finish them.
+    fn reverse_fork(n: usize, job: &(dyn Fn(usize) + Sync)) {
+        for i in (0..n).rev() {
+            job(i);
+        }
+    }
+
+    /// A small deterministic generator (no draws from any Vanilla random).
+    fn next(seed: &mut u64) -> f64 {
+        *seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        f64::from(u32::try_from(*seed >> 40).unwrap_or(0)) / f64::from(1u32 << 24)
+    }
+
+    /// Stream identity (#269): the parallel visibility checks give the same messages in the
+    /// same order as the serial ones, update after update.
+    #[test]
+    fn parallel_checks_match_serial_order() {
+        let settings =
+            TrackerSettings::new(4, 100, &WorldRules::for_profile(Profile::Vanilla).tracking);
+        let mut store = EntityStore::new();
+        let mut seed = 7u64;
+        let ids: Vec<EntityId> = (0..48u16)
+            .map(|n| {
+                let pos = Vec3::new(
+                    next(&mut seed) * 160.0 - 80.0,
+                    64.0,
+                    next(&mut seed) * 160.0 - 80.0,
+                );
+                let new =
+                    NewEntity::new(ids::PLAYER, NetworkId(i32::from(n) + 1), u128::from(n), pos);
+                store.spawn(new, |_| u32::from(n))
+            })
+            .collect();
+        let mut serial = ChunkTracker::new(settings.clone());
+        let mut parallel = ChunkTracker::new(settings);
+        for round in 0..12 {
+            for &id in &ids {
+                if next(&mut seed) < 0.5 {
+                    let pos = store.columns().pos[store.row(id).unwrap_or(0)];
+                    let step = Vec3::new(
+                        next(&mut seed) * 40.0 - 20.0,
+                        0.0,
+                        next(&mut seed) * 40.0 - 20.0,
+                    );
+                    if let Some(mut e) = store.get_mut(id) {
+                        e.set_pos(pos + step);
+                    }
+                }
+            }
+            let viewers: Vec<Viewer> = ids
+                .iter()
+                .enumerate()
+                .filter(|(n, _)| (n + round) % 5 != 0)
+                .map(|(_, &entity)| {
+                    let pos = store.columns().pos[store.row(entity).unwrap_or(0)];
+                    let view_center =
+                        ChunkPos::new((pos.x.floor() as i32) >> 4, (pos.z.floor() as i32) >> 4);
+                    Viewer {
+                        entity,
+                        view_center,
+                        view_distance: 4,
+                        sent_radius: 2,
+                    }
+                })
+                .collect();
+            let moved: Vec<EntityId> = ids.iter().copied().skip(round % 3).step_by(3).collect();
+            let pending = |player: EntityId, chunk: ChunkPos| {
+                (index(player) + chunk.x.unsigned_abs()).is_multiple_of(4)
+            };
+            let mut outputs = [TrackerOutput::default(), TrackerOutput::default()];
+            for (tracker, (threads, out)) in [&mut serial, &mut parallel]
+                .into_iter()
+                .zip([1usize, 4].into_iter().zip(outputs.iter_mut()))
+            {
+                let fork: &Fork<'_> = if threads == 1 {
+                    &inline_fork
+                } else {
+                    &reverse_fork
+                };
+                let input = TrackerInput {
+                    entities: &store,
+                    viewers: &viewers,
+                    chunk_pending: &pending,
+                    moved_viewers: &moved,
+                    update_scale: 1,
+                    threads,
+                    fork,
+                };
+                tracker.update(&input, out);
+            }
+            let [a, b] = &outputs;
+            assert!(!a.messages.is_empty(), "round {round} sends nothing");
+            assert_eq!(format!("{a:?}"), format!("{b:?}"), "round {round}");
+        }
     }
 }

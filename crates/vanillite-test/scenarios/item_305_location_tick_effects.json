@@ -1,0 +1,106 @@
+{
+  "description": "Data pack enchantments with location based and ticking world effects (#305, I4-11): Stomp boots (location_changed) turn the grass around a player's and a zombie's feet into coarse dirt or podzol (replace_disk with a weighted state provider drawn from the entity's random) and make the grass two blocks south snowy (set_block_properties) whenever the block position changes or the boots change; a Pulse helmet (tick) spawns dust particles, plays a sound with a random pitch (random_chance from the level random) and every tenth tick runs a function that sets glowstone above the player (run_function as the player at its position).",
+  "tier": "fast",
+  "dimensions": true,
+  "datapack": "enchant_effects",
+  "level_rng": true,
+  "player_state": true,
+  "rules": {
+    "spawn_monsters": "false"
+  },
+  "region": [
+    [
+      0,
+      -62,
+      0
+    ],
+    [
+      15,
+      -55,
+      15
+    ]
+  ],
+  "ticks": 44,
+  "entities": [
+    {
+      "name": "steve",
+      "type": "minecraft:player",
+      "pos": [
+        3.5,
+        -59.0,
+        3.5
+      ],
+      "rot": [
+        -90,
+        0
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace entity steve armor.feet with minecraft:diamond_boots[minecraft:enchantments={\"vanillite_test:stomp\":2}]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace entity steve armor.head with minecraft:diamond_helmet[minecraft:enchantments={\"vanillite_test:pulse\":1}]"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "summon minecraft:zombie 10.5 -60 10.5 {NoAI:1b,PersistenceRequired:1b}"
+    },
+    {
+      "tick": 1,
+      "op": "command",
+      "command": "item replace entity @e[type=minecraft:zombie,limit=1] armor.feet with minecraft:iron_boots[minecraft:enchantments={\"vanillite_test:stomp\":1}]"
+    },
+    {
+      "tick": 6,
+      "op": "command",
+      "command": "tp steve 5.5 -60 3.5"
+    },
+    {
+      "tick": 9,
+      "op": "command",
+      "command": "tp steve 7.3 -60 5.6"
+    },
+    {
+      "tick": 13,
+      "op": "command",
+      "command": "tp steve 7.8 -60 5.2"
+    },
+    {
+      "tick": 16,
+      "op": "command",
+      "command": "tp @e[type=minecraft:zombie] 12.5 -60 10.5"
+    },
+    {
+      "tick": 21,
+      "op": "command",
+      "command": "tp @e[type=minecraft:zombie] 12.5 -60 7.5"
+    },
+    {
+      "tick": 25,
+      "op": "command",
+      "command": "item replace entity steve armor.feet with minecraft:diamond_boots[minecraft:enchantments={\"vanillite_test:stomp\":1},minecraft:damage=5]"
+    },
+    {
+      "tick": 30,
+      "op": "command",
+      "command": "tp steve 3.5 -60 11.5"
+    },
+    {
+      "tick": 36,
+      "op": "command",
+      "command": "item replace entity steve armor.head with minecraft:air"
+    },
+    {
+      "tick": 38,
+      "op": "command",
+      "command": "tp steve 5.5 -60 11.5"
+    }
+  ]
+}

@@ -230,8 +230,15 @@ pub fn can_use(t: &mut Tick<'_, '_>, g: &mut Goal) -> bool {
             let range = t.mob_ref().attrs.follow_range * 0.5;
             let area = t.aabb().inflate(range, range, range);
             let players: TargetFilter = crate::mob::common::any_player;
-            *found =
-                crate::mob::common::find_nearest(t, players, range, state.must_see, true, area);
+            *found = crate::mob::common::find_nearest(
+                t,
+                players,
+                None,
+                range,
+                state.must_see,
+                true,
+                area,
+            );
             if found.is_none() {
                 return false;
             }

@@ -72,6 +72,10 @@ pub fn tick(t: &mut Tick<'_, '_>) {
     }
     // `detectEquipmentUpdates`.
     super::fam::undead::cubes::detect_equipment(t);
+    crate::enchant::location::mob_equipment_changes(t);
+    if !t.exists() {
+        return;
+    }
     ai_step(t);
     if t.mob_ref().removed || !t.exists() {
         return;
@@ -126,6 +130,11 @@ fn update_control_flags(t: &mut Tick<'_, '_>) {
 
 /// `Entity.baseTick` + `LivingEntity.baseTick` + `Mob.baseTick`.
 fn base_tick(t: &mut Tick<'_, '_>) {
+    // `LivingEntity.baseTick` starts with `EnchantmentHelper.tickEffects`.
+    crate::enchant::location::mob_tick_effects(t);
+    if !t.exists() {
+        return;
+    }
     {
         let m = t.mob();
         m.was_in_powder_snow = m.in_powder_snow;
@@ -217,7 +226,13 @@ fn base_tick(t: &mut Tick<'_, '_>) {
             return;
         }
         let p = t.block_pos();
-        t.mob().last_pos = p;
+        if std::mem::replace(&mut t.mob().last_pos, p) != p {
+            // `onChangedBlock`.
+            crate::enchant::location::mob_changed_block(t);
+            if !t.exists() {
+                return;
+            }
+        }
     }
     {
         let m = t.mob();
@@ -2032,6 +2047,11 @@ fn check_fall_damage(
     if on_ground {
         let distance = t.mob_ref().fall_distance;
         if distance > 0.0 {
+            // `onChangedBlock` of a landing.
+            crate::enchant::location::mob_changed_block(t);
+            if !t.exists() {
+                return;
+            }
             fall_particles(t, distance, on_state, on_pos);
         }
     }
@@ -2564,8 +2584,8 @@ fn can_freeze(m: &super::MobData) -> bool {
 fn tick_freezing(t: &mut Tick<'_, '_>) {
     use crate::effect::Operation;
     use crate::effect::attribute::Attribute;
-    let freezes = can_freeze(t.mob_ref());
-    if !t.mob_ref().in_powder_snow || !freezes {
+    // `canFreeze` is pure: only asked where its answer matters (it reads all armour slots).
+    if !t.mob_ref().in_powder_snow || !can_freeze(t.mob_ref()) {
         let m = t.mob();
         let before = m.ticks_frozen;
         m.ticks_frozen = (m.ticks_frozen - 2).max(0);
@@ -2595,7 +2615,7 @@ fn tick_freezing(t: &mut Tick<'_, '_>) {
         let id = t.id;
         crate::effect::living::sync_mob(t.ents, t.env.out, id);
     }
-    if t.mob_ref().tick_count % 40 == 0 && frozen >= TICKS_TO_FREEZE && freezes {
+    if t.mob_ref().tick_count % 40 == 0 && frozen >= TICKS_TO_FREEZE && can_freeze(t.mob_ref()) {
         // `freeze` damage, five times for `#freeze_hurts_extra_types`.
         let amount = if matches!(
             t.mob_ref().kind,

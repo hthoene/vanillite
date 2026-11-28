@@ -31,6 +31,10 @@ pub trait EntityTracker: Send {
         let _ = entity;
         &[]
     }
+
+    /// Gives back what the tracker keeps for its capacity (the world has been empty for a
+    /// while); the next update must work as before.
+    fn release_memory(&mut self) {}
 }
 
 /// Creates the tracker of each world.
@@ -178,6 +182,17 @@ impl Viewer {
     }
 }
 
+/// Runs `job(0)`, …, `job(n - 1)`, on several threads if it likes, and returns when all are
+/// done. The server passes its compute pool; tests run inline.
+pub type Fork<'a> = dyn Fn(usize, &(dyn Fn(usize) + Sync)) + Sync + 'a;
+
+/// A [`Fork`] that runs the jobs one after another on the calling thread.
+pub fn inline_fork(n: usize, job: &(dyn Fn(usize) + Sync)) {
+    for i in 0..n {
+        job(i);
+    }
+}
+
 /// What a tracker update reads.
 pub struct TrackerInput<'a> {
     /// The world's entities.
@@ -186,13 +201,19 @@ pub struct TrackerInput<'a> {
     pub viewers: &'a [Viewer],
     /// Whether a chunk inside a viewer's view has not been sent to that viewer yet
     /// (Vanilla's `chunkSender.isPending`); entities there stay invisible.
-    pub chunk_pending: &'a dyn Fn(EntityId, ChunkPos) -> bool,
-    /// Chunks sent to viewers since the last update (Vanilla's `playerLoadedChunk`): entities
-    /// there may have become visible to that viewer.
-    pub chunks_sent: &'a [(EntityId, ChunkPos)],
+    pub chunk_pending: &'a (dyn Fn(EntityId, ChunkPos) -> bool + Sync),
+    /// Viewers whose client moves the server took since the last update (`ChunkMap.move`):
+    /// every entity is checked against them again (`updatePlayer`), so entities in chunks
+    /// sent since become visible. Only then: Vanilla pairs nothing when a chunk is sent.
+    pub moved_viewers: &'a [EntityId],
     /// Factor on every entity type's movement update interval (1 = Vanilla). Larger under
     /// overload (`performance.entity-tracking.overload-tick-millis`).
     pub update_scale: i32,
+    /// Threads the read-only visibility checks may use, the calling one included
+    /// (`performance.threads.tick-phases`; 1 = inline). The result does not depend on it.
+    pub threads: usize,
+    /// Where those checks run.
+    pub fork: &'a Fork<'a>,
 }
 
 impl fmt::Debug for TrackerInput<'_> {
@@ -323,6 +344,12 @@ pub struct TrackerOutput {
 }
 
 impl TrackerOutput {
+    /// Empties the output and gives back its capacity.
+    pub fn release_memory(&mut self) {
+        self.messages = Vec::new();
+        self.viewers = Vec::new();
+    }
+
     /// Empties the output, keeping its capacity.
     pub fn clear(&mut self) {
         self.messages.clear();

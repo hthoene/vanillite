@@ -265,7 +265,7 @@ impl Target {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Requirement {
     Entity(Target, EntityPredicate),
-    DamageSource(DamageSourcePredicate),
+    DamageSource(Box<DamageSourcePredicate>),
     AllOf(Vec<Requirement>),
     AnyOf(Vec<Requirement>),
     Inverted(Box<Requirement>),
@@ -283,12 +283,52 @@ pub enum Requirement {
         blocks: Option<String>,
         can_see_sky: Option<bool>,
     },
+    /// `enchantment_active_check` (location based effects only).
+    EnchantmentActive(bool),
+    /// `match_block` on the hit block (`hit_block` only): the block holder set entries (any
+    /// block without) and the property values (an exact value or integer bounds).
+    MatchBlock(Option<Vec<String>>, Vec<(String, PropertyMatch)>),
+    /// A predicate of the data packs by id (a `Holder<LootItemCondition>` reference), read
+    /// when tested.
+    Reference(String),
     /// Never holds.
     Unsupported,
 }
 
+/// A value matcher of `StatePropertiesPredicate`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PropertyMatch {
+    Exact(String),
+    /// `{min, max}` of an integer property (or a string compared as text).
+    Range(Option<String>, Option<String>),
+}
+
+impl PropertyMatch {
+    fn matches(&self, value: &str) -> bool {
+        match self {
+            PropertyMatch::Exact(v) => v == value,
+            PropertyMatch::Range(min, max) => {
+                let Ok(v) = value.parse::<i64>() else {
+                    return false;
+                };
+                let bound = |b: &Option<String>| b.as_ref().map(|b| b.parse::<i64>());
+                match (bound(min), bound(max)) {
+                    (Some(Err(_)), _) | (_, Some(Err(_))) => false,
+                    (lo, hi) => {
+                        lo.is_none_or(|l| l.is_ok_and(|l| l <= v))
+                            && hi.is_none_or(|h| h.is_ok_and(|h| v <= h))
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl Requirement {
     fn parse(v: &Value) -> Requirement {
+        if let Some(id) = v.as_str() {
+            return Requirement::Reference(super::world::qualify(id));
+        }
         let Some(o) = v.as_object() else {
             return Requirement::Unsupported;
         };
@@ -316,8 +356,8 @@ impl Requirement {
                     None => Requirement::Unsupported,
                 }
             }
-            "damage_source_properties" => Requirement::DamageSource(DamageSourcePredicate::parse(
-                o.get("predicate").unwrap_or(&Value::Null),
+            "damage_source_properties" => Requirement::DamageSource(Box::new(
+                DamageSourcePredicate::parse(o.get("predicate").unwrap_or(&Value::Null)),
             )),
             "all_of" => list("terms").map_or(Requirement::Unsupported, Requirement::AllOf),
             "any_of" => list("terms").map_or(Requirement::Unsupported, Requirement::AnyOf),
@@ -370,6 +410,46 @@ impl Requirement {
                     Requirement::Unsupported
                 }
             }
+            "enchantment_active_check" => o
+                .get("active")
+                .and_then(Value::as_bool)
+                .map_or(Requirement::Unsupported, Requirement::EnchantmentActive),
+            "match_block" => {
+                let known = o
+                    .keys()
+                    .all(|k| matches!(k.as_str(), "type" | "blocks" | "state"));
+                let blocks = match o.get("blocks") {
+                    None => Some(None),
+                    Some(b) => super::world::holder_entries(b).map(Some),
+                };
+                let properties = match o.get("state") {
+                    None => Some(Vec::new()),
+                    Some(Value::Object(p)) => p
+                        .iter()
+                        .map(|(k, v)| {
+                            let text = |v: &Value| match v {
+                                Value::String(s) => Some(s.clone()),
+                                Value::Number(n) => Some(n.to_string()),
+                                Value::Bool(b) => Some(b.to_string()),
+                                _ => None,
+                            };
+                            let m = match v {
+                                Value::Object(r) => PropertyMatch::Range(
+                                    r.get("min").and_then(text),
+                                    r.get("max").and_then(text),
+                                ),
+                                other => PropertyMatch::Exact(text(other)?),
+                            };
+                            Some((k.clone(), m))
+                        })
+                        .collect(),
+                    Some(_) => None,
+                };
+                match (known, blocks, properties) {
+                    (true, Some(b), Some(p)) => Requirement::MatchBlock(b, p),
+                    _ => Requirement::Unsupported,
+                }
+            }
             "match_tool" => {
                 let predicate = o.get("predicate").and_then(Value::as_object);
                 let items = predicate
@@ -390,7 +470,12 @@ impl Requirement {
         }
     }
 
-    fn test(&self, cx: &EnchantContext<'_>, level: i32, random: &mut dyn FloatRandom) -> bool {
+    pub(crate) fn test(
+        &self,
+        cx: &EnchantContext<'_>,
+        level: i32,
+        random: &mut dyn FloatRandom,
+    ) -> bool {
         match self {
             Requirement::Entity(target, p) => {
                 let e = match target {
@@ -427,8 +512,44 @@ impl Requirement {
                         None => block.block().name() == b,
                     })
             }),
+            Requirement::EnchantmentActive(active) => cx.enchantment_active == Some(*active),
+            Requirement::MatchBlock(blocks, properties) => cx.block_state.is_some_and(|s| {
+                blocks.as_ref().is_none_or(|entries| {
+                    crate::player::play::game_data().is_some_and(|d| {
+                        entries.iter().any(|e| {
+                            d.holder_set("minecraft:block", e)
+                                .contains(&u32::from(s.block().0))
+                        })
+                    })
+                }) && properties
+                    .iter()
+                    .all(|(k, m)| s.value(k).is_some_and(|v| m.matches(v)))
+            }),
+            Requirement::Reference(id) => {
+                Self::referenced(id).is_some_and(|r| r.test(cx, level, random))
+            }
             Requirement::MatchTool(_) | Requirement::Unsupported => false,
         }
+    }
+
+    /// The requirement of a data pack predicate (a list is `all_of`); `None` for an unknown
+    /// one or one nested too deep (a cycle).
+    fn referenced(id: &str) -> Option<Requirement> {
+        thread_local! {
+            static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        }
+        if DEPTH.get() >= 64 {
+            return None;
+        }
+        let data = crate::player::play::game_data()?;
+        let json = data.loot.predicate_json(id)?;
+        DEPTH.set(DEPTH.get().saturating_add(1));
+        let r = match json {
+            Value::Array(list) => Requirement::AllOf(list.iter().map(Requirement::parse).collect()),
+            v => Requirement::parse(v),
+        };
+        DEPTH.set(DEPTH.get().saturating_sub(1));
+        Some(r)
     }
 
     /// The test in an item context (`Enchantment.itemContext`: only the tool is known).
@@ -451,10 +572,15 @@ impl Requirement {
             Requirement::AnyOf(l) => l.iter().any(|r| r.test_item(tool, level, random)),
             Requirement::Inverted(r) => !r.test_item(tool, level, random),
             Requirement::RandomChance(c) => random.next_float() < c.calculate(level),
+            Requirement::Reference(id) => {
+                Self::referenced(id).is_some_and(|r| r.test_item(tool, level, random))
+            }
             Requirement::Entity(..)
             | Requirement::DamageSource(_)
             | Requirement::WeatherCheck { .. }
             | Requirement::LocationCheck { .. }
+            | Requirement::EnchantmentActive(_)
+            | Requirement::MatchBlock(..)
             | Requirement::Unsupported => false,
         }
     }
@@ -497,14 +623,21 @@ pub enum EntityEffect {
         knockback: LevelBased,
         sound: String,
     },
-    /// `summon_entity` of a lightning bolt (Channeling).
-    SummonLightning,
-    /// `play_sound`: the sound of the enchantment level (the last one beyond the list).
+    /// `play_sound`: the sound of the enchantment level (the last one beyond the list), its
+    /// volume and pitch drawn from the entity's random.
     PlaySound {
         sounds: Vec<String>,
-        volume: f32,
-        pitch: f32,
+        volume: super::world::FloatProvider,
+        pitch: super::world::FloatProvider,
     },
+    /// `spawn_particles`.
+    SpawnParticles(Box<super::world::ParticleSpawn>),
+    /// The effects that change the world (`replace_block`, `replace_disk`,
+    /// `set_block_properties`, `run_function`, `summon_entity`, `explode`), run once the
+    /// level is at hand ([`super::world::EnchantAction`]).
+    World(Box<super::world::WorldEffect>),
+    /// `attribute` (location based effects only): a modifier while the effect is active.
+    Attribute(Box<LocationAttribute>),
     /// `apply_exhaustion`: a player's food exhaustion grows.
     ApplyExhaustion(LevelBased),
     /// `apply_impulse`: a push along `direction` turned by the entity's look, scaled per
@@ -515,8 +648,18 @@ pub enum EntityEffect {
         magnitude: LevelBased,
     },
     AllOf(Vec<EntityEffect>),
-    /// Effects of systems that do not exist yet (explosions, sounds, summons).
+    /// Definitions that are not understood (unknown types, unsupported parts).
     Unsupported,
+}
+
+/// `EnchantmentAttributeEffect`: the modifier `id/<slot>` of an attribute.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LocationAttribute {
+    pub id: String,
+    pub attribute: &'static str,
+    pub amount: LevelBased,
+    /// `AttributeModifier.Operation` ordinal.
+    pub operation: u8,
 }
 
 impl EntityEffect {
@@ -590,6 +733,17 @@ impl EntityEffect {
                     .get("block_interaction")
                     .and_then(Value::as_str)
                     .is_some_and(|b| b == "trigger");
+                // The look of a wind charge burst (gusts, no block particles).
+                let wind_look = o.get("small_particle").and_then(|p| p.get("type"))
+                    == Some(&Value::from("minecraft:gust_emitter_small"))
+                    && o.get("large_particle").and_then(|p| p.get("type"))
+                        == Some(&Value::from("minecraft:gust_emitter_large"))
+                    && o.get("block_particles")
+                        .is_none_or(|b| b.as_array().is_some_and(Vec::is_empty))
+                    && o.get("offset").is_none()
+                    && o.get("immune_blocks").is_none_or(|b| {
+                        b.as_str() == Some("#minecraft:blocks_wind_charge_explosions")
+                    });
                 let harmless = o.get("attribute_to_user").is_none()
                     && o.get("damage_type").is_none()
                     && o.get("create_fire").is_none_or(|f| f == false);
@@ -598,38 +752,23 @@ impl EntityEffect {
                     o.get("knockback_multiplier").and_then(LevelBased::parse),
                     o.get("sound").and_then(Value::as_str),
                 ) {
-                    (Some(radius), Some(knockback), Some(sound)) if trigger && harmless => {
+                    (Some(radius), Some(knockback), Some(sound))
+                        if trigger && harmless && wind_look =>
+                    {
                         EntityEffect::WindBurst {
                             radius: radius.calculate(1),
                             knockback,
                             sound: sound.to_owned(),
                         }
                     }
-                    _ => EntityEffect::Unsupported,
-                }
-            }
-            "summon_entity" => {
-                let lightning = match o.get("entity") {
-                    Some(Value::String(e)) => e == "minecraft:lightning_bolt",
-                    Some(Value::Array(a)) => {
-                        a.len() == 1 && a[0].as_str() == Some("minecraft:lightning_bolt")
-                    }
-                    _ => false,
-                };
-                if lightning && o.get("join_team").is_none_or(|j| j == false) {
-                    EntityEffect::SummonLightning
-                } else {
-                    EntityEffect::Unsupported
+                    _ => super::world::WorldEffect::parse("explode", o)
+                        .map_or(EntityEffect::Unsupported, |w| {
+                            EntityEffect::World(Box::new(w))
+                        }),
                 }
             }
             "play_sound" => {
-                let f = |k: &str| {
-                    o.get(k).and_then(Value::as_f64).map(|v| {
-                        #[allow(clippy::cast_possible_truncation)]
-                        let v = v as f32;
-                        v
-                    })
-                };
+                let f = |k: &str| o.get(k).map(super::world::FloatProvider::parse);
                 let sounds: Vec<String> = match o.get("sound") {
                     Some(Value::String(s)) => vec![s.clone()],
                     Some(Value::Array(a)) => a
@@ -639,14 +778,17 @@ impl EntityEffect {
                         .collect(),
                     _ => Vec::new(),
                 };
-                if sounds.is_empty() {
-                    EntityEffect::Unsupported
-                } else {
-                    EntityEffect::PlaySound {
+                let one = super::world::FloatProvider::Constant(1.0);
+                match (
+                    f("volume").unwrap_or(Some(one.clone())),
+                    f("pitch").unwrap_or(Some(one)),
+                ) {
+                    (Some(volume), Some(pitch)) if !sounds.is_empty() => EntityEffect::PlaySound {
                         sounds,
-                        volume: f("volume").unwrap_or(1.0),
-                        pitch: f("pitch").unwrap_or(1.0),
-                    }
+                        volume,
+                        pitch,
+                    },
+                    _ => EntityEffect::Unsupported,
                 }
             }
             "apply_exhaustion" => o
@@ -682,7 +824,44 @@ impl EntityEffect {
                     .map(|a| a.iter().map(EntityEffect::parse).collect())
                     .unwrap_or_default(),
             ),
-            _ => EntityEffect::Unsupported,
+            "spawn_particles" => super::world::ParticleSpawn::parse(o)
+                .map_or(EntityEffect::Unsupported, |p| {
+                    EntityEffect::SpawnParticles(Box::new(p))
+                }),
+            "attribute" => {
+                let attribute = o.get("attribute").and_then(Value::as_str).and_then(|name| {
+                    vanillite_data::entity::ATTRIBUTES
+                        .iter()
+                        .find(|a| a.name == super::world::qualify(name))
+                        .map(|a| a.name)
+                });
+                let operation = o.get("operation").and_then(Value::as_str).and_then(|op| {
+                    ["add_value", "add_multiplied_base", "add_multiplied_total"]
+                        .iter()
+                        .position(|x| *x == op)
+                        .and_then(|i| u8::try_from(i).ok())
+                });
+                match (
+                    o.get("id").and_then(Value::as_str),
+                    attribute,
+                    o.get("amount").and_then(LevelBased::parse),
+                    operation,
+                ) {
+                    (Some(id), Some(attribute), Some(amount), Some(operation)) => {
+                        EntityEffect::Attribute(Box::new(LocationAttribute {
+                            id: super::world::qualify(id),
+                            attribute,
+                            amount,
+                            operation,
+                        }))
+                    }
+                    _ => EntityEffect::Unsupported,
+                }
+            }
+            kind => super::world::WorldEffect::parse(kind, o)
+                .map_or(EntityEffect::Unsupported, |w| {
+                    EntityEffect::World(Box::new(w))
+                }),
         }
     }
 
@@ -812,6 +991,10 @@ pub struct Enchantment {
     pub prevent_armor_change: bool,
     /// `minecraft:prevent_equipment_drop` (Curse of Vanishing).
     pub prevent_equipment_drop: bool,
+    /// `minecraft:tick` (Soul Speed's particles and sound).
+    pub tick: Vec<Conditional<EntityEffect>>,
+    /// `minecraft:location_changed` (Frost Walker, Soul Speed).
+    pub location_changed: Vec<Conditional<EntityEffect>>,
 }
 
 /// `EquipmentSlotGroup` names in ordinal order.
@@ -949,6 +1132,10 @@ impl Enchantment {
             mob_experience: values("minecraft:mob_experience"),
             prevent_armor_change: get("minecraft:prevent_armor_change").is_some(),
             prevent_equipment_drop: get("minecraft:prevent_equipment_drop").is_some(),
+            tick: conditionals(get("minecraft:tick"), |e| Some(EntityEffect::parse(e))),
+            location_changed: conditionals(get("minecraft:location_changed"), |e| {
+                Some(EntityEffect::parse(e))
+            }),
         }
     }
 
@@ -973,6 +1160,10 @@ pub struct EnchantContext<'a> {
     pub thundering: bool,
     /// `location_check`: the block at the origin and whether it sees the sky.
     pub location: Option<(vanillite_data::block::BlockState, bool)>,
+    /// `enchantment_active` of the location based effects.
+    pub enchantment_active: Option<bool>,
+    /// `block_state`: the hit block of `hit_block`.
+    pub block_state: Option<vanillite_data::block::BlockState>,
 }
 
 impl std::fmt::Debug for EnchantContext<'_> {
@@ -1434,6 +1625,37 @@ impl Enchantments {
         out
     }
 
+    /// `Enchantment.onProjectileSpawned` of every enchantment of `weapon`: the
+    /// `projectile_spawned` effects whose requirements hold (the projectile is `this`), with
+    /// their level.
+    pub fn projectile_spawned_effects(
+        &self,
+        weapon: &ItemStack,
+        cx: &EnchantContext<'_>,
+        random: &mut dyn FloatRandom,
+    ) -> Vec<(EntityEffect, i32)> {
+        let mut out = Vec::new();
+        for (e, level) in self.of(weapon) {
+            for c in &e.projectile_spawned {
+                if c.requirements
+                    .as_ref()
+                    .is_none_or(|r| r.test(cx, level, random))
+                {
+                    out.push((c.effect.clone(), level));
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether any enchantment of `stack` has `tick` or `location_changed` effects.
+    pub fn has_location_effects(&self, stack: &ItemStack) -> bool {
+        !stack.is_empty()
+            && self
+                .of(stack)
+                .any(|(e, _)| !e.tick.is_empty() || !e.location_changed.is_empty())
+    }
+
     /// The seconds `onProjectileSpawned` sets a shot projectile on fire for (Flame).
     pub fn projectile_ignite(&self, weapon: &ItemStack) -> Option<f32> {
         self.of(weapon)
@@ -1515,6 +1737,8 @@ mod tests {
             raining: false,
             thundering: false,
             location: None,
+            enchantment_active: None,
+            block_state: None,
         };
         let mut r = vanillite_base::random::LegacyRandom::new(1);
         let c = &e.damage[0];
@@ -1532,6 +1756,39 @@ mod value_tests {
     use super::*;
 
     /// `ScaleExponentially.process`: 10 · 2^3 = 80 (I4-11 of #272).
+    #[test]
+    fn world_effects_parse() {
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../vanillite-test/datapacks/enchant_effects/data/vanillite_test/enchantment/"
+        );
+        for name in ["blast", "stomp", "pulse", "shatter"] {
+            let text = std::fs::read_to_string(format!("{dir}{name}.json")).unwrap_or_default();
+            let json: Value = serde_json::from_str(&text).unwrap_or_default();
+            let e = Enchantment::parse(name, &json);
+            let effects: Vec<&EntityEffect> = e
+                .post_attack
+                .iter()
+                .map(|p| &p.effect)
+                .chain(e.tick.iter().map(|c| &c.effect))
+                .chain(e.location_changed.iter().map(|c| &c.effect))
+                .chain(e.hit_block.iter().map(|c| &c.effect))
+                .collect();
+            assert!(!effects.is_empty(), "{name}");
+            fn unsupported(e: &EntityEffect) -> bool {
+                match e {
+                    EntityEffect::AllOf(l) => l.iter().any(unsupported),
+                    EntityEffect::Unsupported => true,
+                    _ => false,
+                }
+            }
+            assert!(
+                !effects.iter().any(|e| unsupported(e)),
+                "{name}: {effects:?}"
+            );
+        }
+    }
+
     #[test]
     fn exponential_value_effect() {
         let e = serde_json::json!({"type": "minecraft:exponential", "base": 2.0, "exponent": 3.0});

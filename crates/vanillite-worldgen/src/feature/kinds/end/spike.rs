@@ -59,8 +59,8 @@ pub fn spikes_for_seed(seed: i64) -> [EndSpike; NUMBER_OF_SPIKES] {
         let angle = 2.0 * (-std::f64::consts::PI + (std::f64::consts::PI / 10.0) * i as f64);
         let size = sizes[i];
         EndSpike {
-            center_x: (SPIKE_DISTANCE * angle.cos()).floor() as i32,
-            center_z: (SPIKE_DISTANCE * angle.sin()).floor() as i32,
+            center_x: (SPIKE_DISTANCE * crate::mth::math_cos(angle)).floor() as i32,
+            center_z: (SPIKE_DISTANCE * crate::mth::math_sin(angle)).floor() as i32,
             radius: 2 + size / 3,
             height: 76 + size * 3,
             guarded: size == 1 || size == 2,

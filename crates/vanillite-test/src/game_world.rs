@@ -1049,6 +1049,14 @@ impl GameWorld {
                 hurt.aim(ents);
                 let mut source = match (hurt.source, hurt.indirect) {
                     _ if hurt.bad_respawn_point => DamageSource::of(env.types.bad_respawn_point),
+                    // An enchantment's `explode` with a damage type: from the user or the centre.
+                    _ if hurt.damage.is_some() => {
+                        let (kind, by_user) = hurt.damage.unwrap_or((env.types.explosion, false));
+                        match hurt.source.filter(|_| by_user) {
+                            Some(user) => combat::entity_source(ents, kind, user, user),
+                            None => DamageSource::of(kind),
+                        }
+                    }
                     (Some(direct), Some(cause)) => {
                         combat::entity_source(ents, env.types.player_explosion, cause, direct)
                     }
@@ -1624,6 +1632,8 @@ fn goal_name(kind: Kind, goal: &Goal) -> &'static str {
         Goal::LookAtPlayer { .. } => "LookAtPlayerGoal",
         Goal::RandomLook { .. } => "RandomLookAroundGoal",
         Goal::Melee { .. } if kind == Kind::Bee => "BeeAttackGoal",
+        Goal::Melee { .. } if kind == Kind::Panda => "PandaAttackGoal",
+        Goal::Melee { .. } if kind == Kind::Fox => "FoxMeleeAttackGoal",
         Goal::Melee { kind, .. } => match kind {
             MeleeKind::Plain => "MeleeAttackGoal",
             MeleeKind::Zombie => "ZombieAttackGoal",
@@ -2385,17 +2395,17 @@ impl ScenarioWorld for GameWorld {
         Ok(())
     }
 
-    fn command(&mut self, line: &str) -> Result<(), String> {
+    fn command(&mut self, line: &str) -> Result<Vec<String>, String> {
         // Command blocks run on the same server's dispatcher.
         if self.level.command_runner().is_none() {
             vanillite_server::install_command_runner(command_server(), &mut self.level);
         }
-        self.with_board(|w| {
+        let feedback = self.with_board(|w| {
             vanillite_server::run_command_on_level(command_server(), &mut w.level, Vec3::ZERO, line)
         })?;
         self.finish_removals();
         self.spawn_drops();
-        Ok(())
+        Ok(feedback)
     }
 
     fn use_item(&mut self, op: &crate::scenario::UseItemOp) -> Result<(), String> {
