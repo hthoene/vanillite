@@ -5,7 +5,7 @@
 <h1 align="center">Vanillite</h1>
 
 <p align="center">
-  <b>A Minecraft: Java Edition server written in Rust that plays exactly like Vanilla.</b>
+  <b>A Minecraft: Java Edition server written in Rust that aims to play exactly like Vanilla.</b>
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/Minecraft-26.3-62b47a" alt="Minecraft 26.3">
 </p>
 
-Vanillite is a Minecraft Java Edition server that behaves 1:1 like Vanilla in game (the same
+Vanillite is a Minecraft Java Edition server that aims to behave 1:1 like Vanilla in game (the same
 mob AI, redstone, world generation and tick order, checked tick by tick against Mojang's
 server) while being fast, multithreaded and light on memory. It is a single native binary
 without Java, modular down to its storage and world generator, and extensible with native
@@ -29,13 +29,13 @@ through the built-in Bedrock frontend.
 
 ## Highlights
 
-- **Vanilla in game.** World generation, block behaviour, redstone, fluids, light, mobs and
-  their path finding follow Vanilla's code paths, random calls and tick order. Parity tests
+- **Goal: Vanilla in game.** World generation, block behaviour, redstone, fluids, light, mobs and
+  their path finding are built to follow Vanilla's code paths, random calls and tick order. Parity tests
   run scenarios in Mojang's server and in Vanillite and compare every tick.
 - **Fast and lean.** Dimensions can tick in parallel, world generation, light and saving run
   on a shared worker pool, chunks are encoded once and sent to every viewer. Runs on a single
   core and respects container CPU and memory limits.
-- **Profiles instead of forks.** One switch between exact Vanilla (`vanilla`, the default),
+- **Profiles instead of forks.** One switch between the Vanilla profile (`vanilla`, the default),
   `technical`, `paper`, `spigot` and `performance`; every deviation from Vanilla is a single,
   documented rule.
 - **Own world format.** New worlds are stored in a compact, crash-safe format; existing Anvil
@@ -190,7 +190,7 @@ it. See [docs/plugins.md](docs/plugins.md#paper-and-spigot-plugins).
 
 | Profile | |
 |---|---|
-| `vanilla` | Exactly like Vanilla, tick for tick (the default). Deviates only to close security holes. |
+| `vanilla` | Aims to be exactly like Vanilla, tick for tick (the default). Deviates only to close security holes. |
 | `technical` | Vanilla plus what technical players need. |
 | `paper` | Paper's defaults (exploit fixes, parallel dimensions). |
 | `spigot` | Spigot's defaults, including Spigot's world folder layout. |
