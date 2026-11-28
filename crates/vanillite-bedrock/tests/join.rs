@@ -140,18 +140,39 @@ fn joins_walks_and_meets_java_players(version: &'static Version) {
             .await
             .unwrap();
 
-        // The Java player is shown as a Bedrock player.
+        // The Java player is shown as a Bedrock player. Like a real client, it sends its input
+        // every tick meanwhile: the server pairs entities in chunks sent since with it only at
+        // a move it takes (`ChunkMap.move`), not when the chunk is sent.
+        let mut tick = 0u64;
+        let deadline = Instant::now() + TIMEOUT;
         while alice.is_none() {
-            let (pid, body) = bedrock.next(TIMEOUT).await.expect("Alice");
-            if pid == id::ADD_PLAYER {
-                alice = client::read_add_player(&body);
+            assert!(Instant::now() < deadline, "Alice: timed out");
+            let input = AuthInput {
+                pitch: 0.0,
+                yaw: -90.0,
+                position: spawn,
+                head_yaw: -90.0,
+                move_vector: [0.0; 2],
+                flags: 1 << input_flag::VERTICAL_COLLISION,
+                tick,
+                delta: [0.0, -0.078, 0.0],
+            };
+            tick += 1;
+            bedrock
+                .send(id::PLAYER_AUTH_INPUT, &client::auth_input(&input, version))
+                .await
+                .unwrap();
+            while let Ok((pid, body)) = bedrock.next(Duration::from_millis(50)).await {
+                if pid == id::ADD_PLAYER {
+                    alice = client::read_add_player(&body);
+                }
             }
         }
         assert_eq!(alice.unwrap().0, "Alice");
 
         // Walk 3 blocks east, one block per tick at most.
         let mut pos = spawn;
-        for tick in 0..30u64 {
+        for tick in tick..tick + 30 {
             pos[0] += 0.1;
             let input = AuthInput {
                 pitch: 0.0,
