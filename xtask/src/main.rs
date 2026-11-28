@@ -323,6 +323,16 @@ pub const USAGE: &str = "usage:
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let against_vanilla = matches!(
+        args.as_slice(),
+        ["golden", "regen" | "bless", ..] | ["parity", ..] | ["worldgen" | "light", "sweep", ..]
+    );
+    if against_vanilla
+        && let Err(e) = require_vanilla_profile(std::env::var("VANILLITE_PROFILE").ok().as_deref())
+    {
+        eprintln!("error: {e}");
+        return ExitCode::FAILURE;
+    }
     let result = match args.as_slice() {
         ["vanilla", "update", rest @ ..] => vanilla_update(rest),
         ["version", "check"] => version::check(&repo_root()),
@@ -364,6 +374,25 @@ fn main() -> ExitCode {
             eprintln!("error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// The guard of the comparisons against Vanilla (golden regen and bless, parity, sweeps): they
+/// run on the `vanilla` profile only (#319; the default is `paper`), so a `VANILLITE_PROFILE`
+/// with another profile fails them. An empty variable is ignored, like the server does.
+fn require_vanilla_profile(value: Option<&str>) -> Result<()> {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(()),
+        Some(name)
+            if vanillite_config::Profile::parse(name)
+                == Some(vanillite_config::Profile::Vanilla) =>
+        {
+            Ok(())
+        }
+        Some(name) => Err(format!(
+            "VANILLITE_PROFILE={name}: comparisons against Vanilla run on the \"vanilla\" \
+             profile only (#319); unset it or set it to vanilla"
+        )),
     }
 }
 
@@ -410,4 +439,17 @@ pub fn write(path: &Path, contents: &str) -> Result<()> {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     std::fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+#[cfg(test)]
+mod profile_guard_tests {
+    #[test]
+    fn comparisons_refuse_other_profiles() {
+        for ok in [None, Some(""), Some("vanilla"), Some("Vanilla")] {
+            assert!(super::require_vanilla_profile(ok).is_ok(), "{ok:?}");
+        }
+        for bad in ["paper", "performance", "nonsense"] {
+            assert!(super::require_vanilla_profile(Some(bad)).is_err(), "{bad}");
+        }
+    }
 }
